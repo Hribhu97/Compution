@@ -76,17 +76,16 @@ h3 { font-size: clamp(1.25rem, 2.5vw, 1.75rem); }
 /* Cards */
 .card {
   background: var(--white);
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--border);
-  box-shadow: var(--shadow-sm);
+  border-radius: 20px;
+  border: none;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.04);
   transition: var(--transition);
 }
 .card:hover {
-  box-shadow: var(--shadow-lg);
-  transform: translateY(-4px);
-  border-color: transparent;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.06);
+  transform: translateY(-2px);
 }
-.card-p { padding: 28px; }
+.card-p { padding: 32px; }
 
 /* Buttons */
 .btn {

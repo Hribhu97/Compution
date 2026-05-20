@@ -8,6 +8,7 @@ import {
   createUserWithEmailAndPassword,
   sendEmailVerification,
   signOut,
+  updateProfile,
 } from 'firebase/auth';
 import { auth, googleProvider } from '../../firebase';
 
@@ -107,6 +108,9 @@ const Login = () => {
     setError('');
     try {
       const result = await createUserWithEmailAndPassword(auth, form.email, form.password);
+
+      // Save display name to Firebase Auth profile
+      await updateProfile(result.user, { displayName: form.name.trim() });
 
       // Send verification email
       await sendEmailVerification(result.user);
