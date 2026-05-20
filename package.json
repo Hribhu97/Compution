@@ -11,12 +11,15 @@
   },
   "dependencies": {
     "@studio-freight/react-lenis": "^0.0.47",
+    "date-fns": "^4.2.1",
     "firebase": "^12.13.0",
     "framer-motion": "^12.39.0",
     "lucide-react": "^1.16.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-router-dom": "^7.15.1"
+    "react-is": "^19.2.6",
+    "react-router-dom": "^7.15.1",
+    "recharts": "^3.8.1"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.4",
