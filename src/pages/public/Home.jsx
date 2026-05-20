@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import {
@@ -18,6 +18,69 @@ const fadeUp = {
   })
 };
 
+const ADMISSION_SUBJECTS = [
+  'Class XI CS', 'Class XII CS', 'Computer Application', 'Python Mastery',
+  'C & C++ Fundamentals', 'Java Development', 'Web Development',
+  'Data Structures & Algorithms', 'B.Sc/BCA Support',
+];
+
+/* ── ADMISSION POPUP ───────────────────────────────── */
+const AdmissionApplicationModal = ({ isOpen, onClose }) => {
+  const [form, setForm] = useState({ name: '', contact: '', subject: 'Class XI CS' });
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    const text = `Hello, I would like to apply for admission.%0AName: ${form.name}%0AContact: ${form.contact}%0ASubject: ${form.subject}`;
+    window.open(`https://wa.me/919674035542?text=${text}`, '_blank');
+    onClose();
+    setForm({ name: '', contact: '', subject: 'Class XI CS' });
+  };
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title="Apply for Admission">
+      <p style={{ color: 'var(--text-muted)', fontSize: '0.95rem', marginBottom: '20px', lineHeight: 1.6 }}>
+        Fill in your details and we&apos;ll reach out on WhatsApp to confirm your seat.
+      </p>
+      <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+        <div>
+          <label className="form-label">Name</label>
+          <input
+            required
+            className="form-input"
+            value={form.name}
+            onChange={e => setForm({ ...form, name: e.target.value })}
+            placeholder="Enter your full name"
+          />
+        </div>
+        <div>
+          <label className="form-label">Contact Number</label>
+          <input
+            required
+            type="tel"
+            className="form-input"
+            value={form.contact}
+            onChange={e => setForm({ ...form, contact: e.target.value })}
+            placeholder="e.g. +91 9876543210"
+          />
+        </div>
+        <div>
+          <label className="form-label">Subject of Interest</label>
+          <select
+            className="form-input"
+            value={form.subject}
+            onChange={e => setForm({ ...form, subject: e.target.value })}
+          >
+            {ADMISSION_SUBJECTS.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+        </div>
+        <button type="submit" className="btn btn-primary" style={{ width: '100%', padding: '14px', fontSize: '1rem', marginTop: '4px' }}>
+          Submit Application
+        </button>
+      </form>
+    </Modal>
+  );
+};
+
 /* ── NAVBAR ────────────────────────────────────────── */
 const NAV_LINKS = [
   { label: 'Courses', href: '#courses' },
@@ -26,7 +89,7 @@ const NAV_LINKS = [
   { label: 'Contact', href: '#admissions' },
 ];
 
-const Navbar = () => {
+const Navbar = ({ onOpenAdmission }) => {
   const [scrolled, setScrolled] = React.useState(false);
   const [menuOpen, setMenuOpen] = React.useState(false);
 
@@ -73,7 +136,7 @@ const Navbar = () => {
           </div>
           <div className="hide-mobile" style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
             <Link to="/login" className="btn btn-ghost" style={{ padding: '10px 20px' }}>Student Login</Link>
-            <a href="#admissions" className="btn btn-primary" style={{ padding: '10px 20px' }}>Enroll Now</a>
+            <button type="button" className="btn btn-primary" style={{ padding: '10px 20px' }} onClick={onOpenAdmission}>Enroll Now</button>
           </div>
           <button
             type="button"
@@ -105,7 +168,7 @@ const Navbar = () => {
               ))}
               <div className="divider" style={{ margin: '12px 0' }} />
               <Link to="/login" className="btn btn-ghost" style={{ width: '100%' }} onClick={closeMenu}>Student Login</Link>
-              <a href="#admissions" className="btn btn-primary" style={{ width: '100%' }} onClick={closeMenu}>Enroll Now</a>
+              <button type="button" className="btn btn-primary" style={{ width: '100%' }} onClick={() => { closeMenu(); onOpenAdmission(); }}>Enroll Now</button>
             </motion.div>
           </>
         )}
@@ -115,7 +178,7 @@ const Navbar = () => {
 };
 
 /* ── HERO ──────────────────────────────────────────── */
-const Hero = () => (
+const Hero = ({ onOpenAdmission }) => (
   <section style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', paddingTop: '100px' }}>
     <div className="container grid-hero">
       {/* Left */}
@@ -137,9 +200,9 @@ const Hero = () => (
         </motion.p>
         <motion.div variants={fadeUp} initial="hidden" animate="show" custom={3}
           style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
-          <a href="#admissions" className="btn btn-primary btn-lg">
+          <button type="button" className="btn btn-primary btn-lg" onClick={onOpenAdmission}>
             Enroll Now <ArrowRight size={20} />
-          </a>
+          </button>
           <Link to="/login" className="btn btn-secondary btn-lg">Student Login</Link>
           <a href="#courses" className="btn btn-ghost btn-lg">Explore Courses</a>
         </motion.div>
@@ -470,24 +533,7 @@ const Testimonials = () => {
 };
 
 /* ── ADMISSIONS CTA ────────────────────────────────── */
-const Admissions = () => {
-  const [isOpen, setIsOpen] = useState(false);
-  const [form, setForm] = useState({ name: '', contact: '', subject: 'Class XI CS' });
-
-  const subjects = [
-    'Class XI CS', 'Class XII CS', 'Computer Application', 'Python Mastery',
-    'C & C++ Fundamentals', 'Java Development', 'Web Development', 
-    'Data Structures & Algorithms', 'B.Sc/BCA Support'
-  ];
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    const text = `Hello, I would like to apply for admission.%0AName: ${form.name}%0AContact: ${form.contact}%0ASubject: ${form.subject}`;
-    window.open(`https://wa.me/919674035542?text=${text}`, '_blank');
-    setIsOpen(false);
-    setForm({ name: '', contact: '', subject: 'Class XI CS' });
-  };
-
+const Admissions = ({ onOpenAdmission }) => {
   return (
     <section id="admissions" className="section" style={{ background: 'var(--white)' }}>
       <div className="container">
@@ -512,58 +558,19 @@ const Admissions = () => {
             </div>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', minWidth: '220px' }}>
-            <button className="btn btn-primary btn-lg" onClick={() => setIsOpen(true)}>Apply for Admission</button>
+            <button type="button" className="btn btn-primary btn-lg" onClick={onOpenAdmission}>Apply for Admission</button>
             <Link to="/login" className="btn" style={{ background: 'rgba(255,255,255,0.1)', color: 'white', padding: '14px 28px', borderRadius: 'var(--radius-lg)', fontWeight: 700, textAlign: 'center' }}>
               Student Portal Login
             </Link>
           </div>
         </motion.div>
       </div>
-
-      <Modal isOpen={isOpen} onClose={() => setIsOpen(false)} title="Apply for Admission">
-        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          <div>
-            <label style={{ display: 'block', fontSize: '0.9rem', fontWeight: 600, color: 'var(--dark)', marginBottom: '8px' }}>Name</label>
-            <input 
-              required
-              value={form.name}
-              onChange={e => setForm({...form, name: e.target.value})}
-              placeholder="Enter your full name"
-              style={{ width: '100%', padding: '12px 16px', borderRadius: '10px', border: '1px solid var(--border)', fontSize: '0.95rem', outline: 'none' }}
-            />
-          </div>
-          <div>
-            <label style={{ display: 'block', fontSize: '0.9rem', fontWeight: 600, color: 'var(--dark)', marginBottom: '8px' }}>Contact Number</label>
-            <input 
-              required
-              type="tel"
-              value={form.contact}
-              onChange={e => setForm({...form, contact: e.target.value})}
-              placeholder="e.g. +91 9876543210"
-              style={{ width: '100%', padding: '12px 16px', borderRadius: '10px', border: '1px solid var(--border)', fontSize: '0.95rem', outline: 'none' }}
-            />
-          </div>
-          <div>
-            <label style={{ display: 'block', fontSize: '0.9rem', fontWeight: 600, color: 'var(--dark)', marginBottom: '8px' }}>Subject of Interest</label>
-            <select 
-              value={form.subject}
-              onChange={e => setForm({...form, subject: e.target.value})}
-              style={{ width: '100%', padding: '12px 16px', borderRadius: '10px', border: '1px solid var(--border)', fontSize: '0.95rem', outline: 'none', background: 'white' }}
-            >
-              {subjects.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </div>
-          <button type="submit" className="btn btn-primary" style={{ width: '100%', padding: '14px', fontSize: '1rem', marginTop: '8px' }}>
-            Submit Application
-          </button>
-        </form>
-      </Modal>
     </section>
   );
 };
 
 /* ── FOOTER ────────────────────────────────────────── */
-const Footer = () => (
+const Footer = ({ onOpenAdmission }) => (
   <footer style={{ background: 'var(--dark)', color: 'rgba(255,255,255,0.6)', padding: '60px 0 40px' }}>
     <div className="container">
       <div className="grid-footer" style={{ marginBottom: '48px' }}>
@@ -589,11 +596,30 @@ const Footer = () => (
         </div>
         <div>
           <div style={{ color: 'white', fontWeight: 700, marginBottom: '20px' }}>Quick Links</div>
-          {['About Us', 'Faculty', 'Admissions', 'Student Login', 'Contact'].map(item => (
-            <div key={item} style={{ marginBottom: '10px', fontSize: '0.9rem', cursor: 'pointer', transition: 'var(--transition)' }}
-              onMouseEnter={e => e.target.style.color = 'white'}
-              onMouseLeave={e => e.target.style.color = ''}
-            >{item}</div>
+          {[
+            { label: 'About Us', href: '#about' },
+            { label: 'Faculty', href: '#about' },
+            { label: 'Admissions', action: onOpenAdmission },
+            { label: 'Student Login', href: '/login', isRoute: true },
+            { label: 'Contact', href: '#admissions' },
+          ].map(item => (
+            item.action ? (
+              <button key={item.label} type="button" onClick={item.action}
+                style={{ display: 'block', marginBottom: '10px', fontSize: '0.9rem', cursor: 'pointer', transition: 'var(--transition)', background: 'none', border: 'none', color: 'inherit', padding: 0, textAlign: 'left' }}
+                onMouseEnter={e => e.currentTarget.style.color = 'white'}
+                onMouseLeave={e => e.currentTarget.style.color = ''}
+              >{item.label}</button>
+            ) : item.isRoute ? (
+              <Link key={item.label} to={item.href} style={{ display: 'block', marginBottom: '10px', fontSize: '0.9rem', transition: 'var(--transition)' }}
+                onMouseEnter={e => e.currentTarget.style.color = 'white'}
+                onMouseLeave={e => e.currentTarget.style.color = ''}
+              >{item.label}</Link>
+            ) : (
+              <a key={item.label} href={item.href} style={{ display: 'block', marginBottom: '10px', fontSize: '0.9rem', transition: 'var(--transition)' }}
+                onMouseEnter={e => e.currentTarget.style.color = 'white'}
+                onMouseLeave={e => e.currentTarget.style.color = ''}
+              >{item.label}</a>
+            )
           ))}
         </div>
       </div>
@@ -607,17 +633,24 @@ const Footer = () => (
 );
 
 /* ── PAGE EXPORT ───────────────────────────────────── */
-const Home = () => (
-  <>
-    <Navbar />
-    <Hero />
-    <WhyCompution />
-    <CoursesSection />
-    <LearningJourney />
-    <Testimonials />
-    <Admissions />
-    <Footer />
-  </>
-);
+const Home = () => {
+  const [admissionOpen, setAdmissionOpen] = useState(false);
+  const openAdmission = () => setAdmissionOpen(true);
+  const closeAdmission = () => setAdmissionOpen(false);
+
+  return (
+    <>
+      <Navbar onOpenAdmission={openAdmission} />
+      <Hero onOpenAdmission={openAdmission} />
+      <WhyCompution />
+      <CoursesSection />
+      <LearningJourney />
+      <Testimonials />
+      <Admissions onOpenAdmission={openAdmission} />
+      <Footer onOpenAdmission={openAdmission} />
+      <AdmissionApplicationModal isOpen={admissionOpen} onClose={closeAdmission} />
+    </>
+  );
+};
 
 export default Home;
