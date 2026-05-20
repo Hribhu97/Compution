@@ -58,7 +58,6 @@ const ChatAssistant = () => {
     const userMsg = input.trim();
     setInput('');
     
-    // Save user message
     await addDoc(collection(db, `users/${user.uid}/chatHistory`), {
       message: userMsg,
       sender: 'user',
@@ -67,7 +66,6 @@ const ChatAssistant = () => {
 
     setIsTyping(true);
     
-    // Simulate delay for bot reply
     setTimeout(async () => {
       const botReply = matchFAQ(userMsg);
       await addDoc(collection(db, `users/${user.uid}/chatHistory`), {
@@ -83,7 +81,6 @@ const ChatAssistant = () => {
 
   return (
     <>
-      {/* FAB */}
       <motion.button
         whileHover={{ scale: 1.05 }}
         whileTap={{ scale: 0.95 }}
@@ -101,7 +98,6 @@ const ChatAssistant = () => {
         <MessageCircle size={28} />
       </motion.button>
 
-      {/* Drawer */}
       <AnimatePresence>
         {isOpen && (
           <>
@@ -123,7 +119,6 @@ const ChatAssistant = () => {
                 display: 'flex', flexDirection: 'column', overflow: 'hidden'
               }}
             >
-              {/* Header */}
               <div style={{ background: 'linear-gradient(180deg, #536DFE 0%, #667FFF 100%)', padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: 'white' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                   <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--primary)', fontWeight: 800, fontSize: '1rem' }}>C</div>
@@ -137,7 +132,6 @@ const ChatAssistant = () => {
                 </button>
               </div>
 
-              {/* Chat Area */}
               <div style={{ flex: 1, padding: '20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '16px', background: 'var(--bg)' }}>
                 {messages.length === 0 && (
                   <div style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: 20 }}>
@@ -179,7 +173,6 @@ const ChatAssistant = () => {
                 <div ref={bottomRef} />
               </div>
 
-              {/* Input Area */}
               <div style={{ padding: '16px', background: 'white', borderTop: '1px solid var(--border)' }}>
                 <form onSubmit={handleSend} style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
                   <input

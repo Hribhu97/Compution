@@ -6,6 +6,7 @@ import {
   ArrowRight, CheckCircle, Star, ChevronRight,
   Zap, Target, TrendingUp, Award, MapPin, Phone, Mail
 } from 'lucide-react';
+import Modal from '../../components/Modal';
 
 /* ── FADE IN VARIANTS ─────────────────────────────── */
 const fadeUp = {
@@ -416,44 +417,102 @@ const Testimonials = () => {
 };
 
 /* ── ADMISSIONS CTA ────────────────────────────────── */
-const Admissions = () => (
-  <section id="admissions" className="section" style={{ background: 'var(--white)' }}>
-    <div className="container">
-      <motion.div variants={fadeUp} initial="hidden" whileInView="show" viewport={{ once: true }}
-        style={{
-          background: 'linear-gradient(135deg, var(--dark) 0%, #363b47 100%)',
-          borderRadius: 'var(--radius-xl)', padding: '72px 80px',
-          display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '48px',
-          flexWrap: 'wrap'
-        }}>
-        <div>
-          <h2 style={{ color: 'white', marginBottom: '16px', fontSize: '2.25rem' }}>Ready to start learning?</h2>
-          <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: '1.1rem', maxWidth: '480px', lineHeight: 1.7 }}>
-            New batches starting soon. Limited seats. Walk in or call us to secure your place.
-          </p>
-          <div style={{ marginTop: '28px', display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
-            {[
-              { icon: <MapPin size={16} />, text: 'J.K. Mitra Road, Kolkata – 700037' },
-              { icon: <Phone size={16} />, text: 'Call to Enquire' },
-              { icon: <Mail size={16} />, text: 'admissions@compution.in' },
-            ].map((item, i) => (
-              <span key={i} style={{ color: 'rgba(255,255,255,0.7)', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.9rem' }}>
-                <span style={{ color: 'var(--accent)' }}>{item.icon}</span>
-                {item.text}
-              </span>
-            ))}
+const Admissions = () => {
+  const [isOpen, setIsOpen] = useState(false);
+  const [form, setForm] = useState({ name: '', contact: '', subject: 'Class XI CS' });
+
+  const subjects = [
+    'Class XI CS', 'Class XII CS', 'Computer Application', 'Python Mastery',
+    'C & C++ Fundamentals', 'Java Development', 'Web Development', 
+    'Data Structures & Algorithms', 'B.Sc/BCA Support'
+  ];
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    const text = `Hello, I would like to apply for admission.%0AName: ${form.name}%0AContact: ${form.contact}%0ASubject: ${form.subject}`;
+    window.open(`https://wa.me/919674035542?text=${text}`, '_blank');
+    setIsOpen(false);
+    setForm({ name: '', contact: '', subject: 'Class XI CS' });
+  };
+
+  return (
+    <section id="admissions" className="section" style={{ background: 'var(--white)' }}>
+      <div className="container">
+        <motion.div variants={fadeUp} initial="hidden" whileInView="show" viewport={{ once: true }}
+          style={{
+            background: 'linear-gradient(135deg, var(--dark) 0%, #363b47 100%)',
+            borderRadius: 'var(--radius-xl)', padding: '72px 80px',
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '48px',
+            flexWrap: 'wrap'
+          }}>
+          <div>
+            <h2 style={{ color: 'white', marginBottom: '16px', fontSize: '2.25rem' }}>Ready to start learning?</h2>
+            <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: '1.1rem', maxWidth: '480px', lineHeight: 1.7 }}>
+              New batches starting soon. Limited seats. Walk in or call us to secure your place.
+            </p>
+            <div style={{ marginTop: '28px', display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
+              {[
+                { icon: <MapPin size={16} />, text: 'J.K. Mitra Road, Kolkata – 700037' },
+                { icon: <Phone size={16} />, text: 'Call to Enquire' },
+                { icon: <Mail size={16} />, text: 'admissions@compution.in' },
+              ].map((item, i) => (
+                <span key={i} style={{ color: 'rgba(255,255,255,0.7)', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.9rem' }}>
+                  <span style={{ color: 'var(--accent)' }}>{item.icon}</span>
+                  {item.text}
+                </span>
+              ))}
+            </div>
           </div>
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', minWidth: '220px' }}>
-          <button className="btn btn-primary btn-lg">Apply for Admission</button>
-          <Link to="/login" className="btn" style={{ background: 'rgba(255,255,255,0.1)', color: 'white', padding: '14px 28px', borderRadius: 'var(--radius-lg)', fontWeight: 700 }}>
-            Student Portal Login
-          </Link>
-        </div>
-      </motion.div>
-    </div>
-  </section>
-);
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', minWidth: '220px' }}>
+            <button className="btn btn-primary btn-lg" onClick={() => setIsOpen(true)}>Apply for Admission</button>
+            <Link to="/login" className="btn" style={{ background: 'rgba(255,255,255,0.1)', color: 'white', padding: '14px 28px', borderRadius: 'var(--radius-lg)', fontWeight: 700, textAlign: 'center' }}>
+              Student Portal Login
+            </Link>
+          </div>
+        </motion.div>
+      </div>
+
+      <Modal isOpen={isOpen} onClose={() => setIsOpen(false)} title="Apply for Admission">
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          <div>
+            <label style={{ display: 'block', fontSize: '0.9rem', fontWeight: 600, color: 'var(--dark)', marginBottom: '8px' }}>Name</label>
+            <input 
+              required
+              value={form.name}
+              onChange={e => setForm({...form, name: e.target.value})}
+              placeholder="Enter your full name"
+              style={{ width: '100%', padding: '12px 16px', borderRadius: '10px', border: '1px solid var(--border)', fontSize: '0.95rem', outline: 'none' }}
+            />
+          </div>
+          <div>
+            <label style={{ display: 'block', fontSize: '0.9rem', fontWeight: 600, color: 'var(--dark)', marginBottom: '8px' }}>Contact Number</label>
+            <input 
+              required
+              type="tel"
+              value={form.contact}
+              onChange={e => setForm({...form, contact: e.target.value})}
+              placeholder="e.g. +91 9876543210"
+              style={{ width: '100%', padding: '12px 16px', borderRadius: '10px', border: '1px solid var(--border)', fontSize: '0.95rem', outline: 'none' }}
+            />
+          </div>
+          <div>
+            <label style={{ display: 'block', fontSize: '0.9rem', fontWeight: 600, color: 'var(--dark)', marginBottom: '8px' }}>Subject of Interest</label>
+            <select 
+              value={form.subject}
+              onChange={e => setForm({...form, subject: e.target.value})}
+              style={{ width: '100%', padding: '12px 16px', borderRadius: '10px', border: '1px solid var(--border)', fontSize: '0.95rem', outline: 'none', background: 'white' }}
+            >
+              {subjects.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+          <button type="submit" className="btn btn-primary" style={{ width: '100%', padding: '14px', fontSize: '1rem', marginTop: '8px' }}>
+            Submit Application
+          </button>
+        </form>
+      </Modal>
+    </section>
+  );
+};
 
 /* ── FOOTER ────────────────────────────────────────── */
 const Footer = () => (

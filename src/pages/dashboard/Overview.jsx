@@ -1,16 +1,19 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useAuth } from '../../contexts/AuthContext';
+import { db } from '../../firebase';
+import { collection, onSnapshot, query, orderBy, limit } from 'firebase/firestore';
 import { Users, Send, Clock, UserMinus, ChevronDown, Share2 } from 'lucide-react';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import AdminStudentGrid from '../../components/AdminStudentGrid';
+import AdminDashboard from '../../components/AdminDashboard';
 
-/* ── Animation helpers ── */
 const stagger = { show: { transition: { staggerChildren: 0.06 } } };
 const fadeItem = {
   hidden: { opacity: 0, y: 14 },
   show: { opacity: 1, y: 0, transition: { duration: 0.45, ease: [0.16, 1, 0.3, 1] } }
 };
 
-/* ── Circular Progress Ring ── */
 const CircularProgress = ({ percentage, size = 140, stroke = 12 }) => {
   const radius = (size - stroke) / 2;
   const circumference = 2 * Math.PI * radius;
@@ -19,14 +22,10 @@ const CircularProgress = ({ percentage, size = 140, stroke = 12 }) => {
   return (
     <div style={{ position: 'relative', width: size, height: size }}>
       <svg width={size} height={size} style={{ transform: 'rotate(-90deg)' }}>
-        {/* Background ring */}
-        <circle cx={size / 2} cy={size / 2} r={radius}
-          fill="none" stroke="#E8EDF5" strokeWidth={stroke} />
-        {/* Progress ring */}
+        <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="#E8EDF5" strokeWidth={stroke} />
         <motion.circle
           cx={size / 2} cy={size / 2} r={radius}
-          fill="none" stroke="var(--success)" strokeWidth={stroke}
-          strokeLinecap="round"
+          fill="none" stroke="var(--success)" strokeWidth={stroke} strokeLinecap="round"
           strokeDasharray={circumference}
           initial={{ strokeDashoffset: circumference }}
           animate={{ strokeDashoffset: offset }}
@@ -34,8 +33,7 @@ const CircularProgress = ({ percentage, size = 140, stroke = 12 }) => {
         />
       </svg>
       <div style={{
-        position: 'absolute', inset: 0,
-        display: 'flex', flexDirection: 'column',
+        position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
         alignItems: 'center', justifyContent: 'center',
       }}>
         <span style={{ fontSize: '2rem', fontWeight: 900, fontFamily: 'var(--font-heading)', color: 'var(--dark)' }}>{percentage}%</span>
@@ -45,113 +43,109 @@ const CircularProgress = ({ percentage, size = 140, stroke = 12 }) => {
   );
 };
 
-/* ── Bar Chart ── */
-const BarChart = ({ data }) => {
-  const maxVal = Math.max(...data.map(d => d.value));
-  const maxHeight = 160;
-
-  return (
-    <div style={{ display: 'flex', alignItems: 'flex-end', gap: '16px', height: maxHeight + 40, paddingTop: '20px' }}>
-      {/* Y-axis labels */}
-      <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', height: maxHeight, paddingBottom: '24px' }}>
-        {['>4 hr', '2 hr', '1 hr'].map(l => (
-          <span key={l} style={{ fontSize: '0.72rem', color: 'var(--text-light)', fontWeight: 500, whiteSpace: 'nowrap' }}>{l}</span>
-        ))}
+const CustomTooltip = ({ active, payload }) => {
+  if (active && payload && payload.length) {
+    return (
+      <div style={{ background: 'var(--dark)', color: 'white', padding: '6px 12px', borderRadius: '8px', fontSize: '0.85rem', fontWeight: 600 }}>
+        {payload[0].value} hrs
       </div>
-
-      {/* Bars */}
-      <div style={{ display: 'flex', alignItems: 'flex-end', gap: '18px', flex: 1 }}>
-        {data.map((d, i) => {
-          const barH = (d.value / maxVal) * maxHeight;
-          const isHighest = d.value === maxVal;
-          return (
-            <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', flex: 1 }}>
-              <span style={{
-                fontSize: '0.72rem', fontWeight: 700,
-                color: isHighest ? 'white' : 'var(--success)',
-                background: isHighest ? 'var(--success)' : 'transparent',
-                padding: isHighest ? '3px 8px' : '0',
-                borderRadius: '20px',
-              }}>{d.label}</span>
-              <motion.div
-                initial={{ height: 0 }}
-                animate={{ height: barH }}
-                transition={{ duration: 0.7, delay: 0.3 + i * 0.08, ease: [0.16, 1, 0.3, 1] }}
-                style={{
-                  width: '100%',
-                  maxWidth: '48px',
-                  borderRadius: '8px 8px 4px 4px',
-                  background: isHighest
-                    ? 'linear-gradient(180deg, #66BB6A 0%, #43A047 100%)'
-                    : 'linear-gradient(180deg, #A5D6A7 0%, #C8E6C9 100%)',
-                }}
-              />
-              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 500 }}>{d.day}</span>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
+    );
+  }
+  return null;
 };
 
-/* ── OVERVIEW PAGE ── */
 const Overview = () => {
   const { user } = useAuth();
+  
+  if (user?.role === 'admin') return <AdminDashboard />;
+
+  const [attendanceStats, setAttendanceStats] = useState({ present: 0, absent: 0, late: 0, doubts: 0 });
+  const [progressData, setProgressData] = useState([]);
+  const [completionPct, setCompletionPct] = useState(0);
+  const [overallGrade, setOverallGrade] = useState('N/A');
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!user?.uid) return;
+
+    const attRef = collection(db, `users/${user.uid}/attendance`);
+    const unsubAtt = onSnapshot(attRef, (snap) => {
+      let present = 0, absent = 0, late = 0;
+      snap.forEach(doc => {
+        const data = doc.data();
+        if (data.status === 'present') present++;
+        else if (data.status === 'absent') absent++;
+        else if (data.status === 'late') late++;
+      });
+      setAttendanceStats(s => ({ ...s, present, absent, late }));
+    });
+
+    const progRef = query(collection(db, `users/${user.uid}/progress`), orderBy('createdAt', 'desc'), limit(6));
+    const unsubProg = onSnapshot(progRef, (snap) => {
+      const data = [];
+      let totalPct = 0;
+      let count = 0;
+      snap.forEach(doc => {
+        const d = doc.data();
+        data.unshift({ day: d.day || 'Day', studyHours: d.studyHours || 0 });
+        totalPct += (d.completionRate || 0);
+        count++;
+      });
+      
+      if (data.length === 0) {
+        setProgressData([
+          { day: 'Mon', studyHours: 2 }, { day: 'Tue', studyHours: 2.1 },
+          { day: 'Wed', studyHours: 2.5 }, { day: 'Thu', studyHours: 3.5 },
+          { day: 'Fri', studyHours: 2.9 }, { day: 'Sat', studyHours: 2.5 }
+        ]);
+        setCompletionPct(35);
+        setOverallGrade('A');
+      } else {
+        setProgressData(data);
+        setCompletionPct(count > 0 ? Math.round(totalPct / count) : 0);
+        setOverallGrade('A');
+      }
+      setLoading(false);
+    });
+
+    return () => { unsubAtt(); unsubProg(); };
+  }, [user]);
 
   const displayName = user?.displayName || 'Student';
   const email = user?.email || 'student@compution.in';
+  const studentId = user?.studentId || 'COMP25007';
+  const course = user?.course || 'Not specified';
   const initials = displayName.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
 
   const stats = [
-    { icon: <Users size={22} />, value: '20', label: 'Total Attendance', color: 'var(--primary)', bg: 'rgba(83,109,254,0.08)' },
+    { icon: <Users size={22} />, value: attendanceStats.present, label: 'Total Attendance', color: 'var(--primary)', bg: 'rgba(83,109,254,0.08)' },
     { icon: <Send size={22} />, value: '200+', label: 'Doubts solved', color: 'var(--success)', bg: 'rgba(102,187,106,0.08)' },
-    { icon: <Clock size={22} />, value: '2', label: 'Late present', color: '#FFA726', bg: 'rgba(255,167,38,0.08)' },
-    { icon: <UserMinus size={22} />, value: '5', label: 'Total Absent', color: 'var(--danger)', bg: 'rgba(239,83,80,0.08)' },
-  ];
-
-  const weeklyData = [
-    { day: 'Mon', value: 2.0, label: '2 hr' },
-    { day: 'Tue', value: 2.1, label: '2.1 hr' },
-    { day: 'Wed', value: 2.5, label: '2.5 hr' },
-    { day: 'Thu', value: 3.5, label: '3.5 hr' },
-    { day: 'Fri', value: 2.9, label: '2.9 hr' },
-    { day: 'Sat', value: 2.5, label: '2.5 hr' },
+    { icon: <Clock size={22} />, value: attendanceStats.late, label: 'Late present', color: '#FFA726', bg: 'rgba(255,167,38,0.08)' },
+    { icon: <UserMinus size={22} />, value: attendanceStats.absent, label: 'Total Absent', color: 'var(--danger)', bg: 'rgba(239,83,80,0.08)' },
   ];
 
   return (
     <motion.div variants={stagger} initial="hidden" animate="show" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
 
-      {/* ═══════════ MY PROFILE CARD ═══════════ */}
-      <motion.div variants={fadeItem} style={{
-        background: 'white', borderRadius: '20px', padding: '32px',
-        boxShadow: '0 2px 12px rgba(0,0,0,0.04)',
-      }}>
-        {/* Header row */}
+      <motion.div variants={fadeItem} className="card card-p">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
           <h2 style={{ fontSize: '1.5rem', fontWeight: 800 }}>My profile</h2>
           <button style={{
-            display: 'flex', alignItems: 'center', gap: '6px',
-            padding: '8px 16px', borderRadius: '8px',
-            border: '1px solid var(--border-strong)', background: 'white',
-            fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-muted)',
-            cursor: 'pointer',
+            display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 16px', borderRadius: '8px',
+            border: '1px solid var(--border-strong)', background: 'white', fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-muted)'
           }}>
             Jan <ChevronDown size={14} />
           </button>
         </div>
 
-        {/* Avatar + Name */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '24px' }}>
           {user?.photoURL ? (
             <img src={user.photoURL} alt="avatar" style={{ width: 56, height: 56, borderRadius: '50%', objectFit: 'cover', border: '3px solid var(--surface)' }} />
           ) : (
             <div style={{
-              width: 56, height: 56, borderRadius: '50%',
-              background: 'linear-gradient(135deg, var(--primary), var(--accent))',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              color: 'white', fontWeight: 800, fontSize: '1.2rem',
-              border: '3px solid var(--surface)',
+              width: 56, height: 56, borderRadius: '50%', background: 'linear-gradient(135deg, var(--primary), var(--accent))',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 800, fontSize: '1.2rem',
+              border: '3px solid var(--surface)'
             }}>{initials}</div>
           )}
           <div>
@@ -160,46 +154,63 @@ const Overview = () => {
           </div>
         </div>
 
-        {/* Info strip */}
         <div style={{
-          display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px',
-          padding: '16px 0', borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)',
-          marginBottom: '24px',
+          display: 'grid', 
+          gridTemplateColumns: user?.role === 'student' ? 'repeat(3, 1fr)' : 'repeat(4, 1fr)', 
+          gap: '16px', padding: '16px 0', 
+          borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)', marginBottom: '24px'
         }}>
-          {[
-            { label: 'ID', value: 'COMP25007' },
-            { label: 'Contact', value: user?.email?.split('@')[0] || '—' },
-            { label: 'Course', value: 'Python Adv.' },
-            { label: 'Last fees', value: '10th Jan' },
-          ].map(info => (
-            <div key={info.label}>
-              <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 500, marginBottom: '4px' }}>{info.label}</div>
-              <div style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--dark)' }}>{info.value}</div>
+          <div>
+            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 500, marginBottom: '4px' }}>ID</div>
+            <div style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--dark)' }}>{studentId}</div>
+          </div>
+          <div style={{ overflow: 'hidden' }}>
+            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 500, marginBottom: '4px' }}>Contact</div>
+            <div style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--dark)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={user?.phone || email}>
+              {user?.phone || email}
             </div>
-          ))}
+          </div>
+          {user?.role !== 'student' && (
+            <div style={{ overflow: 'hidden' }}>
+              <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 500, marginBottom: '4px' }}>Course</div>
+              <div style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--dark)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={course}>
+                {course}
+              </div>
+            </div>
+          )}
+          <div>
+            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 500, marginBottom: '4px' }}>Last fees</div>
+            <input 
+              type="date" 
+              value={user?.lastFeesDate || ''}
+              onChange={async (e) => {
+                const newDate = e.target.value;
+                try {
+                  const { doc, updateDoc } = await import('firebase/firestore');
+                  await updateDoc(doc(db, 'users', user.uid), { lastFeesDate: newDate });
+                } catch (err) {
+                  console.error('Error updating last fees:', err);
+                }
+              }}
+              style={{ 
+                fontWeight: 600, fontSize: '0.85rem', color: 'var(--dark)', 
+                border: '1px solid var(--border)', borderRadius: '6px', 
+                padding: '4px 8px', outline: 'none', background: 'var(--surface)',
+                fontFamily: 'inherit', width: '100%', maxWidth: '140px'
+              }}
+            />
+          </div>
         </div>
 
-        {/* Stat cards row */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px' }}>
           {stats.map((s, i) => (
-            <motion.div key={i}
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ duration: 0.4, delay: 0.2 + i * 0.08 }}
-              style={{
-                display: 'flex', alignItems: 'center', gap: '14px',
-                padding: '18px 20px', borderRadius: '14px',
-                border: '1px solid var(--border)',
-                background: 'white',
-              }}
+            <motion.div key={i} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.4, delay: 0.2 + i * 0.08 }}
+              style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '18px 20px', borderRadius: '14px', border: '1px solid var(--border)', background: 'white' }}
             >
-              <div style={{
-                width: 42, height: 42, borderRadius: '50%',
-                background: s.bg, display: 'flex',
-                alignItems: 'center', justifyContent: 'center', color: s.color,
-              }}>{s.icon}</div>
+              <div style={{ width: 42, height: 42, borderRadius: '50%', background: s.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', color: s.color }}>{s.icon}</div>
               <div>
-                <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 900, fontSize: '1.5rem', lineHeight: 1, color: 'var(--dark)' }}>{s.value}</div>
+                {loading ? <div style={{ height: 24, width: 40, background: 'var(--surface)', borderRadius: 4, marginBottom: 4 }} /> : 
+                <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 900, fontSize: '1.5rem', lineHeight: 1, color: 'var(--dark)', marginBottom: '6px' }}>{s.value}</div>}
                 <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 500, whiteSpace: 'nowrap' }}>{s.label}</div>
               </div>
             </motion.div>
@@ -207,47 +218,43 @@ const Overview = () => {
         </div>
       </motion.div>
 
-      {/* ═══════════ MY PROGRESS CARD ═══════════ */}
-      <motion.div variants={fadeItem} style={{
-        background: 'white', borderRadius: '20px', padding: '32px',
-        boxShadow: '0 2px 12px rgba(0,0,0,0.04)',
-      }}>
+      <motion.div variants={fadeItem} className="card card-p">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
           <h2 style={{ fontSize: '1.5rem', fontWeight: 800 }}>My progress</h2>
-          <button style={{
-            width: 40, height: 40, borderRadius: '10px',
-            border: '1px solid var(--border)', background: 'white',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            color: 'var(--text-muted)', cursor: 'pointer',
-          }}>
+          <button style={{ width: 40, height: 40, borderRadius: '10px', border: '1px solid var(--border)', background: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', cursor: 'pointer' }}>
             <Share2 size={18} />
           </button>
         </div>
 
         <div style={{ display: 'flex', gap: '40px', alignItems: 'center' }}>
-          {/* Bar chart area */}
           <div style={{ flex: 1 }}>
-            <BarChart data={weeklyData} />
+            <div style={{ height: 200, width: '100%', marginTop: '20px' }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={progressData} barSize={40} margin={{ top: 20, right: 0, left: -24, bottom: 0 }}>
+                  <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: 'var(--text-light)', fontWeight: 500 }} dy={10} />
+                  <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: 'var(--text-light)', fontWeight: 500 }} tickFormatter={val => `${val} hr`} />
+                  <Tooltip content={<CustomTooltip />} cursor={{ fill: 'transparent' }} />
+                  <Bar dataKey="studyHours" radius={[8, 8, 4, 4]}>
+                    {progressData.map((entry, index) => {
+                      const isMax = entry.studyHours === Math.max(...progressData.map(d => d.studyHours));
+                      return <Cell key={`cell-${index}`} fill={isMax ? '#66BB6A' : '#C8E6C9'} />;
+                    })}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
 
-            {/* Overall progress */}
             <div style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
-              marginTop: '16px', padding: '10px', borderRadius: '10px',
-              background: 'rgba(83,109,254,0.04)',
+              marginTop: '16px', padding: '10px', borderRadius: '10px', background: 'rgba(83,109,254,0.04)',
             }}>
               <span style={{ fontSize: '0.88rem', color: 'var(--text-muted)', fontWeight: 500 }}>Overall Progress:</span>
-              <span style={{
-                fontWeight: 800, fontSize: '1rem', color: 'var(--success)',
-                background: 'rgba(102,187,106,0.12)', padding: '2px 10px',
-                borderRadius: '6px',
-              }}>A</span>
+              <span style={{ fontWeight: 800, fontSize: '1rem', color: 'var(--success)', background: 'rgba(102,187,106,0.12)', padding: '2px 10px', borderRadius: '6px' }}>{overallGrade}</span>
             </div>
           </div>
 
-          {/* Circular progress + legend */}
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '24px', minWidth: '180px' }}>
-            <CircularProgress percentage={35} size={150} stroke={14} />
-
+            <CircularProgress percentage={completionPct} size={150} stroke={14} />
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <div style={{ width: 16, height: 16, borderRadius: '4px', background: 'var(--success)' }} />
@@ -261,6 +268,10 @@ const Overview = () => {
           </div>
         </div>
       </motion.div>
+
+      {user?.role === 'admin' && (
+        <AdminStudentGrid />
+      )}
     </motion.div>
   );
 };

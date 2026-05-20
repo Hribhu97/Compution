@@ -22,7 +22,6 @@ const Community = () => {
   useEffect(() => {
     if (!user?.uid) return;
     
-    // Listen to personal community feed (as per specific security rule request)
     const commRef = query(collection(db, `users/${user.uid}/community`), orderBy('createdAt', 'desc'));
     const unsub = onSnapshot(commRef, (snap) => {
       const data = [];
@@ -101,7 +100,6 @@ const Community = () => {
         </div>
       )}
 
-      {/* CREATE POST MODAL */}
       <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Create Post">
         <form onSubmit={handleCreatePost} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <div>

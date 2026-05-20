@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
-import { auth } from '../firebase';
+import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
+import { auth, db } from '../firebase';
 
 const AuthContext = createContext(null);
 
@@ -11,21 +12,52 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (firebaseUser) => {
+    let unsubscribeProfile;
+
+    const unsubAuth = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
-        setUser({
-          uid: firebaseUser.uid,
-          email: firebaseUser.email,
-          displayName: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'Student',
-          photoURL: firebaseUser.photoURL,
-          emailVerified: firebaseUser.emailVerified,
+        const userRef = doc(db, 'users', firebaseUser.uid);
+        const userSnap = await getDoc(userRef);
+
+        if (!userSnap.exists()) {
+          const role = firebaseUser.email === 'tapadarhribhu@gmail.com' ? 'admin' : 'student';
+          const newProfile = {
+            displayName: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || (role === 'admin' ? 'Admin' : 'Student'),
+            email: firebaseUser.email,
+            photoURL: firebaseUser.photoURL || '',
+            studentId: `COMP-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
+            course: 'Not specified',
+            phone: '',
+            role: role,
+            createdAt: new Date().toISOString()
+          };
+          await setDoc(userRef, newProfile);
+        } else {
+          if (firebaseUser.email === 'tapadarhribhu@gmail.com' && userSnap.data().role !== 'admin') {
+            await setDoc(userRef, { role: 'admin' }, { merge: true });
+          }
+        }
+
+        unsubscribeProfile = onSnapshot(userRef, (docSnap) => {
+          if (docSnap.exists()) {
+            setUser({
+              uid: firebaseUser.uid,
+              emailVerified: firebaseUser.emailVerified,
+              ...docSnap.data()
+            });
+          }
         });
       } else {
         setUser(null);
+        if (unsubscribeProfile) unsubscribeProfile();
       }
       setLoading(false);
     });
-    return unsub;
+
+    return () => {
+      unsubAuth();
+      if (unsubscribeProfile) unsubscribeProfile();
+    };
   }, []);
 
   return (
