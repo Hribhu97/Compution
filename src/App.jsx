@@ -10,8 +10,6 @@ import Overview from './pages/dashboard/Overview';
 import Courses from './pages/dashboard/Courses';
 import Assignments from './pages/dashboard/Assignments';
 import MockTests from './pages/dashboard/MockTests';
-import Attendance from './pages/dashboard/Attendance';
-import Community from './pages/dashboard/Community';
 
 const PublicLayout = () => (
   <ReactLenis root options={{ lerp: 0.06, smoothWheel: true, syncTouch: true }}>
@@ -31,10 +29,8 @@ function App() {
           <Route path="/dashboard" element={<DashboardLayout />}>
             <Route index element={<Overview />} />
             <Route path="courses" element={<Courses />} />
-            <Route path="attendance" element={<Attendance />} />
             <Route path="assignments" element={<Assignments />} />
             <Route path="tests" element={<MockTests />} />
-            <Route path="community" element={<Community />} />
           </Route>
         </Routes>
       </Router>
