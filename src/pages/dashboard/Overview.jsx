@@ -154,11 +154,8 @@ const Overview = () => {
           </div>
         </div>
 
-        <div style={{
-          display: 'grid', 
-          gridTemplateColumns: user?.role === 'student' ? 'repeat(3, 1fr)' : 'repeat(4, 1fr)', 
-          gap: '16px', padding: '16px 0', 
-          borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)', marginBottom: '24px'
+        <div className={`grid-profile-meta ${user?.role !== 'student' ? 'grid-profile-meta--4' : ''}`} style={{
+          padding: '16px 0', borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)', marginBottom: '24px'
         }}>
           <div>
             <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 500, marginBottom: '4px' }}>ID</div>
@@ -202,7 +199,7 @@ const Overview = () => {
           </div>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px' }}>
+        <div className="grid-stats-4">
           {stats.map((s, i) => (
             <motion.div key={i} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.4, delay: 0.2 + i * 0.08 }}
               style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '18px 20px', borderRadius: '14px', border: '1px solid var(--border)', background: 'white' }}
@@ -226,7 +223,7 @@ const Overview = () => {
           </button>
         </div>
 
-        <div style={{ display: 'flex', gap: '40px', alignItems: 'center' }}>
+        <div className="grid-progress-row">
           <div style={{ flex: 1 }}>
             <div style={{ height: 200, width: '100%', marginTop: '20px' }}>
               <ResponsiveContainer width="100%" height="100%">

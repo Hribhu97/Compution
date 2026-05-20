@@ -82,7 +82,7 @@ const Attendance = () => {
         <p style={{ color: 'var(--text-muted)' }}>Track your class presence and overview your history</p>
       </motion.div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px' }}>
+      <div className="grid-stats-dashboard">
         {statCards.map((s, i) => (
           <motion.div key={i} variants={item} className="card card-p" style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
             <div style={{ width: 54, height: 54, borderRadius: '16px', background: s.bg, color: s.color, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>

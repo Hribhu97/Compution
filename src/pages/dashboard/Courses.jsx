@@ -92,7 +92,7 @@ const Courses = () => {
       )}
 
       {tab === 'available' && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '20px' }}>
+        <div className="grid-auto-cards">
           {available.map((c, i) => (
             <motion.div key={i} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.08 }}
               className="card" style={{ overflow: 'hidden', cursor: 'pointer' }}>

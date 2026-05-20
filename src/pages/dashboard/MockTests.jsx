@@ -52,7 +52,7 @@ const MockTests = () => {
         ))}
       </motion.div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '24px' }}>
+      <div className="grid-2-1">
         {/* Left col */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
           {/* Upcoming */}

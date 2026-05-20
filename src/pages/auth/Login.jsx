@@ -168,9 +168,8 @@ const Login = () => {
   const goToLogin = () => { setView('login'); setError(''); setForm({ email: '', password: '', name: '' }); setVerifyEmail(''); setResent(false); };
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', background: 'var(--bg)' }}>
-      {/* ── LEFT FORM ── */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '40px', maxWidth: '560px' }}>
+    <div className="login-layout">
+      <div className="login-panel">
         <Link to="/" style={{ fontFamily: 'var(--font-heading)', fontWeight: 900, fontSize: '1.4rem', letterSpacing: '-0.04em', color: 'var(--dark)' }}>
           COMP<span style={{ color: 'var(--primary)' }}>UTION</span>
         </Link>
@@ -477,8 +476,7 @@ const Login = () => {
         </div>
       </div>
 
-      {/* ── RIGHT VISUAL ── */}
-      <div style={{ flex: 1, background: 'var(--surface)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px', position: 'relative', overflow: 'hidden' }}>
+      <div className="login-visual">
         <div style={{ position: 'absolute', top: '-80px', right: '-80px', width: '320px', height: '320px', borderRadius: '50%', background: 'rgba(83,109,254,0.08)', filter: 'blur(40px)' }} />
         <div style={{ position: 'absolute', bottom: '-60px', left: '-60px', width: '240px', height: '240px', borderRadius: '50%', background: 'rgba(126,200,255,0.12)', filter: 'blur(30px)' }} />
 

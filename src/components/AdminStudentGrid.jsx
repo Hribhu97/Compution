@@ -87,7 +87,7 @@ const AdminStudentGrid = () => {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
         <h2 style={{ fontSize: '1.5rem', fontWeight: 800 }}>Student Management</h2>
         
-        <div style={{ position: 'relative', width: '300px' }}>
+        <div style={{ position: 'relative', width: '100%', maxWidth: '300px', flex: '1 1 200px' }}>
           <Search size={18} style={{ position: 'absolute', left: '16px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
           <input
             placeholder="Search students..."
@@ -106,7 +106,7 @@ const AdminStudentGrid = () => {
           {[1,2,3].map(i => <div key={i} style={{ height: 200, flex: 1, background: 'white', borderRadius: 20, animation: 'pulse 1.5s infinite' }} />)}
         </div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '20px' }}>
+        <div className="grid-auto-cards-sm">
           <AnimatePresence>
             {filteredStudents.map(student => {
               const initials = student.displayName?.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) || 'S';
@@ -130,7 +130,7 @@ const AdminStudentGrid = () => {
                     </div>
                   </div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', padding: '12px 0', borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)' }}>
+                  <div className="grid-2-col" style={{ gap: '8px', padding: '12px 0', borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)' }}>
                     <div>
                       <div style={{ fontSize: '0.7rem', color: 'var(--text-light)', fontWeight: 600 }}>ID</div>
                       <div style={{ fontSize: '0.85rem', fontWeight: 600 }}>{student.studentId}</div>
@@ -184,7 +184,7 @@ const AdminStudentGrid = () => {
               <div style={{ height: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-light)' }}>Loading stats...</div>
             ) : (
               <>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px' }}>
+                <div className="grid-stats-dashboard" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
                   <div style={{ padding: '16px', borderRadius: '12px', background: 'rgba(102,187,106,0.1)', border: '1px solid rgba(102,187,106,0.2)', textAlign: 'center' }}>
                     <div style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--success)' }}>{studentStats.present}</div>
                     <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--success)', marginTop: '4px' }}>PRESENT</div>

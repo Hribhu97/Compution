@@ -85,6 +85,7 @@ const ChatAssistant = () => {
         whileHover={{ scale: 1.05 }}
         whileTap={{ scale: 0.95 }}
         onClick={() => setIsOpen(true)}
+        className={`chat-fab${!isOpen ? ' pulse' : ''}`}
         style={{
           position: 'fixed', bottom: 24, right: 24, zIndex: 900,
           width: 60, height: 60, borderRadius: '50%',
@@ -93,7 +94,6 @@ const ChatAssistant = () => {
           color: 'white', border: 'none', cursor: 'pointer',
           boxShadow: '0 8px 24px rgba(83,109,254,0.35)',
         }}
-        className={!isOpen ? "pulse" : ""}
       >
         <MessageCircle size={28} />
       </motion.button>
@@ -111,13 +111,7 @@ const ChatAssistant = () => {
               animate={{ x: 0, opacity: 1 }}
               exit={{ x: 400, opacity: 0 }}
               transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-              style={{
-                position: 'fixed', bottom: 24, right: 24, zIndex: 999,
-                width: 380, height: 550, borderRadius: 24,
-                background: 'rgba(255,255,255,0.95)', backdropFilter: 'blur(10px)',
-                boxShadow: '0 12px 48px rgba(0,0,0,0.15)', border: '1px solid rgba(255,255,255,0.5)',
-                display: 'flex', flexDirection: 'column', overflow: 'hidden'
-              }}
+              className="chat-widget-panel"
             >
               <div style={{ background: 'linear-gradient(180deg, #536DFE 0%, #667FFF 100%)', padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: 'white' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>

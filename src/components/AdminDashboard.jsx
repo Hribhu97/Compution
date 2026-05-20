@@ -38,7 +38,7 @@ const AdminDashboard = () => {
       <div>
         <h1 style={{ fontSize: '1.75rem', fontWeight: 700, color: 'var(--dark)', marginBottom: '24px' }}>Admin Dashboard</h1>
         
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border)' }}>
+        <div className="dash-toolbar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border)', flexWrap: 'wrap', gap: '12px' }}>
           <div style={{ display: 'flex', gap: '24px' }}>
             {['This quarter', 'This year', 'Last year'].map((tab) => (
               <div 
@@ -67,7 +67,7 @@ const AdminDashboard = () => {
       </div>
 
       {/* TOP STATS */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '20px' }}>
+      <div className="grid-stats-dashboard">
         {[
           { label: 'Active users', value: students.length, suffix: '' },
           { label: 'Scores created', value: students.length * 4 + 17, suffix: '' },
@@ -91,7 +91,7 @@ const AdminDashboard = () => {
       </div>
 
       {/* MIDDLE SECTION */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+      <div className="grid-2-col">
         
         {/* Progress Bars Card */}
         <motion.div variants={item} whileHover={{ y: -4, boxShadow: '0 12px 24px rgba(0,0,0,0.06)' }} className="card card-p" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
@@ -160,11 +160,11 @@ const AdminDashboard = () => {
 
       {/* TABLE SECTION */}
       <motion.div variants={item}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '20px' }}>
+        <div className="dash-toolbar" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '20px', flexWrap: 'wrap', gap: '16px' }}>
           <h2 style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--dark)' }}>Student breakdown</h2>
           
-          <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
-            <div style={{ position: 'relative', width: '240px' }}>
+          <div style={{ display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap', width: '100%' }}>
+            <div style={{ position: 'relative', width: '100%', maxWidth: '240px', flex: '1 1 200px' }}>
               <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
               <input
                 placeholder="Search student..."
@@ -182,8 +182,8 @@ const AdminDashboard = () => {
           </div>
         </div>
 
-        <div style={{ background: 'white', borderRadius: '12px', overflow: 'hidden' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+        <div className="table-scroll" style={{ background: 'white', borderRadius: '12px' }}>
+          <table style={{ width: '100%', minWidth: '640px', borderCollapse: 'collapse', textAlign: 'left' }}>
             <thead>
               <tr style={{ borderBottom: '1px solid var(--border)' }}>
                 <th style={{ padding: '16px', fontSize: '0.85rem', fontWeight: 500, color: 'var(--text-muted)' }}>Student <span>↓</span></th>

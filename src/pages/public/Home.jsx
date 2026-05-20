@@ -1,10 +1,11 @@
 import React, { useState, useRef } from 'react';
-import { motion, useScroll, useTransform } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import {
   BookOpen, Terminal, Code, Trophy, Users, Clock,
   ArrowRight, CheckCircle, Star, ChevronRight,
-  Zap, Target, TrendingUp, Award, MapPin, Phone, Mail
+  Zap, Target, TrendingUp, Award, MapPin, Phone, Mail,
+  Menu, X
 } from 'lucide-react';
 import Modal from '../../components/Modal';
 
@@ -18,54 +19,105 @@ const fadeUp = {
 };
 
 /* ── NAVBAR ────────────────────────────────────────── */
+const NAV_LINKS = [
+  { label: 'Courses', href: '#courses' },
+  { label: 'Faculty', href: '#about' },
+  { label: 'Admissions', href: '#admissions' },
+  { label: 'Contact', href: '#admissions' },
+];
+
 const Navbar = () => {
   const [scrolled, setScrolled] = React.useState(false);
+  const [menuOpen, setMenuOpen] = React.useState(false);
+
   React.useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 40);
     window.addEventListener('scroll', onScroll);
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
+  React.useEffect(() => {
+    document.body.style.overflow = menuOpen ? 'hidden' : '';
+    return () => { document.body.style.overflow = ''; };
+  }, [menuOpen]);
+
+  const closeMenu = () => setMenuOpen(false);
+
   return (
-    <motion.nav
-      initial={{ y: -80, opacity: 0 }}
-      animate={{ y: 0, opacity: 1 }}
-      transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
-      style={{
-        position: 'fixed', top: 0, left: 0, right: 0, zIndex: 100,
-        padding: scrolled ? '12px 0' : '20px 0',
-        background: scrolled ? 'rgba(247,246,243,0.92)' : 'transparent',
-        backdropFilter: scrolled ? 'blur(16px)' : 'none',
-        borderBottom: scrolled ? '1px solid rgba(0,0,0,0.06)' : 'none',
-        transition: 'all 0.35s ease',
-      }}
-    >
-      <div className="container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 900, fontSize: '1.5rem', letterSpacing: '-0.04em', color: 'var(--dark)' }}>
-          COMP<span style={{ color: 'var(--primary)' }}>UTION</span>
+    <>
+      <motion.nav
+        initial={{ y: -80, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+        style={{
+          position: 'fixed', top: 0, left: 0, right: 0, zIndex: 100,
+          padding: scrolled ? '12px 0' : '20px 0',
+          background: scrolled || menuOpen ? 'rgba(247,246,243,0.92)' : 'transparent',
+          backdropFilter: scrolled || menuOpen ? 'blur(16px)' : 'none',
+          borderBottom: scrolled || menuOpen ? '1px solid rgba(0,0,0,0.06)' : 'none',
+          transition: 'all 0.35s ease',
+        }}
+      >
+        <div className="container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+          <a href="#" onClick={closeMenu} style={{ fontFamily: 'var(--font-heading)', fontWeight: 900, fontSize: 'clamp(1.15rem, 4vw, 1.5rem)', letterSpacing: '-0.04em', color: 'var(--dark)', flexShrink: 0 }}>
+            COMP<span style={{ color: 'var(--primary)' }}>UTION</span>
+          </a>
+          <div className="hide-mobile" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            {NAV_LINKS.map(item => (
+              <a key={item.label} href={item.href}
+                style={{ padding: '8px 16px', borderRadius: 'var(--radius-sm)', color: 'var(--text-muted)', fontWeight: 500, fontSize: '0.95rem', transition: 'var(--transition)' }}
+                onMouseEnter={e => e.target.style.color = 'var(--dark)'}
+                onMouseLeave={e => e.target.style.color = 'var(--text-muted)'}
+              >{item.label}</a>
+            ))}
+          </div>
+          <div className="hide-mobile" style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+            <Link to="/login" className="btn btn-ghost" style={{ padding: '10px 20px' }}>Student Login</Link>
+            <a href="#admissions" className="btn btn-primary" style={{ padding: '10px 20px' }}>Enroll Now</a>
+          </div>
+          <button
+            type="button"
+            className="hide-desktop hide-desktop--flex"
+            onClick={() => setMenuOpen(v => !v)}
+            aria-label={menuOpen ? 'Close menu' : 'Open menu'}
+            style={{ padding: '10px', borderRadius: 'var(--radius-sm)', color: 'var(--dark)', flexShrink: 0 }}
+          >
+            {menuOpen ? <X size={24} /> : <Menu size={24} />}
+          </button>
         </div>
-        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-          {['Courses', 'Faculty', 'Admissions', 'Contact'].map(item => (
-            <a key={item} href={`#${item.toLowerCase()}`}
-              style={{ padding: '8px 16px', borderRadius: 'var(--radius-sm)', color: 'var(--text-muted)', fontWeight: 500, fontSize: '0.95rem', transition: 'var(--transition)' }}
-              onMouseEnter={e => e.target.style.color = 'var(--dark)'}
-              onMouseLeave={e => e.target.style.color = 'var(--text-muted)'}
-            >{item}</a>
-          ))}
-        </div>
-        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-          <Link to="/login" className="btn btn-ghost" style={{ padding: '10px 20px' }}>Student Login</Link>
-          <a href="#admissions" className="btn btn-primary" style={{ padding: '10px 20px' }}>Enroll Now</a>
-        </div>
-      </div>
-    </motion.nav>
+      </motion.nav>
+
+      <AnimatePresence>
+        {menuOpen && (
+          <>
+            <motion.div
+              className="mobile-nav-overlay hide-desktop hide-desktop--block"
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              onClick={closeMenu}
+            />
+            <motion.div
+              className="mobile-nav-drawer hide-desktop hide-desktop--flex"
+              initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }}
+              transition={{ type: 'spring', damping: 28, stiffness: 320 }}
+            >
+              {NAV_LINKS.map(item => (
+                <a key={item.label} href={item.href} onClick={closeMenu}>{item.label}</a>
+              ))}
+              <div className="divider" style={{ margin: '12px 0' }} />
+              <Link to="/login" className="btn btn-ghost" style={{ width: '100%' }} onClick={closeMenu}>Student Login</Link>
+              <a href="#admissions" className="btn btn-primary" style={{ width: '100%' }} onClick={closeMenu}>Enroll Now</a>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+    </>
   );
 };
 
 /* ── HERO ──────────────────────────────────────────── */
 const Hero = () => (
   <section style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', paddingTop: '100px' }}>
-    <div className="container" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '80px', alignItems: 'center' }}>
+    <div className="container grid-hero">
       {/* Left */}
       <div>
         <motion.div variants={fadeUp} initial="hidden" animate="show" custom={0}>
@@ -92,7 +144,7 @@ const Hero = () => (
           <a href="#courses" className="btn btn-ghost btn-lg">Explore Courses</a>
         </motion.div>
         <motion.div variants={fadeUp} initial="hidden" animate="show" custom={4}
-          style={{ marginTop: '48px', display: 'flex', gap: '40px' }}>
+          className="grid-stats-row" style={{ marginTop: '48px' }}>
           {[['500+', 'Students Trained'], ['95%', 'Success Rate'], ['10+', 'Years Experience']].map(([val, label]) => (
             <div key={label}>
               <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 900, fontSize: '2rem', color: 'var(--dark)' }}>{val}</div>
@@ -107,6 +159,7 @@ const Hero = () => (
         initial={{ opacity: 0, x: 40 }}
         animate={{ opacity: 1, x: 0 }}
         transition={{ duration: 0.8, delay: 0.3, ease: [0.16, 1, 0.3, 1] }}
+        className="hero-visual-wrap"
         style={{ position: 'relative' }}
       >
         {/* Main editor card */}
@@ -157,7 +210,7 @@ const Hero = () => (
         <motion.div
           animate={{ y: [0, -8, 0] }}
           transition={{ repeat: Infinity, duration: 3.5, ease: 'easeInOut' }}
-          className="card"
+          className="card hero-float-card"
           style={{
             position: 'absolute', bottom: '-24px', left: '-32px',
             padding: '16px 20px',
@@ -178,7 +231,7 @@ const Hero = () => (
         <motion.div
           animate={{ y: [0, -8, 0] }}
           transition={{ repeat: Infinity, duration: 4, ease: 'easeInOut', delay: 0.5 }}
-          className="card"
+          className="card hero-float-card"
           style={{
             position: 'absolute', top: '-20px', right: '-24px',
             padding: '14px 18px',
@@ -220,7 +273,7 @@ const WhyCompution = () => {
           </p>
         </motion.div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '24px' }}>
+        <div className="grid-auto-cards" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 280px), 1fr))' }}>
           {features.map((f, i) => (
             <motion.div key={i} variants={fadeUp} initial="hidden" whileInView="show"
               viewport={{ once: true }} custom={i * 0.5}
@@ -273,7 +326,7 @@ const CoursesSection = () => {
           </div>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '24px' }}>
+        <div className="grid-auto-cards">
           {filtered.map((course, i) => (
             <motion.div key={course.title} layout
               initial={{ opacity: 0, y: 24 }}
@@ -439,12 +492,7 @@ const Admissions = () => {
     <section id="admissions" className="section" style={{ background: 'var(--white)' }}>
       <div className="container">
         <motion.div variants={fadeUp} initial="hidden" whileInView="show" viewport={{ once: true }}
-          style={{
-            background: 'linear-gradient(135deg, var(--dark) 0%, #363b47 100%)',
-            borderRadius: 'var(--radius-xl)', padding: '72px 80px',
-            display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '48px',
-            flexWrap: 'wrap'
-          }}>
+          className="admissions-cta">
           <div>
             <h2 style={{ color: 'white', marginBottom: '16px', fontSize: '2.25rem' }}>Ready to start learning?</h2>
             <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: '1.1rem', maxWidth: '480px', lineHeight: 1.7 }}>
@@ -518,7 +566,7 @@ const Admissions = () => {
 const Footer = () => (
   <footer style={{ background: 'var(--dark)', color: 'rgba(255,255,255,0.6)', padding: '60px 0 40px' }}>
     <div className="container">
-      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '60px', marginBottom: '48px' }}>
+      <div className="grid-footer" style={{ marginBottom: '48px' }}>
         <div>
           <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 900, fontSize: '1.5rem', color: 'white', marginBottom: '16px', letterSpacing: '-0.04em' }}>
             COMP<span style={{ color: 'var(--accent)' }}>UTION</span>
@@ -550,7 +598,7 @@ const Footer = () => (
         </div>
       </div>
       <div className="divider" style={{ background: 'rgba(255,255,255,0.08)', marginBottom: '28px' }} />
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.85rem' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.85rem', flexWrap: 'wrap', gap: '12px' }}>
         <span>© 2025 Compution. All rights reserved.</span>
         <span style={{ color: 'var(--accent)' }}>Learn. Code. Grow.</span>
       </div>

@@ -111,7 +111,7 @@ const Assignments = () => {
       </motion.div>
 
       {/* Content Grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '20px' }}>
+      <div className="grid-auto-cards">
         {loading ? (
           [1,2,3].map(i => <motion.div key={i} variants={item} style={{ height: 200, background: 'white', borderRadius: 20, animation: 'pulse 1.5s infinite' }} />)
         ) : tab === 'assignments' ? (
@@ -174,7 +174,7 @@ const Assignments = () => {
             <label className="form-label">Title</label>
             <input type="text" className="form-input" required value={assignForm.title} onChange={e => setAssignForm({...assignForm, title: e.target.value})} placeholder="e.g. React Hooks Project" />
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+          <div className="grid-2-col" style={{ gap: '16px' }}>
             <div>
               <label className="form-label">Subject</label>
               <input type="text" className="form-input" required value={assignForm.subject} onChange={e => setAssignForm({...assignForm, subject: e.target.value})} placeholder="e.g. Web Dev" />

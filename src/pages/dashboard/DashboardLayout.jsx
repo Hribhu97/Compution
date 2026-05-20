@@ -41,16 +41,16 @@ const DashboardLayout = () => {
     navigate('/login');
   };
 
+  const bottomNav = [
+    { to: '/dashboard', label: 'Home', icon: LayoutDashboard, exact: true },
+    { to: '/dashboard/courses', label: 'Courses', icon: BookOpen },
+    { to: '/dashboard/assignments', label: 'Tasks', icon: FileText },
+    { to: '/dashboard/community', label: 'Chat', icon: MessageSquare },
+  ];
+
   return (
-    <div style={{
-      display: 'flex', height: '100vh', background: '#F0F4FF',
-      overflow: 'hidden', padding: '20px', gap: '24px',
-    }}>
-      <aside style={{
-        width: '200px', background: 'linear-gradient(180deg, #536DFE 0%, #667FFF 100%)',
-        borderRadius: '24px', display: 'flex', flexDirection: 'column',
-        padding: '28px 16px 20px', flexShrink: 0, boxShadow: '0 8px 32px rgba(83, 109, 254, 0.25)',
-      }}>
+    <div className="dash-shell">
+      <aside className="dash-sidebar-panel hide-mobile">
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', paddingLeft: '8px', marginBottom: '40px' }}>
           <div style={{
             width: '32px', height: '32px', borderRadius: '50%', border: '2px solid rgba(255,255,255,0.6)',
@@ -91,14 +91,13 @@ const DashboardLayout = () => {
         </div>
       </aside>
 
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', gap: '0' }}>
-        <header style={{ display: 'flex', alignItems: 'center', gap: '16px', paddingBottom: '20px', flexShrink: 0 }}>
-          
-          <div style={{ fontWeight: 600, color: 'var(--dark)', fontSize: '1.05rem', marginRight: '16px' }}>
+      <div className="dash-main">
+        <header className="dash-header-bar">
+          <div className="dash-welcome" style={{ fontWeight: 600, color: 'var(--dark)', fontSize: '1.05rem', marginRight: '16px' }}>
             Welcome back, {user?.role === 'admin' ? 'Admin' : (user?.displayName?.split(' ')[0] || 'Student')} 👋
           </div>
 
-          <div style={{ position: 'relative', flex: 1, maxWidth: '420px' }}>
+          <div className="dash-search-wrap">
             <Search size={18} style={{ position: 'absolute', left: '16px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
             <input
               placeholder="Search courses...."
@@ -111,7 +110,7 @@ const DashboardLayout = () => {
             />
           </div>
 
-          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <div className="dash-header-actions" style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '16px' }}>
             <button style={{ position: 'relative', color: 'var(--text-muted)', padding: '8px' }}>
               <Bell size={22} />
               {hasUnread && <span style={{ position: 'absolute', top: '6px', right: '6px', width: '8px', height: '8px', background: 'var(--danger)', borderRadius: '50%', border: '2px solid #F0F4FF' }} />}
@@ -135,7 +134,7 @@ const DashboardLayout = () => {
                     {(user?.displayName || 'S')[0].toUpperCase()}
                   </div>
                 )}
-                <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>{user?.displayName || 'Student'} ▼</span>
+                <span className="hide-mobile" style={{ fontWeight: 600, fontSize: '0.9rem' }}>{user?.displayName || 'Student'} ▼</span>
               </div>
 
               <AnimatePresence>
@@ -167,7 +166,7 @@ const DashboardLayout = () => {
           </div>
         </header>
 
-        <div style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none' }}>
+        <div className="dash-body-scroll">
           <AnimatePresence mode="wait">
             <motion.div
               key={typeof window !== 'undefined' ? window.location.pathname : ''}
@@ -179,6 +178,15 @@ const DashboardLayout = () => {
           </AnimatePresence>
         </div>
       </div>
+      <nav className="dash-bottom-nav hide-desktop hide-desktop--flex" aria-label="Mobile navigation">
+        {bottomNav.map(({ to, label, icon: Icon, exact }) => (
+          <NavLink key={to} to={to} end={exact} className={({ isActive }) => isActive ? 'active' : ''}>
+            <Icon size={20} />
+            <span>{label}</span>
+          </NavLink>
+        ))}
+      </nav>
+
       <ChatAssistant />
     </div>
   );
