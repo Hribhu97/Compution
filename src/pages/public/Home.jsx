@@ -546,9 +546,9 @@ const Admissions = ({ onOpenAdmission }) => {
             </p>
             <div style={{ marginTop: '28px', display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
               {[
-                { icon: <MapPin size={16} />, text: 'J.K. Mitra Road, Kolkata – 700037' },
-                { icon: <Phone size={16} />, text: 'Call to Enquire' },
-                { icon: <Mail size={16} />, text: 'admissions@compution.in' },
+                { icon: <MapPin size={16} />, text: '20. J.K.Mitra Road, Kol-37' },
+                { icon: <Phone size={16} />, text: '+91-96740-35542' },
+                { icon: <Mail size={16} />, text: 'Compution.kolkata@gmail.com' },
               ].map((item, i) => (
                 <span key={i} style={{ color: 'rgba(255,255,255,0.7)', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.9rem' }}>
                   <span style={{ color: 'var(--accent)' }}>{item.icon}</span>
@@ -582,7 +582,7 @@ const Footer = ({ onOpenAdmission }) => (
             Kolkata's focused computer science institute. Academic support meets real programming skills.
           </p>
           <div style={{ marginTop: '20px', display: 'flex', alignItems: 'center', gap: '8px', color: 'rgba(255,255,255,0.5)', fontSize: '0.85rem' }}>
-            <MapPin size={14} /> J.K. Mitra Road, Kolkata – 700037
+            <MapPin size={14} /> 20. J.K.Mitra Road, Kol-37
           </div>
         </div>
         <div>
