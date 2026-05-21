@@ -19,13 +19,20 @@ const Modal = ({ isOpen, onClose, title, children }) => {
   return (
     <AnimatePresence>
       {isOpen && (
-        <>
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1100
+        }}>
           <motion.div
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             onClick={onClose}
             style={{
-              position: 'fixed', inset: 0, background: 'rgba(34, 37, 43, 0.45)',
-              backdropFilter: 'blur(6px)', zIndex: 1100
+              position: 'absolute', inset: 0, background: 'rgba(34, 37, 43, 0.45)',
+              backdropFilter: 'blur(6px)', zIndex: 1
             }}
             aria-hidden="true"
           />
@@ -39,10 +46,10 @@ const Modal = ({ isOpen, onClose, title, children }) => {
             transition={{ type: 'spring', damping: 25, stiffness: 300 }}
             onClick={(e) => e.stopPropagation()}
             style={{
-              position: 'fixed', left: '50%', top: '50%', x: '-50%', y: '-50%',
+              position: 'relative',
               width: 'min(500px, calc(100vw - 32px))', maxHeight: 'min(90vh, 90dvh)', overflowY: 'auto',
               background: 'white', borderRadius: '24px',
-              boxShadow: '0 24px 48px rgba(0,0,0,0.12)', zIndex: 1101,
+              boxShadow: '0 24px 48px rgba(0,0,0,0.12)', zIndex: 2,
               padding: 'clamp(20px, 5vw, 32px)'
             }}
           >
@@ -58,7 +65,7 @@ const Modal = ({ isOpen, onClose, title, children }) => {
             </div>
             {children}
           </motion.div>
-        </>
+        </div>
       )}
     </AnimatePresence>
   );
