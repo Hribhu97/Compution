@@ -20,14 +20,30 @@ const fadeUp = {
 };
 
 const ADMISSION_SUBJECTS = [
-  'Class XI & XII Computer Science', 'Class XI & XII Computer Application', 'Python Mastery',
-  'C & C++ Fundamentals', 'Java Development', 'Web Development',
-  'Data Structures & Algorithms', 'B.Sc/BCA Support',
+  'Python Mastery',
+  'Data Structures & Algorithms',
+  'Class 2',
+  'Class 3',
+  'Class 4',
+  'Class 5',
+  'Class 6',
+  'Class 7',
+  'Class 8',
+  'Class 9',
+  'Class 10',
+  'Class 11 CS',
+  'Class 11 APP',
+  'Class 12 CS',
+  'Class 12 APP',
+  'Web Development (HTML/CSS/JS)',
+  'Java Development',
+  'C & C++ Fundamentals',
+  'BCA / B.Tech Computer Science Coaching'
 ];
 
 /* ── ADMISSION POPUP ───────────────────────────────── */
 const AdmissionApplicationModal = ({ isOpen, onClose, triggerToast }) => {
-  const [form, setForm] = useState({ name: '', contact: '', subject: 'Class XI & XII Computer Science' });
+  const [form, setForm] = useState({ name: '', contact: '', subject: 'Class 11 CS' });
   const [status, setStatus] = useState('idle'); // 'idle' | 'submitting' | 'success'
 
   const handleSubmit = (e) => {
@@ -42,7 +58,7 @@ const AdmissionApplicationModal = ({ isOpen, onClose, triggerToast }) => {
         triggerToast("Opening WhatsApp to complete your application...");
         window.open(`https://wa.me/919674035542?text=${text}`, '_blank');
         onClose();
-        setForm({ name: '', contact: '', subject: 'Class XI CS' });
+        setForm({ name: '', contact: '', subject: 'Class 11 CS' });
         setStatus('idle');
       }, 1000);
     }, 1500);
