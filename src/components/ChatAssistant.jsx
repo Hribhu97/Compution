@@ -10,7 +10,7 @@ const FAQ_DATA = [
   { q: ["courses", "offer", "what do you teach"], a: "We offer Computer Science classes for XI, XII, B.Sc, B.Tech and programming courses." },
   { q: ["timing", "class time", "when are classes"], a: "Classes run from 8AM to 8PM depending on batch." },
   { q: ["pay", "fees", "payment"], a: "You can pay from the Fees section or contact administration." },
-  { q: ["location", "address", "where is"], a: "J.K. Mitra Road, Kolkata 700037." },
+  { q: ["location", "address", "where is"], a: "20, J.K. Mitra Road, Kolkata 700037." },
   { q: ["tests", "exam", "assessment"], a: "Tests are conducted weekly and monthly." },
   { q: ["contact", "support", "help"], a: "Contact administration or use the help section." }
 ];

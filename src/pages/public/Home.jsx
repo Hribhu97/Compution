@@ -20,14 +20,14 @@ const fadeUp = {
 };
 
 const ADMISSION_SUBJECTS = [
-  'Class XI CS', 'Class XII CS', 'Computer Application', 'Python Mastery',
+  'Class XI & XII Computer Science', 'Class XI & XII Computer Application', 'Python Mastery',
   'C & C++ Fundamentals', 'Java Development', 'Web Development',
   'Data Structures & Algorithms', 'B.Sc/BCA Support',
 ];
 
 /* ── ADMISSION POPUP ───────────────────────────────── */
 const AdmissionApplicationModal = ({ isOpen, onClose, triggerToast }) => {
-  const [form, setForm] = useState({ name: '', contact: '', subject: 'Class XI CS' });
+  const [form, setForm] = useState({ name: '', contact: '', subject: 'Class XI & XII Computer Science' });
   const [status, setStatus] = useState('idle'); // 'idle' | 'submitting' | 'success'
 
   const handleSubmit = (e) => {
@@ -330,7 +330,7 @@ const Hero = ({ onOpenAdmission }) => (
         </motion.div>
         <motion.div variants={fadeUp} initial="hidden" animate="show" custom={4}
           className="grid-stats-row" style={{ marginTop: '48px' }}>
-          {[['500+', 'Students Trained'], ['95%', 'Success Rate'], ['10+', 'Years Experience']].map(([val, label]) => (
+          {[['500+', 'Students Trained'], ['95%', 'Success Rate'], ['5+', 'Years Experience']].map(([val, label]) => (
             <div key={label}>
               <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 900, fontSize: '2rem', color: 'var(--dark)' }}>{val}</div>
               <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: 500 }}>{label}</div>
@@ -483,9 +483,8 @@ const CoursesSection = () => {
   const filters = ['All', 'Academic', 'Programming', 'Undergraduate'];
 
   const courses = [
-    { tag: 'Academic', title: 'Class XI Computer Science', desc: 'Complete CBSE syllabus with programming fundamentals in Python and C++.', color: '#536DFE', icon: '📘', duration: '1 Year', students: '12/15' },
-    { tag: 'Academic', title: 'Class XII Computer Science', desc: 'Board exam mastery — algorithms, SQL, networking, and full stack project.', color: '#7C4DFF', icon: '📗', duration: '1 Year', students: '10/15' },
-    { tag: 'Academic', title: 'Computer Application (XI-XII)', desc: 'Applied computing, databases, and real-world software development skills.', color: '#0097A7', icon: '📙', duration: '1 Year', students: '8/15' },
+    { tag: 'Academic', title: 'Class XI & XII Computer Science', desc: 'Board exam mastery & complete syllabus — programming fundamentals, SQL, networking, and full-stack projects in Python, C++ & Java.', color: '#536DFE', icon: '📘', duration: '1-2 Years', students: '22/30' },
+    { tag: 'Academic', title: 'Class XI & XII Computer Application', desc: 'Applied computing, database management, HTML/CSS/JS, and real-world software development skills scaled to school standards.', color: '#0097A7', icon: '📙', duration: '1-2 Years', students: '18/30' },
     { tag: 'Programming', title: 'Python Mastery', desc: 'From syntax to data structures, OOP, file handling, and mini projects.', color: '#3776AB', icon: '🐍', duration: '3 Months', students: '14/15' },
     { tag: 'Programming', title: 'C & C++ Fundamentals', desc: 'Pointers, memory management, OOP concepts and competitive coding basics.', color: '#00599C', icon: '⚡', duration: '3 Months', students: '11/15' },
     { tag: 'Programming', title: 'Java Development', desc: 'OOP deep dive, exception handling, collections, and desktop application.', color: '#ED8B00', icon: '☕', duration: '4 Months', students: '9/15' },
@@ -861,13 +860,21 @@ const OurStories = ({ onOpenAdmission }) => {
             </p>
             <div style={{ marginTop: '28px', display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
               {[
-                { icon: <MapPin size={16} />, text: 'J.K. Mitra Road, Kolkata – 700037' },
-                { icon: <Phone size={16} />, text: 'Call to Enquire' },
-                { icon: <Mail size={16} />, text: 'admissions@compution.in' },
+                { icon: <MapPin size={16} />, text: '20, J.K. Mitra Road, Kolkata – 700037' },
+                { icon: <Phone size={16} />, text: '+91-9674035542', href: 'tel:+919674035542' },
+                { icon: <Mail size={16} />, text: 'compution.kolkata@gmail.com', href: 'mailto:compution.kolkata@gmail.com' },
               ].map((item, i) => (
                 <span key={i} style={{ color: 'rgba(255,255,255,0.7)', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.9rem' }}>
                   <span style={{ color: 'var(--accent)' }}>{item.icon}</span>
-                  {item.text}
+                  {item.href ? (
+                    <a href={item.href} style={{ color: 'inherit', textDecoration: 'none', transition: 'color 0.2s' }}
+                       onMouseEnter={e => e.target.style.color = 'white'}
+                       onMouseLeave={e => e.target.style.color = 'inherit'}>
+                      {item.text}
+                    </a>
+                  ) : (
+                    item.text
+                  )}
                 </span>
               ))}
             </div>
@@ -897,7 +904,7 @@ const Footer = ({ onOpenAdmission }) => (
             Kolkata's focused computer science institute. Academic support meets real programming skills.
           </p>
           <div style={{ marginTop: '20px', display: 'flex', alignItems: 'center', gap: '8px', color: 'rgba(255,255,255,0.5)', fontSize: '0.85rem' }}>
-            <MapPin size={14} /> J.K. Mitra Road, Kolkata – 700037
+            <MapPin size={14} /> 20, J.K. Mitra Road, Kolkata – 700037
           </div>
         </div>
         <div>
