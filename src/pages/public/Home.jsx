@@ -207,8 +207,8 @@ const AdmissionApplicationModal = ({ isOpen, onClose, triggerToast }) => {
 const NAV_LINKS = [
   { label: 'Courses', href: '#courses' },
   { label: 'Faculty', href: '#about' },
-  { label: 'Admissions', href: '#admissions' },
-  { label: 'Contact', href: '#admissions' },
+  { label: 'Our Stories', href: '#stories' },
+  { label: 'Contact', href: '#stories' },
 ];
 
 const Navbar = ({ onOpenAdmission }) => {
@@ -654,15 +654,208 @@ const Testimonials = () => {
   );
 };
 
-/* ── ADMISSIONS CTA ────────────────────────────────── */
-const Admissions = ({ onOpenAdmission }) => {
+/* ── STORIES DATA ─────────────────────────────────── */
+const STORIES_DATA = [
+  {
+    category: 'Board Toppers',
+    title: 'Deepanjan Saha',
+    subtitle: '99/100 in ISC Computer Science (2024)',
+    desc: 'Deepanjan (Class XII, La Martiniere for Boys) mastered Java Object-Oriented Programming, recursive algorithms, and complex stack data structures. Through our interactive problem-solving method, he built the confidence to ace his board paper.',
+    quote: 'Compution helped me break down complex Java theory into simple logical parts. The class tests and doubt-clearing sessions were invaluable.',
+    badge: 'ISC Topper',
+    image: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&q=80&w=600'
+  },
+  {
+    category: 'Board Toppers',
+    title: 'Sagnik Sen',
+    subtitle: '98/100 in CBSE XII Computer Science (2024)',
+    desc: 'Sagnik (Class XII, Delhi Public School, Ruby Park) excelled in his SQL database design and Python programming segments. He built and presented a full library management database system as part of his CBSE practical assessment.',
+    quote: 'The practical hands-on approach and direct guidance from tape-by-tape debugging in SQL made all the difference in my scores.',
+    badge: 'CBSE Topper',
+    image: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=600'
+  },
+  {
+    category: 'Lab Sessions',
+    title: 'Python Automation Bootcamp',
+    subtitle: 'Weekend Coding Intensive (October 2024)',
+    desc: 'A dedicated weekend bootcamp where students collaborated in our computer laboratory. Over 12 hours of intensive coding, students built CLI tools, web scrapers, and local automation scripts in Python.',
+    quote: 'Seeing the script run and fetch data live from a website was like magic. It is so different from writing code on a sheet of paper!',
+    badge: 'Python Lab',
+    image: 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&q=80&w=600'
+  },
+  {
+    category: 'Lab Sessions',
+    title: 'Class XI Logic Building',
+    subtitle: 'Kickstarting Programming Journeys (July 2024)',
+    desc: 'Our introductory lab session designed to help Class XI students shift from syntax memorization to structural logic. Students dry-run loops, understand array indices, and write basic arithmetic games.',
+    quote: 'Learning how to break down a problem step-by-step helped me overcome my fear of programming in school.',
+    badge: 'Logic Lab',
+    image: 'https://images.unsplash.com/photo-1531482615713-2afd69097998?auto=format&fit=crop&q=80&w=600'
+  },
+  {
+    category: 'Projects',
+    title: 'Rohan Banerjee',
+    subtitle: 'BCA 3rd Sem (Heritage Academy) Topper',
+    desc: 'Rohan developed a Java GUI billing dashboard for small businesses. His project featured interactive data tables, SQLite database integration, and receipt generation, earning him a top grade in his semester.',
+    quote: 'At Compution, I learned how to structure real software. The B.Sc/BCA semester support classes gave me both theory and real-world coding skills.',
+    badge: 'Java Project',
+    image: 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?auto=format&fit=crop&q=80&w=600'
+  },
+  {
+    category: 'Projects',
+    title: 'Shreya Mitra',
+    subtitle: 'B.Tech CSE, Full-Stack Project',
+    desc: 'Shreya created a complete student tracker application using React and Firestore database. The application enables tutors to log student progress, marks, and view analytics charts in real time.',
+    quote: 'Building a real React + Firebase app from scratch taught me Git version control, state management, and async database APIs.',
+    badge: 'React Project',
+    image: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&q=80&w=600'
+  }
+];
+
+/* ── OUR STORIES SECTION ───────────────────────────── */
+const OurStories = ({ onOpenAdmission }) => {
+  const [activeFilter, setActiveFilter] = useState('All');
+  const filters = ['All', 'Board Toppers', 'Lab Sessions', 'Projects'];
+
+  const filteredStories = activeFilter === 'All'
+    ? STORIES_DATA
+    : STORIES_DATA.filter(s => s.category === activeFilter);
+
   return (
-    <section id="admissions" className="section" style={{ background: 'var(--white)' }}>
+    <section id="stories" className="section" style={{ background: 'var(--white)' }}>
       <div className="container">
-        <motion.div variants={fadeUp} initial="hidden" whileInView="show" viewport={{ once: true }}
-          className="admissions-cta">
+        <motion.div
+          variants={fadeUp}
+          initial="hidden"
+          whileInView="show"
+          viewport={{ once: true }}
+          style={{ textAlign: 'center', marginBottom: '48px' }}
+        >
+          <span className="badge badge-primary" style={{ marginBottom: '16px' }}>Student Success</span>
+          <h2>Our stories <span className="gradient-text">from the classroom & lab</span></h2>
+          <p style={{ marginTop: '16px', color: 'var(--text-muted)', fontSize: '1.1rem', maxWidth: '600px', margin: '16px auto 0' }}>
+            Discover the achievements, practical workshops, and code projects created by our students at Compution Kolkata.
+          </p>
+        </motion.div>
+
+        {/* Filter Chips */}
+        <div style={{ display: 'flex', justifyContent: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '40px' }}>
+          {filters.map(f => (
+            <button
+              key={f}
+              className={`chip ${activeFilter === f ? 'active' : ''}`}
+              onClick={() => setActiveFilter(f)}
+              style={{
+                padding: '10px 20px',
+                borderRadius: '100px',
+                fontWeight: 600,
+                fontSize: '0.9rem',
+                border: '1.5px solid rgba(83,109,254,0.15)',
+                cursor: 'pointer',
+                background: activeFilter === f ? 'var(--primary)' : 'white',
+                color: activeFilter === f ? 'white' : 'var(--text-main)',
+                transition: 'all 0.2s ease-in-out'
+              }}
+            >
+              {f}
+            </button>
+          ))}
+        </div>
+
+        {/* Grid of stories */}
+        <motion.div
+          layout
+          className="grid-auto-cards"
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 340px), 1fr))',
+            gap: '32px',
+            marginBottom: '64px'
+          }}
+        >
+          <AnimatePresence mode="popLayout">
+            {filteredStories.map((story) => (
+              <motion.div
+                layout
+                key={story.title}
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.9 }}
+                transition={{ duration: 0.35 }}
+                className="card"
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  overflow: 'hidden',
+                  height: '100%',
+                  border: '1px solid var(--border)',
+                  boxShadow: 'var(--shadow-sm)'
+                }}
+              >
+                {/* Image Wrap */}
+                <div style={{ position: 'relative', height: '200px', overflow: 'hidden' }}>
+                  <img
+                    src={story.image}
+                    alt={story.title}
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      objectFit: 'cover',
+                      transition: 'transform 0.5s ease'
+                    }}
+                    onMouseEnter={e => e.target.style.transform = 'scale(1.05)'}
+                    onMouseLeave={e => e.target.style.transform = 'scale(1)'}
+                  />
+                  <span
+                    className="badge"
+                    style={{
+                      position: 'absolute',
+                      top: '16px',
+                      right: '16px',
+                      background: 'rgba(255,255,255,0.9)',
+                      backdropFilter: 'blur(8px)',
+                      color: 'var(--primary)',
+                      fontWeight: 700,
+                      fontSize: '0.78rem',
+                      padding: '4px 10px',
+                      borderRadius: '100px',
+                      border: '1px solid rgba(83,109,254,0.2)'
+                    }}
+                  >
+                    {story.badge}
+                  </span>
+                </div>
+
+                {/* Card Body */}
+                <div className="card-p" style={{ display: 'flex', flexDirection: 'column', flex: 1, padding: '24px' }}>
+                  <div style={{ fontSize: '0.8rem', color: 'var(--primary)', fontWeight: 700, textTransform: 'uppercase', tracking: '0.05em', marginBottom: '6px' }}>
+                    {story.category}
+                  </div>
+                  <h3 style={{ fontSize: '1.25rem', marginBottom: '4px', fontWeight: 800 }}>{story.title}</h3>
+                  <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: 600, marginBottom: '14px' }}>{story.subtitle}</div>
+                  <p style={{ color: 'var(--text-muted)', fontSize: '0.92rem', lineHeight: 1.6, marginBottom: '20px', flex: 1 }}>
+                    {story.desc}
+                  </p>
+
+                  <div style={{ background: 'var(--bg)', padding: '14px 18px', borderRadius: '12px', borderLeft: '3px solid var(--primary)', fontStyle: 'italic', fontSize: '0.88rem', color: 'var(--text-main)' }}>
+                    &ldquo;{story.quote}&rdquo;
+                  </div>
+                </div>
+              </motion.div>
+            ))}
+          </AnimatePresence>
+        </motion.div>
+
+        {/* Admissions CTA */}
+        <motion.div
+          variants={fadeUp}
+          initial="hidden"
+          whileInView="show"
+          viewport={{ once: true }}
+          className="admissions-cta"
+        >
           <div>
-            <h2 style={{ color: 'white', marginBottom: '16px', fontSize: '2.25rem' }}>Ready to start learning?</h2>
+            <h2 style={{ color: 'white', marginBottom: '16px', fontSize: '2.25rem' }}>Start your story with us</h2>
             <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: '1.1rem', maxWidth: '480px', lineHeight: 1.7 }}>
               New batches starting soon. Limited seats. Walk in or call us to secure your place.
             </p>
@@ -832,7 +1025,7 @@ const Home = () => {
       <CoursesSection />
       <LearningJourney />
       <Testimonials />
-      <Admissions onOpenAdmission={openAdmission} />
+      <OurStories onOpenAdmission={openAdmission} />
       <Footer onOpenAdmission={openAdmission} />
       
       <AdmissionApplicationModal 

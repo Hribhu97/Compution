@@ -9,6 +9,7 @@ import {
   sendEmailVerification,
   signOut,
   updateProfile,
+  sendPasswordResetEmail,
 } from 'firebase/auth';
 import { auth, googleProvider } from '../../firebase';
 
@@ -165,7 +166,24 @@ const Login = () => {
 
   /* ── Switch view helpers ── */
   const goToRegister = () => { setView('register'); setError(''); setForm({ email: '', password: '', name: '' }); };
-  const goToLogin = () => { setView('login'); setError(''); setForm({ email: '', password: '', name: '' }); setVerifyEmail(''); setResent(false); };
+  const goToLogin = () => { setView('login'); setError(''); setForm(f => ({ ...f, password: '', name: '' })); setVerifyEmail(''); setResent(false); };
+
+  /* ── Password Reset ── */
+  const handlePasswordReset = async (e) => {
+    e.preventDefault();
+    if (!form.email.trim()) { setError('Please enter your email'); return; }
+
+    setLoading(true);
+    setError('');
+    try {
+      await sendPasswordResetEmail(auth, form.email.trim());
+      setView('reset-success');
+    } catch (err) {
+      setError(friendlyError(err.code));
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <div className="login-layout">
@@ -267,6 +285,94 @@ const Login = () => {
                 </motion.div>
               )}
 
+              {/* ════════════ FORGOT PASSWORD VIEW ════════════ */}
+              {view === 'forgot' && (
+                <motion.div key="forgot-form"
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: 20 }}
+                  transition={{ duration: 0.3 }}
+                >
+                  <h1 style={{ fontSize: '2.25rem', marginBottom: '8px' }}>Reset Password</h1>
+                  <p style={{ color: 'var(--text-muted)', marginBottom: '36px', fontSize: '1rem' }}>
+                    Enter your email to receive a password reset link.
+                  </p>
+
+                  <form onSubmit={handlePasswordReset} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                    {/* Email */}
+                    <div>
+                      <label className="form-label">Email</label>
+                      <input
+                        name="email" type="email"
+                        value={form.email} onChange={handleChange}
+                        className="form-input"
+                        placeholder="you@example.com"
+                        autoComplete="email"
+                        required
+                      />
+                    </div>
+
+                    {/* Error */}
+                    <AnimatePresence>
+                      {error && (
+                        <motion.div
+                          initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
+                          style={{ background: 'rgba(239,83,80,0.08)', border: '1px solid rgba(239,83,80,0.2)', borderRadius: 'var(--radius-md)', padding: '12px 16px', color: 'var(--danger)', fontSize: '0.9rem', fontWeight: 500 }}
+                        >{error}</motion.div>
+                      )}
+                    </AnimatePresence>
+
+                    {/* Submit */}
+                    <motion.button type="submit" className="btn btn-primary" whileTap={{ scale: 0.97 }}
+                      disabled={loading}
+                      style={{ padding: '16px', fontSize: '1.05rem', marginTop: '4px', width: '100%', justifyContent: 'center' }}>
+                      {loading ? <Spinner /> : 'Get reset link'}
+                    </motion.button>
+                  </form>
+
+                  {/* Switch to Login */}
+                  <p style={{ textAlign: 'center', marginTop: '28px', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
+                    <button type="button" onClick={goToLogin} style={{ color: 'var(--primary)', fontWeight: 700, fontSize: '0.9rem' }}>
+                      ← Back to Sign In
+                    </button>
+                  </p>
+                </motion.div>
+              )}
+
+              {/* ════════════ RESET SUCCESS VIEW ════════════ */}
+              {view === 'reset-success' && (
+                <motion.div key="reset-success"
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0 }}
+                  style={{ textAlign: 'center', padding: '20px 0' }}
+                >
+                  <div style={{
+                    width: '80px', height: '80px', borderRadius: '50%',
+                    background: 'rgba(76,175,80,0.1)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    margin: '0 auto 24px',
+                  }}>
+                    <CheckCircle size={36} color="var(--success)" />
+                  </div>
+
+                  <h2 style={{ fontSize: '1.75rem', marginBottom: '12px' }}>Check your email</h2>
+                  <p style={{ color: 'var(--text-muted)', fontSize: '1rem', lineHeight: 1.7, marginBottom: '24px' }}>
+                    we sent you a password reset link to <strong style={{ color: 'var(--primary)' }}>{form.email}</strong>
+                  </p>
+
+                  {/* Sign In Button */}
+                  <motion.button
+                    className="btn btn-primary"
+                    whileTap={{ scale: 0.97 }}
+                    onClick={goToLogin}
+                    style={{ width: '100%', padding: '16px', fontSize: '1.05rem', justifyContent: 'center' }}
+                  >
+                    Sign In
+                  </motion.button>
+                </motion.div>
+              )}
+
               {/* ════════════ LOGIN VIEW ════════════ */}
               {view === 'login' && (
                 <motion.div key="login-form"
@@ -297,7 +403,16 @@ const Login = () => {
                     <div>
                       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                         <label className="form-label">Password</label>
-                        <a href="#" style={{ fontSize: '0.88rem', color: 'var(--primary)', fontWeight: 600 }}>Forgot password?</a>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setView('forgot');
+                            setError('');
+                          }}
+                          style={{ fontSize: '0.88rem', color: 'var(--primary)', fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+                        >
+                          Forgot password?
+                        </button>
                       </div>
                       <div style={{ position: 'relative' }}>
                         <input

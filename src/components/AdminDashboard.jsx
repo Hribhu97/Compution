@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { db } from '../firebase';
 import { collection, onSnapshot } from 'firebase/firestore';
-import { Search, Download, Plus, MoreHorizontal, Eye, ArrowUpRight } from 'lucide-react';
+import { Search, Download, Plus, MoreHorizontal, Eye, ArrowUpRight, Sparkles } from 'lucide-react';
 
 const stagger = { show: { transition: { staggerChildren: 0.05 } } };
 const item = { hidden: { opacity: 0, y: 10 }, show: { opacity: 1, y: 0, transition: { duration: 0.3 } } };
@@ -12,6 +12,24 @@ const AdminDashboard = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('This quarter');
+  
+  const [simulatedPeriod, setSimulatedPeriod] = useState(() => {
+    return localStorage.getItem('simulatedPeriod') || 'new';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('simulatedPeriod', simulatedPeriod);
+    window.dispatchEvent(new Event('simulatedPeriodChanged'));
+  }, [simulatedPeriod]);
+
+  useEffect(() => {
+    const handleSync = () => {
+      const saved = localStorage.getItem('simulatedPeriod');
+      if (saved) setSimulatedPeriod(saved);
+    };
+    window.addEventListener('simulatedPeriodChanged', handleSync);
+    return () => window.removeEventListener('simulatedPeriodChanged', handleSync);
+  }, []);
 
   useEffect(() => {
     const unsub = onSnapshot(collection(db, 'users'), (snap) => {
@@ -34,6 +52,82 @@ const AdminDashboard = () => {
   return (
     <motion.div variants={stagger} initial="hidden" animate="show" style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
       
+      {/* Real-time Simulator Toggler */}
+      <motion.div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        background: 'rgba(255, 255, 255, 0.75)',
+        backdropFilter: 'blur(12px)',
+        WebkitBackdropFilter: 'blur(12px)',
+        padding: '12px 24px',
+        borderRadius: 'var(--radius-lg)',
+        border: '1px solid var(--border)',
+        boxShadow: 'var(--shadow-sm)',
+        flexWrap: 'wrap',
+        gap: '12px'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div style={{
+            width: 8, height: 8, borderRadius: '50%', background: 'var(--primary)',
+            animation: 'pulse 2s infinite'
+          }} />
+          <span style={{ fontWeight: 700, fontSize: '0.88rem', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <Sparkles size={14} style={{ color: 'var(--primary)' }} /> Simulator Controls (Student Experience Preview)
+          </span>
+        </div>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <div style={{ display: 'flex', background: 'var(--surface)', borderRadius: '100px', padding: '3px' }}>
+            <button
+              onClick={() => setSimulatedPeriod('new')}
+              style={{
+                padding: '8px 16px',
+                borderRadius: '100px',
+                fontSize: '0.82rem',
+                fontWeight: 700,
+                background: simulatedPeriod === 'new' ? 'var(--white)' : 'transparent',
+                color: simulatedPeriod === 'new' ? 'var(--primary)' : 'var(--text-muted)',
+                boxShadow: simulatedPeriod === 'new' ? 'var(--shadow-sm)' : 'none',
+                border: 'none',
+                cursor: 'pointer',
+                transition: 'var(--transition)'
+              }}
+            >
+              🆕 New Student
+            </button>
+            <button
+              onClick={() => setSimulatedPeriod('established')}
+              style={{
+                padding: '8px 16px',
+                borderRadius: '100px',
+                fontSize: '0.82rem',
+                fontWeight: 700,
+                background: simulatedPeriod === 'established' ? 'var(--white)' : 'transparent',
+                color: simulatedPeriod === 'established' ? 'var(--primary)' : 'var(--text-muted)',
+                boxShadow: simulatedPeriod === 'established' ? 'var(--shadow-sm)' : 'none',
+                border: 'none',
+                cursor: 'pointer',
+                transition: 'var(--transition)'
+              }}
+            >
+              🎓 Established Student
+            </button>
+          </div>
+          <button 
+            onClick={() => {
+              localStorage.removeItem('simulatedPeriod');
+              window.dispatchEvent(new Event('simulatedPeriodChanged'));
+              setSimulatedPeriod('new');
+            }}
+            className="btn btn-ghost"
+            style={{ padding: '8px 12px', fontSize: '0.78rem', borderRadius: '100px', height: 'auto' }}
+            title="Clear manual override and restore automatic progress-based mode"
+          >
+            Reset
+          </button>
+        </div>
+      </motion.div>
+
       {/* HEADER */}
       <div>
         <h1 style={{ fontSize: '1.75rem', fontWeight: 700, color: 'var(--dark)', marginBottom: '24px' }}>Admin Dashboard</h1>
@@ -190,6 +284,7 @@ const AdminDashboard = () => {
                 <th style={{ padding: '16px', fontSize: '0.85rem', fontWeight: 500, color: 'var(--text-muted)' }}>Last activity <span>↓</span></th>
                 <th style={{ padding: '16px', fontSize: '0.85rem', fontWeight: 500, color: 'var(--text-muted)' }}>Course</th>
                 <th style={{ padding: '16px', fontSize: '0.85rem', fontWeight: 500, color: 'var(--text-muted)' }}>ID <span>↓</span></th>
+                <th style={{ padding: '16px', fontSize: '0.85rem', fontWeight: 500, color: 'var(--text-muted)' }}>Course Progress <span>↓</span></th>
                 <th style={{ padding: '16px', fontSize: '0.85rem', fontWeight: 500, color: 'var(--text-muted)' }}>Attendance <span>↓</span></th>
                 <th style={{ padding: '16px', width: '40px' }}></th>
               </tr>
@@ -224,6 +319,24 @@ const AdminDashboard = () => {
                       <td style={{ padding: '16px', fontSize: '0.9rem', color: 'var(--text-muted)' }}>Today</td>
                       <td style={{ padding: '16px', fontSize: '0.9rem', color: 'var(--dark)' }}>{student.course || 'N/A'}</td>
                       <td style={{ padding: '16px', fontSize: '0.9rem', color: 'var(--text-muted)' }}>{student.studentId}</td>
+                      <td style={{ padding: '16px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <span style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--dark)' }}>
+                            {student.courseProgress !== undefined ? student.courseProgress : 35}%
+                          </span>
+                          <span style={{
+                            fontSize: '0.72rem',
+                            fontWeight: 600,
+                            padding: '3px 8px',
+                            borderRadius: '4px',
+                            background: (student.courseProgress !== undefined ? student.courseProgress : 35) >= 80 ? 'rgba(102,187,106,0.12)' : 'rgba(83,109,254,0.12)',
+                            color: (student.courseProgress !== undefined ? student.courseProgress : 35) >= 80 ? 'var(--success)' : 'var(--primary)',
+                            whiteSpace: 'nowrap'
+                          }}>
+                            {(student.courseProgress !== undefined ? student.courseProgress : 35) >= 80 ? '🎓 Established' : '🆕 New'}
+                          </span>
+                        </div>
+                      </td>
                       <td style={{ padding: '16px', fontSize: '0.9rem', color: 'var(--dark)' }}>{Math.floor(Math.random() * 20 + 80)}%</td>
                       <td style={{ padding: '16px', color: 'var(--text-light)', cursor: 'pointer' }}><motion.div whileHover={{ scale: 1.1, color: 'var(--dark)' }}><MoreHorizontal size={18} /></motion.div></td>
                     </motion.tr>
@@ -235,6 +348,13 @@ const AdminDashboard = () => {
         </div>
       </motion.div>
 
+      <style>{`
+        @keyframes pulse {
+          0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(83, 109, 254, 0.4); }
+          70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(83, 109, 254, 0); }
+          100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(83, 109, 254, 0); }
+        }
+      `}</style>
     </motion.div>
   );
 };

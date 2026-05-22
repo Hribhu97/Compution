@@ -12,6 +12,7 @@ import Assignments from './pages/dashboard/Assignments';
 import MockTests from './pages/dashboard/MockTests';
 import Attendance from './pages/dashboard/Attendance';
 import Community from './pages/dashboard/Community';
+import Profile from './pages/dashboard/Profile';
 
 const PublicLayout = () => (
   <ReactLenis root options={{ lerp: 0.06, smoothWheel: true, syncTouch: true }}>
@@ -35,6 +36,7 @@ function App() {
             <Route path="assignments" element={<Assignments />} />
             <Route path="tests" element={<MockTests />} />
             <Route path="community" element={<Community />} />
+            <Route path="profile" element={<Profile />} />
           </Route>
         </Routes>
       </Router>

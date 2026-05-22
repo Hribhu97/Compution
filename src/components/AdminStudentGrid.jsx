@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { db } from '../firebase';
-import { collection, onSnapshot, query, where, addDoc, serverTimestamp, getDocs } from 'firebase/firestore';
+import { collection, onSnapshot, query, where, addDoc, serverTimestamp, getDocs, doc, updateDoc } from 'firebase/firestore';
 import { CheckCircle2, XCircle, Search, Mail, Phone, BookOpen } from 'lucide-react';
 import Modal from './Modal';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
@@ -15,6 +15,10 @@ const AdminStudentGrid = () => {
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [studentStats, setStudentStats] = useState({ present: 0, absent: 0, late: 0, attendanceLogs: [] });
   const [statsLoading, setStatsLoading] = useState(false);
+
+  // Progress Update State
+  const [tempProgress, setTempProgress] = useState(35);
+  const [updatingProgress, setUpdatingProgress] = useState(false);
 
   useEffect(() => {
     // Fetch all students
@@ -54,6 +58,7 @@ const AdminStudentGrid = () => {
 
   const handleOpenStudent = async (student) => {
     setSelectedStudent(student);
+    setTempProgress(student.courseProgress !== undefined ? student.courseProgress : 35);
     setStatsLoading(true);
     
     try {
@@ -75,6 +80,22 @@ const AdminStudentGrid = () => {
       console.error(error);
     }
     setStatsLoading(false);
+  };
+
+  const handleUpdateProgress = async () => {
+    if (!selectedStudent) return;
+    setUpdatingProgress(true);
+    try {
+      const userRef = doc(db, 'users', selectedStudent.id);
+      await updateDoc(userRef, {
+        courseProgress: tempProgress
+      });
+      setSelectedStudent(prev => ({ ...prev, courseProgress: tempProgress }));
+    } catch (err) {
+      console.error("Error updating progress:", err);
+    } finally {
+      setUpdatingProgress(false);
+    }
   };
 
   const filteredStudents = students.filter(s => 
@@ -141,6 +162,27 @@ const AdminStudentGrid = () => {
                     </div>
                   </div>
 
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)' }}>Progress</span>
+                      <span style={{
+                        fontSize: '0.7rem',
+                        fontWeight: 700,
+                        color: (student.courseProgress !== undefined ? student.courseProgress : 35) >= 80 ? 'var(--success)' : 'var(--primary)'
+                      }}>
+                        {(student.courseProgress !== undefined ? student.courseProgress : 35)}% {(student.courseProgress !== undefined ? student.courseProgress : 35) >= 80 ? '🎓 Established' : '🆕 New'}
+                      </span>
+                    </div>
+                    <div style={{ width: '100%', height: '6px', background: 'var(--surface)', borderRadius: '100px', overflow: 'hidden' }}>
+                      <div style={{
+                        height: '100%',
+                        background: (student.courseProgress !== undefined ? student.courseProgress : 35) >= 80 ? 'var(--success)' : 'var(--primary)',
+                        width: `${student.courseProgress !== undefined ? student.courseProgress : 35}%`,
+                        borderRadius: '100px'
+                      }} />
+                    </div>
+                  </div>
+
                   <div style={{ display: 'flex', gap: '10px', marginTop: 'auto' }}>
                     <button 
                       onClick={(e) => handleMarkAttendance(e, student.id, 'present')}
@@ -200,6 +242,42 @@ const AdminStudentGrid = () => {
                         : 0}%
                     </div>
                     <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--primary)', marginTop: '4px' }}>ATTENDANCE RATE</div>
+                  </div>
+                </div>
+
+                <div style={{ padding: '16px', borderRadius: '12px', border: '1px solid var(--border)', background: 'var(--surface)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  <h4 style={{ fontSize: '0.95rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px', margin: 0 }}>
+                    📈 Course Progress Tracker
+                  </h4>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Current Progress: <strong style={{ color: 'var(--dark)' }}>{tempProgress}%</strong></span>
+                      <span style={{ 
+                        fontSize: '0.75rem', fontWeight: 700, padding: '3px 8px', borderRadius: '4px',
+                        background: tempProgress >= 80 ? 'rgba(102,187,106,0.12)' : 'rgba(83,109,254,0.12)',
+                        color: tempProgress >= 80 ? 'var(--success)' : 'var(--primary)'
+                      }}>
+                        {tempProgress >= 80 ? '🎓 Established Student' : '🆕 New Student'}
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                      <input 
+                        type="range" 
+                        min="0" 
+                        max="100" 
+                        value={tempProgress} 
+                        onChange={(e) => setTempProgress(parseInt(e.target.value))}
+                        style={{ flex: 1, accentColor: 'var(--primary)', cursor: 'pointer' }}
+                      />
+                      <button 
+                        onClick={handleUpdateProgress}
+                        disabled={updatingProgress}
+                        className="btn btn-primary"
+                        style={{ padding: '8px 16px', fontSize: '0.82rem', borderRadius: '6px', whiteSpace: 'nowrap' }}
+                      >
+                        {updatingProgress ? 'Updating...' : 'Update Progress'}
+                      </button>
+                    </div>
                   </div>
                 </div>
 
