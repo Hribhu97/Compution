@@ -2,7 +2,6 @@ import React from 'react';
 import { ReactLenis } from '@studio-freight/react-lenis';
 import { BrowserRouter as Router, Routes, Route, Outlet } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
-import { Analytics } from '@vercel/analytics/react';
 
 import Home from './pages/public/Home';
 import Login from './pages/auth/Login';
@@ -38,7 +37,6 @@ function App() {
             <Route path="community" element={<Community />} />
           </Route>
         </Routes>
-        <Analytics />
       </Router>
     </AuthProvider>
   );

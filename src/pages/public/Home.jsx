@@ -1,13 +1,14 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import {
   BookOpen, Terminal, Code, Trophy, Users, Clock,
   ArrowRight, CheckCircle, Star, ChevronRight,
   Zap, Target, TrendingUp, Award, MapPin, Phone, Mail,
-  Menu, X
+  Menu, X, Loader2
 } from 'lucide-react';
 import Modal from '../../components/Modal';
+import { useAuth } from '../../contexts/AuthContext';
 
 /* ── FADE IN VARIANTS ─────────────────────────────── */
 const fadeUp = {
@@ -25,58 +26,179 @@ const ADMISSION_SUBJECTS = [
 ];
 
 /* ── ADMISSION POPUP ───────────────────────────────── */
-const AdmissionApplicationModal = ({ isOpen, onClose }) => {
+const AdmissionApplicationModal = ({ isOpen, onClose, triggerToast }) => {
   const [form, setForm] = useState({ name: '', contact: '', subject: 'Class XI CS' });
+  const [status, setStatus] = useState('idle'); // 'idle' | 'submitting' | 'success'
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    const text = `Hello, I would like to apply for admission.%0AName: ${form.name}%0AContact: ${form.contact}%0ASubject: ${form.subject}`;
-    window.open(`https://wa.me/919674035542?text=${text}`, '_blank');
-    onClose();
-    setForm({ name: '', contact: '', subject: 'Class XI CS' });
+    setStatus('submitting');
+
+    setTimeout(() => {
+      setStatus('success');
+
+      setTimeout(() => {
+        const text = `Hello, I would like to apply for admission.%0AName: ${form.name}%0AContact: ${form.contact}%0ASubject: ${form.subject}`;
+        triggerToast("Opening WhatsApp to complete your application...");
+        window.open(`https://wa.me/919674035542?text=${text}`, '_blank');
+        onClose();
+        setForm({ name: '', contact: '', subject: 'Class XI CS' });
+        setStatus('idle');
+      }, 1000);
+    }, 1500);
+  };
+
+  const handleClose = () => {
+    if (status === 'idle') {
+      onClose();
+    }
+  };
+
+  const containerVariants = {
+    hidden: {},
+    show: {
+      transition: {
+        staggerChildren: 0.08
+      }
+    }
+  };
+
+  const itemVariants = {
+    hidden: { opacity: 0, y: 15 },
+    show: { 
+      opacity: 1, 
+      y: 0, 
+      transition: { 
+        type: 'spring', 
+        stiffness: 260, 
+        damping: 24 
+      } 
+    }
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Apply for Admission">
-      <p style={{ color: 'var(--text-muted)', fontSize: '0.95rem', marginBottom: '20px', lineHeight: 1.6 }}>
-        Fill in your details and we&apos;ll reach out on WhatsApp to confirm your seat.
-      </p>
-      <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-        <div>
-          <label className="form-label">Name</label>
-          <input
-            required
-            className="form-input"
-            value={form.name}
-            onChange={e => setForm({ ...form, name: e.target.value })}
-            placeholder="Enter your full name"
-          />
-        </div>
-        <div>
-          <label className="form-label">Contact Number</label>
-          <input
-            required
-            type="tel"
-            className="form-input"
-            value={form.contact}
-            onChange={e => setForm({ ...form, contact: e.target.value })}
-            placeholder="e.g. +91 9876543210"
-          />
-        </div>
-        <div>
-          <label className="form-label">Subject of Interest</label>
-          <select
-            className="form-input"
-            value={form.subject}
-            onChange={e => setForm({ ...form, subject: e.target.value })}
+    <Modal isOpen={isOpen} onClose={handleClose} title="Apply for Admission">
+      <AnimatePresence mode="wait">
+        <motion.div
+          key="form-container"
+          variants={containerVariants}
+          initial="hidden"
+          animate="show"
+        >
+          <motion.p 
+            variants={itemVariants} 
+            style={{ color: 'var(--text-muted)', fontSize: '0.95rem', marginBottom: '20px', lineHeight: 1.6 }}
           >
-            {ADMISSION_SUBJECTS.map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
-        </div>
-        <button type="submit" className="btn btn-primary" style={{ width: '100%', padding: '14px', fontSize: '1rem', marginTop: '4px' }}>
-          Submit Application
-        </button>
-      </form>
+            Fill in your details and we&apos;ll reach out on WhatsApp to confirm your seat.
+          </motion.p>
+          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            <motion.div variants={itemVariants}>
+              <label className="form-label">Name</label>
+              <input
+                required
+                disabled={status !== 'idle'}
+                className="form-input"
+                value={form.name}
+                onChange={e => setForm({ ...form, name: e.target.value })}
+                placeholder="Enter your full name"
+                style={{
+                  transition: 'var(--transition)'
+                }}
+              />
+            </motion.div>
+            
+            <motion.div variants={itemVariants}>
+              <label className="form-label">Contact Number</label>
+              <input
+                required
+                type="tel"
+                disabled={status !== 'idle'}
+                className="form-input"
+                value={form.contact}
+                onChange={e => setForm({ ...form, contact: e.target.value })}
+                placeholder="e.g. +91 9876543210"
+                style={{
+                  transition: 'var(--transition)'
+                }}
+              />
+            </motion.div>
+            
+            <motion.div variants={itemVariants}>
+              <label className="form-label">Subject of Interest</label>
+              <select
+                disabled={status !== 'idle'}
+                className="form-input"
+                value={form.subject}
+                onChange={e => setForm({ ...form, subject: e.target.value })}
+                style={{
+                  transition: 'var(--transition)'
+                }}
+              >
+                {ADMISSION_SUBJECTS.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </motion.div>
+
+            <motion.div variants={itemVariants}>
+              {status === 'idle' && (
+                <button 
+                  type="submit" 
+                  className="btn btn-primary" 
+                  style={{ width: '100%', padding: '14px', fontSize: '1rem', marginTop: '4px' }}
+                >
+                  Submit Application
+                </button>
+              )}
+              {status === 'submitting' && (
+                <button 
+                  type="button" 
+                  disabled
+                  className="btn btn-primary" 
+                  style={{ 
+                    width: '100%', 
+                    padding: '14px', 
+                    fontSize: '1rem', 
+                    marginTop: '4px',
+                    cursor: 'not-allowed',
+                    opacity: 0.85,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '10px'
+                  }}
+                >
+                  <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: "linear" }} style={{ display: 'flex' }}>
+                    <Loader2 size={18} />
+                  </motion.div>
+                  Processing Application...
+                </button>
+              )}
+              {status === 'success' && (
+                <motion.div 
+                  initial={{ scale: 0.95, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  className="btn" 
+                  style={{ 
+                    width: '100%', 
+                    padding: '14px', 
+                    fontSize: '1rem', 
+                    marginTop: '4px',
+                    background: 'var(--success)',
+                    color: 'white',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '10px',
+                    boxShadow: '0 8px 24px rgba(102, 187, 106, 0.25)'
+                  }}
+                >
+                  <CheckCircle size={18} />
+                  Seat Reserved! Redirecting...
+                </motion.div>
+              )}
+            </motion.div>
+          </form>
+        </motion.div>
+      </AnimatePresence>
     </Modal>
   );
 };
@@ -546,9 +668,9 @@ const Admissions = ({ onOpenAdmission }) => {
             </p>
             <div style={{ marginTop: '28px', display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
               {[
-                { icon: <MapPin size={16} />, text: '20. J.K.Mitra Road, Kol-37' },
-                { icon: <Phone size={16} />, text: '+91-96740-35542' },
-                { icon: <Mail size={16} />, text: 'Compution.kolkata@gmail.com' },
+                { icon: <MapPin size={16} />, text: 'J.K. Mitra Road, Kolkata – 700037' },
+                { icon: <Phone size={16} />, text: 'Call to Enquire' },
+                { icon: <Mail size={16} />, text: 'admissions@compution.in' },
               ].map((item, i) => (
                 <span key={i} style={{ color: 'rgba(255,255,255,0.7)', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.9rem' }}>
                   <span style={{ color: 'var(--accent)' }}>{item.icon}</span>
@@ -582,7 +704,7 @@ const Footer = ({ onOpenAdmission }) => (
             Kolkata's focused computer science institute. Academic support meets real programming skills.
           </p>
           <div style={{ marginTop: '20px', display: 'flex', alignItems: 'center', gap: '8px', color: 'rgba(255,255,255,0.5)', fontSize: '0.85rem' }}>
-            <MapPin size={14} /> 20. J.K.Mitra Road, Kol-37
+            <MapPin size={14} /> J.K. Mitra Road, Kolkata – 700037
           </div>
         </div>
         <div>
@@ -632,11 +754,75 @@ const Footer = ({ onOpenAdmission }) => (
   </footer>
 );
 
+/* ── TOAST NOTIFICATION ────────────────────────────── */
+const Toast = ({ message, onClose }) => {
+  useEffect(() => {
+    const timer = setTimeout(onClose, 3000);
+    return () => clearTimeout(timer);
+  }, [onClose]);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: -20, x: '-50%', scale: 0.9 }}
+      animate={{ opacity: 1, y: 0, x: '-50%', scale: 1 }}
+      exit={{ opacity: 0, y: -20, x: '-50%', scale: 0.9 }}
+      transition={{ type: 'spring', damping: 25, stiffness: 350 }}
+      style={{
+        position: 'fixed',
+        top: '32px',
+        left: '50%',
+        zIndex: 2000,
+        display: 'flex',
+        alignItems: 'center',
+        gap: '12px',
+        padding: '16px 24px',
+        borderRadius: 'var(--radius-lg)',
+        background: 'rgba(255, 255, 255, 0.85)',
+        backdropFilter: 'blur(12px)',
+        border: '1px solid rgba(255, 255, 255, 0.6)',
+        boxShadow: '0 20px 48px rgba(0, 0, 0, 0.08), 0 8px 16px rgba(0, 0, 0, 0.04)',
+        color: 'var(--dark)',
+        fontFamily: 'var(--font-support)',
+        fontWeight: 600,
+        fontSize: '0.95rem',
+      }}
+    >
+      <div style={{
+        width: 24,
+        height: 24,
+        borderRadius: '50%',
+        background: 'var(--success)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        color: 'white',
+      }}>
+        <CheckCircle size={14} />
+      </div>
+      <span>{message}</span>
+    </motion.div>
+  );
+};
+
 /* ── PAGE EXPORT ───────────────────────────────────── */
 const Home = () => {
+  const { user } = useAuth();
   const [admissionOpen, setAdmissionOpen] = useState(false);
+  const [toast, setToast] = useState(null);
+
   const openAdmission = () => setAdmissionOpen(true);
   const closeAdmission = () => setAdmissionOpen(false);
+
+  // Auto-open enquire form after 4 minutes (240,000 ms) for logged-out users
+  useEffect(() => {
+    if (user || admissionOpen) return;
+
+    const timer = setTimeout(() => {
+      setAdmissionOpen(true);
+    }, 4 * 60 * 1000); // 4 minutes
+
+    return () => clearTimeout(timer);
+  }, [user, admissionOpen]);
 
   return (
     <>
@@ -648,7 +834,18 @@ const Home = () => {
       <Testimonials />
       <Admissions onOpenAdmission={openAdmission} />
       <Footer onOpenAdmission={openAdmission} />
-      <AdmissionApplicationModal isOpen={admissionOpen} onClose={closeAdmission} />
+      
+      <AdmissionApplicationModal 
+        isOpen={admissionOpen} 
+        onClose={closeAdmission} 
+        triggerToast={setToast}
+      />
+
+      <AnimatePresence>
+        {toast && (
+          <Toast message={toast} onClose={() => setToast(null)} />
+        )}
+      </AnimatePresence>
     </>
   );
 };
