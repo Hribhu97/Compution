@@ -44,6 +44,25 @@ const Community = () => {
         authorPhoto: user?.photoURL || '',
         createdAt: serverTimestamp()
       });
+
+      // Send alert to student's WhatsApp number
+      if (user?.phone) {
+        let cleanPhone = user.phone.replace(/\D/g, '');
+        if (cleanPhone.length === 10) {
+          cleanPhone = '91' + cleanPhone;
+        }
+        const text = encodeURIComponent(
+          `Hello ${user.displayName},\n\n` +
+          `A new note has been added to your Compution Academy Student Community workspace:\n\n` +
+          `"${message}"\n\n` +
+          `Log in to view: https://compution.in\n\n` +
+          `Best regards,\n` +
+          `Compution Academy`
+        );
+        const waUrl = `https://wa.me/${cleanPhone}?text=${text}`;
+        window.open(waUrl, '_blank');
+      }
+
       setIsModalOpen(false);
       setMessage('');
     } catch(err) { console.error(err); }

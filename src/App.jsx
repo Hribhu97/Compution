@@ -2,6 +2,7 @@ import React from 'react';
 import { ReactLenis } from '@studio-freight/react-lenis';
 import { BrowserRouter as Router, Routes, Route, Outlet, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import ChatAssistant from './components/ChatAssistant';
 
 import Home from './pages/public/Home';
 import Login from './pages/auth/Login';
@@ -58,6 +59,7 @@ function App() {
             <Route path="profile" element={<Profile />} />
           </Route>
         </Routes>
+        <ChatAssistant />
       </Router>
     </AuthProvider>
   );

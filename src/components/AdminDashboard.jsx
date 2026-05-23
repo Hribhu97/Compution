@@ -4,7 +4,7 @@ import { db, firebaseConfig } from '../firebase';
 import { initializeApp } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
 import { collection, doc, updateDoc, deleteDoc, getDocs, addDoc, setDoc, serverTimestamp } from 'firebase/firestore';
-import { Search, Download, Plus, MoreHorizontal, Eye, ArrowUpRight, Sparkles, ShieldCheck, Trash2, RefreshCw, CheckCircle, XCircle, AlertTriangle, Users, Bell, AlertCircle, Calendar, GraduationCap, ChevronDown, Mail, Send } from 'lucide-react';
+import { Search, Download, Plus, MoreHorizontal, Eye, ArrowUpRight, Sparkles, ShieldCheck, Trash2, RefreshCw, CheckCircle, XCircle, AlertTriangle, Users, Bell, AlertCircle, Calendar, GraduationCap, ChevronDown, Mail, Send, Pencil, X } from 'lucide-react';
 import Modal from './Modal';
 
 const stagger = { show: { transition: { staggerChildren: 0.05 } } };
@@ -78,6 +78,16 @@ const AdminDashboard = () => {
     return localStorage.getItem('simulatedPeriod') || 'new';
   });
 
+  const [editingStudentId, setEditingStudentId] = useState(null);
+  const [editingAmount, setEditingAmount] = useState('');
+
+  const [courseCount, setCourseCount] = useState(20);
+  const [noticeText, setNoticeText] = useState(() => {
+    return localStorage.getItem('admin_notice_board') || 'Welcome back to Compution! Please ensure all course schedules are updated and student registrations are approved promptly. Fees collection for the current quarter is in progress.';
+  });
+  const [isEditingNotice, setIsEditingNotice] = useState(false);
+  const [tempNotice, setTempNotice] = useState('');
+
   useEffect(() => {
     localStorage.setItem('simulatedPeriod', simulatedPeriod);
     window.dispatchEvent(new Event('simulatedPeriodChanged'));
@@ -105,6 +115,22 @@ const AdminDashboard = () => {
       });
       setStudents(data);
       setLastSyncTime(new Date());
+
+      // Fetch dynamic courses to count available courses
+      const coursesSnap = await getDocs(collection(db, 'courses'));
+      const activeDbTitles = [];
+      coursesSnap.forEach(doc => {
+        const title = doc.data().title;
+        if (title) activeDbTitles.push(title);
+      });
+      const staticTitles = [
+        'Python Mastery', 'Data Structures & Algorithms', 'Class 2', 'Class 3',
+        'Class 4', 'Class 5', 'Class 6', 'Class 7', 'Class 8', 'Class 9',
+        'Class 10', 'Class 11 CS', 'Class 11 App', 'Class 12 CS', 'Class 12 App',
+        'Web Development (HTML/CSS/JS)', 'Java Development', 'C & C++ Fundamentals', 'BCA', 'B.Tech'
+      ];
+      const uniqueDbCourses = activeDbTitles.filter(title => !staticTitles.includes(title));
+      setCourseCount(staticTitles.length + uniqueDbCourses.length);
     } catch (err) {
       console.error(err);
       setToast({ message: 'Failed to fetch data', type: 'danger' });
@@ -117,6 +143,82 @@ const AdminDashboard = () => {
   useEffect(() => {
     fetchStudents();
   }, []);
+
+  // ── SAVE FEES AMOUNT ──
+  const handleSaveFeesAmount = async (studentId) => {
+    try {
+      const amount = Number(editingAmount);
+      if (isNaN(amount) || amount < 0) {
+        setToast({ message: 'Please enter a valid amount', type: 'danger' });
+        return;
+      }
+      const studentRef = doc(db, 'users', studentId);
+      await updateDoc(studentRef, { feesAmount: amount });
+      
+      // Update local state
+      setStudents(prev => prev.map(s => s.id === studentId ? { ...s, feesAmount: amount } : s));
+      
+      setEditingStudentId(null);
+      setToast({ message: 'Fees amount updated successfully!', type: 'success' });
+    } catch (err) {
+      console.error('Error updating fees amount:', err);
+      setToast({ message: 'Failed to update fees amount', type: 'danger' });
+    }
+  };
+
+  // ── SET FEE STATUS ──
+  const handleSetFeeStatus = async (studentId, status) => {
+    try {
+      const studentRef = doc(db, 'users', studentId);
+      await updateDoc(studentRef, { feeStatus: status });
+      
+      // Update local state
+      setStudents(prev => prev.map(s => s.id === studentId ? { ...s, feeStatus: status } : s));
+      
+      setToast({ message: `Fee status updated to ${status}!`, type: 'success' });
+    } catch (err) {
+      console.error('Error updating fee status:', err);
+      setToast({ message: 'Failed to update fee status', type: 'danger' });
+    }
+  };
+
+  // ── SEND WHATSAPP NOTIFICATION ──
+  const handleSendWhatsAppNotification = (student) => {
+    const phone = student.phone;
+    if (!phone) {
+      setToast({ message: 'No phone number available for this student!', type: 'danger' });
+      return;
+    }
+    
+    let cleanPhone = phone.replace(/\D/g, '');
+    if (cleanPhone.length === 10) {
+      cleanPhone = '91' + cleanPhone;
+    }
+    
+    const currentFeesAmount = student.feesAmount !== undefined ? student.feesAmount : 2400;
+    
+    // Determine fee status with fallback
+    let currentFeeStatus = student.feeStatus;
+    if (!currentFeeStatus) {
+      const idx = students.findIndex(s => s.id === student.id);
+      currentFeeStatus = ['Paid', 'Pending', 'Paid', 'Overdue', 'Paid', 'Paid', 'Pending', 'Paid'][idx >= 0 ? idx % 8 : 0];
+    }
+    
+    const text = encodeURIComponent(
+      `Hello ${student.displayName},\n\n` +
+      `This is a professional reminder from Compution Academy regarding your course fee submission.\n\n` +
+      `*Course:* ${student.course || 'N/A'}\n` +
+      `*Fee Status:* ${currentFeeStatus}\n` +
+      `*Amount:* ₹${currentFeesAmount}\n\n` +
+      `Kindly arrange for the submission at your earliest convenience. If you have already paid, please share the receipt or disregard this message.\n\n` +
+      `Best regards,\n` +
+      `Compution Academy`
+    );
+    
+    const waUrl = `https://wa.me/${cleanPhone}?text=${text}`;
+    window.open(waUrl, '_blank');
+    setToast({ message: `Opening WhatsApp reminder for ${student.displayName}`, type: 'success' });
+  };
 
   const handleAddStudentSubmit = async (e) => {
     e.preventDefault();
@@ -240,8 +342,36 @@ const AdminDashboard = () => {
     setToast({ message: 'Dashboard exported as CSV successfully!', type: 'success' });
   }, [students]);
 
+  const pendingFeesStats = students.reduce((acc, student, idx) => {
+    const feeStatus = student.feeStatus || ['Paid', 'Pending', 'Paid', 'Overdue', 'Paid', 'Paid', 'Pending', 'Paid'][idx % 8];
+    const feesAmount = student.feesAmount !== undefined ? student.feesAmount : 2400;
+    
+    if (feeStatus !== 'Paid') {
+      acc.totalAmount += feesAmount;
+      acc.pendingStudentsCount += 1;
+    }
+    return acc;
+  }, { totalAmount: 0, pendingStudentsCount: 0 });
+
+  const paidWithin10thCount = students.filter((s, idx) => {
+    const feeStatus = s.feeStatus || ['Paid', 'Pending', 'Paid', 'Overdue', 'Paid', 'Paid', 'Pending', 'Paid'][idx % 8];
+    if (feeStatus !== 'Paid') return false;
+    if (s.lastFeesDate) {
+      const day = new Date(s.lastFeesDate).getDate();
+      return !isNaN(day) && day <= 10;
+    }
+    return idx % 2 === 0;
+  }).length;
+
   const verifiedCount = students.filter(s => s.verified).length;
   const unverifiedCount = students.length - verifiedCount;
+
+  const handleSaveNotice = () => {
+    setNoticeText(tempNotice);
+    localStorage.setItem('admin_notice_board', tempNotice);
+    setIsEditingNotice(false);
+    setToast({ message: 'Notice board updated successfully!', type: 'success' });
+  };
 
   return (
     <motion.div variants={stagger} initial="hidden" animate="show" style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
@@ -382,14 +512,14 @@ const AdminDashboard = () => {
           </div>
         </motion.div>
 
-        {/* Card 3: Completed Courses */}
+        {/* Card 3: Available Courses */}
         <motion.div variants={item} className="card" style={{ padding: '20px', background: 'var(--surface)', borderRadius: '16px' }}>
-          <div style={{ fontSize: '0.9rem', color: 'var(--dark)', fontWeight: 600, marginBottom: '8px' }}>Completed Courses</div>
+          <div style={{ fontSize: '0.9rem', color: 'var(--dark)', fontWeight: 600, marginBottom: '8px' }}>Available Courses</div>
           <div style={{ fontSize: '2.5rem', fontWeight: 700, color: 'var(--primary)', lineHeight: 1, marginBottom: '8px' }}>
-            9
+            {courseCount}
           </div>
           <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-             17% completion rate
+             Dynamic programs deployed
           </div>
         </motion.div>
 
@@ -397,10 +527,10 @@ const AdminDashboard = () => {
         <motion.div variants={item} className="card" style={{ padding: '20px', background: 'var(--surface)', borderRadius: '16px' }}>
           <div style={{ fontSize: '0.9rem', color: 'var(--dark)', fontWeight: 600, marginBottom: '8px' }}>Fees Pending</div>
           <div style={{ fontSize: '2.5rem', fontWeight: 700, color: '#8D6E63', lineHeight: 1, marginBottom: '8px' }}>
-            ₹18,400
+            ₹{pendingFeesStats.totalAmount.toLocaleString('en-IN')}
           </div>
           <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-             8 students overdue
+             {pendingFeesStats.pendingStudentsCount} students pending
           </div>
         </motion.div>
       </div>
@@ -449,8 +579,8 @@ const AdminDashboard = () => {
                 <tr style={{ borderBottom: '1px solid var(--border)' }}>
                   <th style={{ padding: '12px 16px', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)' }}>Student</th>
                   <th style={{ padding: '12px 16px', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)' }}>Class / Program</th>
-                  <th style={{ padding: '12px 16px', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)' }}>Joined</th>
-                  <th style={{ padding: '12px 16px', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)' }}>Attendance</th>
+                  <th style={{ padding: '12px 16px', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)' }}>Submission Date</th>
+                  <th style={{ padding: '12px 16px', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)' }}>Fees Amount</th>
                   <th style={{ padding: '12px 16px', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)' }}>Fee status</th>
                   <th style={{ padding: '12px 16px', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)' }}>Status / Action</th>
                 </tr>
@@ -464,17 +594,32 @@ const AdminDashboard = () => {
                   filteredStudents.slice(0, searchTerm ? undefined : 6).map((student, idx) => {
                     const roll = `#0${41 - idx}`;
                     const joined = student.createdAt ? new Date(student.createdAt).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : 'Jan 2026';
-                    const att = [88, 74, 96, 61, 82, 90, 85, 78][idx % 8];
-                    const feeStatus = ['Paid', 'Pending', 'Paid', 'Overdue', 'Paid', 'Paid', 'Pending', 'Paid'][idx % 8];
-                    const feeColor = feeStatus === 'Paid' ? 'var(--success)' : feeStatus === 'Pending' ? '#F59E0B' : 'var(--danger)';
+                    
+                    // Pull feeStatus from DB, or fallback to the index-based value
+                    const feeStatus = student.feeStatus || ['Paid', 'Pending', 'Paid', 'Overdue', 'Paid', 'Paid', 'Pending', 'Paid'][idx % 8];
+                    
+                    // Determine color based on fee status
+                    const feeColor = feeStatus === 'Paid' ? 'var(--success)' : 
+                                     feeStatus === 'Delayed' ? 'var(--danger)' : 
+                                     feeStatus === 'Pending' ? '#F59E0B' : 'var(--danger)';
+                                     
                     const statusText = student.verified ? 'Active' : 'Pending';
                     const statusColor = student.verified ? 'var(--success)' : '#F59E0B';
+                    
+                    const currentFeesAmount = student.feesAmount !== undefined ? student.feesAmount : 2400;
 
                     return (
                       <motion.tr key={student.id} whileHover={{ backgroundColor: 'rgba(0,0,0,0.01)' }} style={{ borderBottom: '1px solid var(--border)' }}>
                         <td style={{ padding: '16px' }}>
                           <div 
-                            onClick={() => setSelectedStudentDetails({ ...student, roll, joined, att, feeStatus })}
+                            onClick={() => setSelectedStudentDetails({ 
+                              ...student, 
+                              roll, 
+                              joined, 
+                              feesAmount: currentFeesAmount, 
+                              feeStatus,
+                              lastFeesDate: student.lastFeesDate || '2026-05-10'
+                            })}
                             style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--dark)', cursor: 'pointer', textDecoration: 'underline', textDecorationColor: 'transparent', transition: 'text-decoration-color 0.2s' }}
                             onMouseEnter={e => e.target.style.textDecorationColor = 'var(--dark)'}
                             onMouseLeave={e => e.target.style.textDecorationColor = 'transparent'}
@@ -486,26 +631,178 @@ const AdminDashboard = () => {
                         <td style={{ padding: '16px', fontSize: '0.85rem', color: 'var(--dark)' }}>
                           {student.course || 'B.Tech'}
                         </td>
-                        <td style={{ padding: '16px', fontSize: '0.85rem', color: 'var(--dark)' }}>{joined}</td>
-                        <td style={{ padding: '16px', fontSize: '0.85rem', color: 'var(--dark)' }}>{att}%</td>
+                        <td style={{ padding: '16px' }} onClick={e => e.stopPropagation()}>
+                          <input
+                            type="date"
+                            value={student.lastFeesDate || '2026-05-10'}
+                            onChange={async (e) => {
+                              const newDate = e.target.value;
+                              try {
+                                const studentRef = doc(db, 'users', student.id);
+                                await updateDoc(studentRef, { lastFeesDate: newDate });
+                                // Update local state so it reflects immediately
+                                setStudents(prev => prev.map(s => s.id === student.id ? { ...s, lastFeesDate: newDate } : s));
+                                setToast({ message: 'Submission date updated!', type: 'success' });
+                              } catch (err) {
+                                console.error('Error updating last fees date:', err);
+                                setToast({ message: 'Failed to update date', type: 'danger' });
+                              }
+                            }}
+                            className="custom-date-picker"
+                          />
+                        </td>
+                        
+                        {/* Fees Amount Column (Editable inline) */}
+                        <td style={{ padding: '16px', fontSize: '0.85rem', color: 'var(--dark)' }}>
+                          {editingStudentId === student.id ? (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }} onClick={e => e.stopPropagation()}>
+                              <input
+                                type="number"
+                                value={editingAmount}
+                                onChange={(e) => setEditingAmount(e.target.value)}
+                                style={{
+                                  width: '80px',
+                                  padding: '4px 6px',
+                                  borderRadius: '6px',
+                                  border: '1px solid var(--primary)',
+                                  fontSize: '0.85rem',
+                                  outline: 'none',
+                                  background: 'var(--surface)'
+                                }}
+                                autoFocus
+                              />
+                              <button
+                                onClick={() => handleSaveFeesAmount(student.id)}
+                                style={{
+                                  padding: '4px 8px',
+                                  background: 'var(--success)',
+                                  color: 'white',
+                                  border: 'none',
+                                  borderRadius: '6px',
+                                  fontSize: '0.75rem',
+                                  fontWeight: 600,
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center'
+                                }}
+                              >
+                                Confirm
+                              </button>
+                              <button
+                                onClick={() => setEditingStudentId(null)}
+                                style={{
+                                  padding: '4px',
+                                  background: 'rgba(239,83,80,0.1)',
+                                  color: 'var(--danger)',
+                                  border: 'none',
+                                  borderRadius: '6px',
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center'
+                                }}
+                                title="Cancel"
+                              >
+                                <X size={14} />
+                              </button>
+                            </div>
+                          ) : (
+                            <div 
+                              style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setEditingStudentId(student.id);
+                                setEditingAmount(currentFeesAmount);
+                              }}
+                              title="Click to edit fees amount"
+                            >
+                              <span>₹{currentFeesAmount.toLocaleString('en-IN')}</span>
+                              <Pencil size={12} style={{ color: 'var(--text-light)', opacity: 0.7 }} />
+                            </div>
+                          )}
+                        </td>
+                        
                         <td style={{ padding: '16px', fontSize: '0.85rem', color: feeColor, fontWeight: 500 }}>{feeStatus}</td>
                         <td style={{ padding: '16px' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'space-between' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                               <div style={{ width: 8, height: 8, borderRadius: '50%', background: statusColor }}></div>
                               <span style={{ fontSize: '0.85rem', color: 'var(--dark)' }}>{statusText}</span>
                             </div>
-                            {/* Action Buttons to keep original work */}
-                            <div style={{ display: 'flex', gap: '4px' }}>
-                              {!student.verified && (
-                                <button onClick={() => handleApprove(student.id)} title="Approve" style={{ padding: '4px', background: 'rgba(16,185,129,0.1)', color: 'var(--success)', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
-                                  <CheckCircle size={14} />
-                                </button>
-                              )}
-                              {!student.verified && (
-                                <button onClick={() => handleReject(student.id, student.displayName)} title="Reject" style={{ padding: '4px', background: 'rgba(239,83,80,0.1)', color: 'var(--danger)', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
-                                  <XCircle size={14} />
-                                </button>
+                            
+                            <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                              {student.verified ? (
+                                <>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleSetFeeStatus(student.id, 'Paid');
+                                    }}
+                                    style={{
+                                      padding: '4px 10px',
+                                      background: feeStatus === 'Paid' ? 'rgba(16,185,129,0.15)' : 'var(--surface)',
+                                      color: 'var(--success)',
+                                      border: feeStatus === 'Paid' ? '1px solid var(--success)' : '1px solid var(--border)',
+                                      borderRadius: '6px',
+                                      fontSize: '0.75rem',
+                                      fontWeight: 600,
+                                      cursor: 'pointer',
+                                      transition: 'all 0.2s',
+                                    }}
+                                  >
+                                    Paid
+                                  </button>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleSetFeeStatus(student.id, 'Delayed');
+                                    }}
+                                    style={{
+                                      padding: '4px 10px',
+                                      background: feeStatus === 'Delayed' ? 'rgba(239,83,80,0.15)' : 'var(--surface)',
+                                      color: 'var(--danger)',
+                                      border: feeStatus === 'Delayed' ? '1px solid var(--danger)' : '1px solid var(--border)',
+                                      borderRadius: '6px',
+                                      fontSize: '0.75rem',
+                                      fontWeight: 600,
+                                      cursor: 'pointer',
+                                      transition: 'all 0.2s',
+                                    }}
+                                  >
+                                    Delayed
+                                  </button>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleSendWhatsAppNotification(student);
+                                    }}
+                                    title="Send WhatsApp Reminder"
+                                    style={{
+                                      padding: '6px',
+                                      background: 'rgba(83,109,254,0.1)',
+                                      color: 'var(--primary)',
+                                      border: '1px solid rgba(83,109,254,0.2)',
+                                      borderRadius: '6px',
+                                      cursor: 'pointer',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      transition: 'all 0.2s',
+                                    }}
+                                  >
+                                    <Bell size={14} />
+                                  </button>
+                                </>
+                              ) : (
+                                <>
+                                  <button onClick={(e) => { e.stopPropagation(); handleApprove(student.id); }} title="Approve" style={{ padding: '4px', background: 'rgba(16,185,129,0.1)', color: 'var(--success)', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
+                                    <CheckCircle size={14} />
+                                  </button>
+                                  <button onClick={(e) => { e.stopPropagation(); handleReject(student.id, student.displayName); }} title="Reject" style={{ padding: '4px', background: 'rgba(239,83,80,0.1)', color: 'var(--danger)', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
+                                    <XCircle size={14} />
+                                  </button>
+                                </>
                               )}
                             </div>
                           </div>
@@ -519,18 +816,59 @@ const AdminDashboard = () => {
           </div>
         </motion.div>
 
-        {/* Right: Alerts */}
+        {/* Right: Alerts & Notice Board */}
         <motion.div variants={item} className="card" style={{ padding: '24px', borderRadius: '16px', background: 'white', border: '1px solid var(--border)', flex: 1 }}>
            <h2 style={{ fontSize: '1.1rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '20px', color: 'var(--dark)' }}>
-             <Bell size={18} /> Alerts
+             <Bell size={18} /> Alerts & Notice Board
            </h2>
            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               
-              <div style={{ padding: '16px', borderRadius: '12px', background: 'var(--surface)', display: 'flex', gap: '12px' }}>
-                 <AlertCircle size={18} style={{ color: '#8D6E63', flexShrink: 0 }} />
+              {/* Notice Board Card */}
+              <div style={{ padding: '16px', borderRadius: '12px', background: 'rgba(83,109,254,0.06)', border: '1px solid rgba(83,109,254,0.12)', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ fontWeight: 700, color: 'var(--dark)', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                       <Sparkles size={14} style={{ color: 'var(--primary)' }} /> Notice Board
+                    </div>
+                    {isEditingNotice ? (
+                      <div style={{ display: 'flex', gap: '6px' }}>
+                        <button onClick={handleSaveNotice} style={{ background: 'var(--success)', color: 'white', border: 'none', padding: '2px 8px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer' }}>Save</button>
+                        <button onClick={() => setIsEditingNotice(false)} style={{ background: 'var(--surface)', color: 'var(--text-muted)', border: '1px solid var(--border)', padding: '2px 8px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
+                      </div>
+                    ) : (
+                      <button onClick={() => { setIsEditingNotice(true); setTempNotice(noticeText); }} style={{ background: 'none', border: 'none', color: 'var(--primary)', fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer' }}>Edit</button>
+                    )}
+                 </div>
+                 {isEditingNotice ? (
+                    <textarea
+                      value={tempNotice}
+                      onChange={e => setTempNotice(e.target.value)}
+                      rows={4}
+                      style={{
+                        width: '100%',
+                        padding: '8px',
+                        borderRadius: '6px',
+                        border: '1px solid var(--primary)',
+                        fontSize: '0.82rem',
+                        outline: 'none',
+                        resize: 'none',
+                        fontFamily: 'inherit'
+                      }}
+                    />
+                 ) : (
+                    <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>
+                      {noticeText}
+                    </div>
+                 )}
+              </div>
+
+              {/* Paid Within 10th of Month Alert */}
+              <div style={{ padding: '16px', borderRadius: '12px', background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.12)', display: 'flex', gap: '12px' }}>
+                 <CheckCircle size={18} style={{ color: 'var(--success)', flexShrink: 0 }} />
                  <div>
-                    <div style={{ fontWeight: 600, color: 'var(--dark)', fontSize: '0.9rem', marginBottom: '4px', lineHeight: 1.4 }}>3 students haven't paid fees in 60+ days</div>
-                    <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Fee tracking · urgent</div>
+                    <div style={{ fontWeight: 600, color: 'var(--dark)', fontSize: '0.9rem', marginBottom: '4px', lineHeight: 1.4 }}>Fee Submissions</div>
+                    <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                      <strong>{paidWithin10thCount} students</strong> paid their fees within the 10th of this month.
+                    </div>
                  </div>
               </div>
 
@@ -615,19 +953,19 @@ const AdminDashboard = () => {
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '0.9rem' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                   <span style={{ color: 'var(--text-muted)' }}>Current Month Status:</span>
-                  <span style={{ fontWeight: 600, color: selectedStudentDetails.feeStatus === 'Paid' ? 'var(--success)' : selectedStudentDetails.feeStatus === 'Pending' ? '#F59E0B' : 'var(--danger)' }}>
+                  <span style={{ fontWeight: 600, color: selectedStudentDetails.feeStatus === 'Paid' ? 'var(--success)' : selectedStudentDetails.feeStatus === 'Delayed' ? 'var(--danger)' : selectedStudentDetails.feeStatus === 'Pending' ? '#F59E0B' : 'var(--danger)' }}>
                     {selectedStudentDetails.feeStatus || 'Paid'}
                   </span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                   <span style={{ color: 'var(--text-muted)' }}>Last Submission Date:</span>
                   <span style={{ fontWeight: 500 }}>
-                    {selectedStudentDetails.joined || 'N/A'}
+                    {selectedStudentDetails.lastFeesDate || '2026-05-10'}
                   </span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: 'var(--text-muted)' }}>Amount Paid:</span>
-                  <span style={{ fontWeight: 500 }}>₹2,400</span>
+                  <span style={{ color: 'var(--text-muted)' }}>Fees Amount:</span>
+                  <span style={{ fontWeight: 500 }}>₹{(selectedStudentDetails.feesAmount !== undefined ? selectedStudentDetails.feesAmount : 2400).toLocaleString('en-IN')}</span>
                 </div>
               </div>
             </div>

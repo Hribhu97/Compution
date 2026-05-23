@@ -35,7 +35,10 @@ const ChatAssistant = () => {
   const bottomRef = useRef(null);
 
   useEffect(() => {
-    if (!user?.uid) return;
+    if (!user?.uid) {
+      setMessages([]);
+      return;
+    }
     const chatRef = query(collection(db, `users/${user.uid}/chatHistory`), orderBy('createdAt', 'asc'));
     const unsub = onSnapshot(chatRef, (snap) => {
       const data = [];
@@ -53,26 +56,50 @@ const ChatAssistant = () => {
 
   const handleSend = async (e) => {
     e.preventDefault();
-    if (!input.trim() || !user?.uid) return;
+    if (!input.trim()) return;
     
     const userMsg = input.trim();
     setInput('');
     
-    await addDoc(collection(db, `users/${user.uid}/chatHistory`), {
-      message: userMsg,
-      sender: 'user',
-      createdAt: serverTimestamp()
-    });
+    if (user?.uid) {
+      await addDoc(collection(db, `users/${user.uid}/chatHistory`), {
+        message: userMsg,
+        sender: 'user',
+        createdAt: serverTimestamp()
+      });
+
+      if (user.role === 'student') {
+        window.open(`https://wa.me/9674035542?text=${encodeURIComponent(userMsg)}`, '_blank');
+      }
+    } else {
+      const newMsg = {
+        id: 'temp-' + Date.now(),
+        message: userMsg,
+        sender: 'user',
+        createdAt: { toDate: () => new Date() }
+      };
+      setMessages(prev => [...prev, newMsg]);
+    }
 
     setIsTyping(true);
     
     setTimeout(async () => {
       const botReply = matchFAQ(userMsg);
-      await addDoc(collection(db, `users/${user.uid}/chatHistory`), {
-        message: botReply,
-        sender: 'bot',
-        createdAt: serverTimestamp()
-      });
+      if (user?.uid) {
+        await addDoc(collection(db, `users/${user.uid}/chatHistory`), {
+          message: botReply,
+          sender: 'bot',
+          createdAt: serverTimestamp()
+        });
+      } else {
+        const newBotMsg = {
+          id: 'temp-bot-' + Date.now(),
+          message: botReply,
+          sender: 'bot',
+          createdAt: { toDate: () => new Date() }
+        };
+        setMessages(prev => [...prev, newBotMsg]);
+      }
       setIsTyping(false);
     }, 1200);
   };

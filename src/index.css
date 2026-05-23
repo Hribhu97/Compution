@@ -442,3 +442,61 @@ h3 { font-size: clamp(1.25rem, 2.5vw, 1.75rem); }
 html.lenis, html.lenis body { height: auto; }
 .lenis.lenis-smooth { scroll-behavior: auto !important; }
 .lenis.lenis-stopped { overflow: hidden; }
+
+@media (max-width: 600px) {
+  .grid-2-col-mobile {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+.custom-date-picker {
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--dark);
+  border: 1px solid rgba(83, 109, 254, 0.2);
+  border-radius: 8px;
+  padding: 6px 12px;
+  outline: none;
+  background: var(--white);
+  font-family: inherit;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+  transition: all 0.2s ease-in-out;
+  width: 100%;
+  max-width: 145px;
+}
+
+.custom-date-picker:hover {
+  border-color: var(--primary);
+  background: rgba(83, 109, 254, 0.02);
+  box-shadow: 0 4px 12px rgba(83, 109, 254, 0.08);
+  transform: translateY(-0.5px);
+}
+
+.custom-date-picker:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(83, 109, 254, 0.15);
+  background: var(--white);
+}
+
+.custom-date-picker::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  filter: invert(41%) sepia(87%) saturate(5412%) hue-rotate(224deg) brightness(101%) contrast(99%);
+  opacity: 0.8;
+  transition: opacity 0.2s;
+}
+
+.custom-date-picker::-webkit-calendar-picker-indicator:hover {
+  opacity: 1;
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  filter: invert(41%) sepia(87%) saturate(5412%) hue-rotate(224deg) brightness(101%) contrast(99%);
+  opacity: 0.8;
+  transition: opacity 0.2s;
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator:hover {
+  opacity: 1;
+}

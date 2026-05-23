@@ -226,7 +226,7 @@ const AdminStudentGrid = () => {
               <div style={{ height: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-light)' }}>Loading stats...</div>
             ) : (
               <>
-                <div className="grid-stats-dashboard" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
+                <div className="grid-stats-dashboard" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))' }}>
                   <div style={{ padding: '16px', borderRadius: '12px', background: 'rgba(102,187,106,0.1)', border: '1px solid rgba(102,187,106,0.2)', textAlign: 'center' }}>
                     <div style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--success)' }}>{studentStats.present}</div>
                     <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--success)', marginTop: '4px' }}>PRESENT</div>

@@ -670,12 +670,7 @@ const StudentOverview = () => {
                       console.error('Error updating last fees:', err);
                     }
                   }}
-                  style={{ 
-                    fontWeight: 600, fontSize: '0.85rem', color: 'var(--dark)', 
-                    border: '1px solid var(--border)', borderRadius: '6px', 
-                    padding: '4px 8px', outline: 'none', background: 'var(--surface)',
-                    fontFamily: 'inherit', width: '100%', maxWidth: '140px'
-                  }}
+                  className="custom-date-picker"
                 />
               </div>
             </div>

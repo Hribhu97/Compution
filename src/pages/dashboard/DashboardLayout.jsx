@@ -10,7 +10,6 @@ import {
   FileText, Settings, LogOut, Search, Bell,
   CalendarCheck, MessageSquare, User, Sparkles, ShieldAlert, Loader2
 } from 'lucide-react';
-import ChatAssistant from '../../components/ChatAssistant';
 
 const ADMISSION_SUBJECTS = [
   'Python Mastery',
@@ -333,16 +332,6 @@ const DashboardLayout = () => {
           </NavLink>
         ))}
       </nav>
-
-      <ChatAssistant />
-
-      <style>{`
-        @media (max-width: 600px) {
-          .grid-2-col-mobile {
-            grid-template-columns: 1fr !important;
-          }
-        }
-      `}</style>
 
       <AnimatePresence>
         {isProfileIncomplete(user) && (
