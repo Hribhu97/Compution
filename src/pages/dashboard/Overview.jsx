@@ -336,12 +336,27 @@ const StudentOverview = () => {
   const checkedCount = Object.values(checklist).filter(Boolean).length;
   const onboardingProgressPct = Math.round((checkedCount / 4) * 100);
 
+  const savedOverride = localStorage.getItem('simulatedPeriod');
+  const activePeriod = savedOverride || (completionPct >= 80 ? 'established' : 'new');
+
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', minHeight: '50vh' }}>
+        <div className="spinning" style={{ width: '32px', height: '32px', border: '3px solid rgba(83,109,254,0.2)', borderTopColor: 'var(--primary)', borderRadius: '50%' }} />
+        <style>{`
+          @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+          .spinning { animation: spin 1s linear infinite; }
+        `}</style>
+      </div>
+    );
+  }
+
   return (
     <motion.div variants={stagger} initial="hidden" animate="show" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       
 
 
-      {simulatedPeriod === 'new' ? (
+      {activePeriod === 'new' ? (
         /* ── NEW STUDENT ONBOARDING DASHBOARD ──────────────── */
         <>
           <motion.div variants={fadeItem} className="card" style={{
