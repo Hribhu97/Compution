@@ -129,7 +129,7 @@ const ChatAssistant = () => {
               <div style={{ flex: 1, padding: '20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '16px', background: 'var(--bg)' }}>
                 {messages.length === 0 && (
                   <div style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: 20 }}>
-                    👋 Hi {user?.displayName?.split(' ')[0]}! How can I help you today?
+                    👋 Hi {(user?.displayName || 'Student').split(' ')[0]}! How can I help you today?
                   </div>
                 )}
                 {messages.map((m, i) => {

@@ -25,13 +25,14 @@ const ADMISSION_SUBJECTS = [
   'Class 9',
   'Class 10',
   'Class 11 CS',
-  'Class 11 APP',
+  'Class 11 App',
   'Class 12 CS',
-  'Class 12 APP',
+  'Class 12 App',
   'Web Development (HTML/CSS/JS)',
   'Java Development',
   'C & C++ Fundamentals',
-  'BCA / B.Tech Computer Science Coaching'
+  'BCA',
+  'B.Tech'
 ];
 
 const isProfileIncomplete = (u) => {
@@ -220,12 +221,6 @@ const DashboardLayout = () => {
         </nav>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', borderTop: '1px solid rgba(255,255,255,0.15)', paddingTop: '16px' }}>
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 16px', borderRadius: '12px',
-            color: 'rgba(255,255,255,0.8)', fontWeight: 500, fontSize: '0.92rem', cursor: 'pointer', transition: 'all 0.2s',
-          }}>
-            <Settings size={18} /> Settings
-          </div>
           <button onClick={handleLogout} style={{
             display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 16px', borderRadius: '12px', width: '100%', textAlign: 'left',
             color: 'rgba(255,255,255,0.8)', fontWeight: 500, fontSize: '0.92rem', cursor: 'pointer', transition: 'all 0.2s', background: 'none', border: 'none',
@@ -238,7 +233,7 @@ const DashboardLayout = () => {
       <div className="dash-main">
         <header className="dash-header-bar">
           <div className="dash-welcome" style={{ fontWeight: 600, color: 'var(--dark)', fontSize: '1.05rem', marginRight: '16px' }}>
-            Welcome back, {user?.role === 'admin' ? 'Admin' : (user?.displayName?.split(' ')[0] || 'Student')} 👋
+            Welcome back, {user?.role === 'admin' ? 'Admin' : (user?.displayName || 'Student').split(' ')[0]} 👋
           </div>
 
           <div className="dash-search-wrap">

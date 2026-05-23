@@ -591,60 +591,12 @@ const Login = () => {
         </div>
       </div>
 
-      <div className="login-visual">
-        <div style={{ position: 'absolute', top: '-80px', right: '-80px', width: '320px', height: '320px', borderRadius: '50%', background: 'rgba(83,109,254,0.08)', filter: 'blur(40px)' }} />
-        <div style={{ position: 'absolute', bottom: '-60px', left: '-60px', width: '240px', height: '240px', borderRadius: '50%', background: 'rgba(126,200,255,0.12)', filter: 'blur(30px)' }} />
-
-        <motion.div
-          initial={{ opacity: 0, y: 24 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.7, delay: 0.2 }}
-          style={{ maxWidth: '400px', width: '100%', position: 'relative', zIndex: 1 }}
-        >
-          {/* Mini dashboard preview */}
-          <div className="card" style={{ overflow: 'hidden', marginBottom: '20px' }}>
-            <div style={{ background: 'var(--dark)', padding: '16px 20px', display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 900, fontSize: '1rem', color: 'white' }}>
-                COMP<span style={{ color: 'var(--accent)' }}>UTION</span>
-              </div>
-              <span style={{ marginLeft: 'auto', fontSize: '0.75rem', color: 'rgba(255,255,255,0.4)' }}>Student Portal</span>
-            </div>
-            <div className="card-p" style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              {[
-                { label: 'Attendance', val: '92%', color: 'var(--primary)' },
-                { label: 'Python Progress', val: '68%', color: '#3776AB' },
-                { label: 'DSA Progress', val: '85%', color: 'var(--success)' },
-              ].map(item => (
-                <div key={item.label}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px', fontSize: '0.85rem', fontWeight: 500 }}>
-                    <span>{item.label}</span><span style={{ color: item.color, fontWeight: 700 }}>{item.val}</span>
-                  </div>
-                  <div className="progress-track">
-                    <motion.div className="progress-fill"
-                      initial={{ width: 0 }}
-                      animate={{ width: item.val }}
-                      transition={{ duration: 1.2, delay: 0.8 }}
-                      style={{ background: item.color }}
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-            {[
-              { emoji: '🔥', value: '7 Days', label: 'Study Streak' },
-              { emoji: '📚', value: '3 Pending', label: 'Assignments' },
-            ].map(stat => (
-              <div key={stat.label} className="card card-p" style={{ textAlign: 'center' }}>
-                <div style={{ fontSize: '1.5rem', marginBottom: '4px' }}>{stat.emoji}</div>
-                <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: '1.15rem' }}>{stat.value}</div>
-                <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>{stat.label}</div>
-              </div>
-            ))}
-          </div>
-        </motion.div>
+      <div className="login-visual" style={{ padding: 0 }}>
+        <img 
+          src="https://i.postimg.cc/mDFN9Zh0/480682920-626733483646791-4515802378743072113-n.jpg" 
+          alt="Login Background" 
+          style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+        />
       </div>
     </div>
   );

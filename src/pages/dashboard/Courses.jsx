@@ -22,13 +22,14 @@ const COURSE_METADATA = {
   'Class 9': { subject: 'Academic', color: '#F06292', emoji: '🐍', nextLesson: 'Lesson 1: Python Basics', totalLessons: 24, schedule: 'Wed, Sat · 4 PM' },
   'Class 10': { subject: 'Academic', color: '#E040FB', emoji: '📙', nextLesson: 'Lesson 1: User-Defined Methods', totalLessons: 24, schedule: 'Tue, Thu, Sat · 4 PM' },
   'Class 11 CS': { subject: 'Academic', color: '#03A9F4', emoji: '📘', nextLesson: 'Chapter 2: Data Representations', totalLessons: 22, schedule: 'Mon–Sat · 3 PM' },
-  'Class 11 APP': { subject: 'Academic', color: '#26C6DA', emoji: '📱', nextLesson: 'Lesson 1: Office Tools', totalLessons: 22, schedule: 'Mon–Sat · 3 PM' },
+  'Class 11 App': { subject: 'Academic', color: '#26C6DA', emoji: '📱', nextLesson: 'Lesson 1: Office Tools', totalLessons: 22, schedule: 'Mon–Sat · 3 PM' },
   'Class 12 CS': { subject: 'Academic', color: '#7C4DFF', emoji: '📗', nextLesson: 'Chapter 7: Networking', totalLessons: 24, schedule: 'Mon–Sat · 4 PM' },
-  'Class 12 APP': { subject: 'Academic', color: '#651FFF', emoji: '📕', nextLesson: 'Chapter 3: SQL Queries', totalLessons: 24, schedule: 'Mon–Sat · 4 PM' },
+  'Class 12 App': { subject: 'Academic', color: '#651FFF', emoji: '📕', nextLesson: 'Chapter 3: SQL Queries', totalLessons: 24, schedule: 'Mon–Sat · 4 PM' },
   'Web Development (HTML/CSS/JS)': { subject: 'Web Dev', color: '#E44D26', emoji: '🌐', nextLesson: 'HTML Semantic Structure', totalLessons: 40, schedule: 'Mon, Wed, Fri · 6 PM' },
   'Java Development': { subject: 'Java', color: '#ED8B00', emoji: '☕', nextLesson: 'Object Oriented Programming', totalLessons: 35, schedule: 'Tue, Thu · 7 PM' },
   'C & C++ Fundamentals': { subject: 'C/C++', color: '#00599C', emoji: '⚡', nextLesson: 'Pointers & References', totalLessons: 30, schedule: 'Wed, Sat · 6 PM' },
-  'BCA / B.Tech Computer Science Coaching': { subject: 'Coaching', color: '#009688', emoji: '💻', nextLesson: 'Discrete Mathematics Logic', totalLessons: 45, schedule: 'Mon–Sat · 6 PM' }
+  'BCA': { subject: 'Coaching', color: '#009688', emoji: '💻', nextLesson: 'Discrete Mathematics Logic', totalLessons: 45, schedule: 'Mon–Sat · 6 PM' },
+  'B.Tech': { subject: 'Coaching', color: '#00796B', emoji: '⚙️', nextLesson: 'Advanced Algorithms', totalLessons: 50, schedule: 'Mon–Sat · 7 PM' }
 };
 
 const Courses = () => {

@@ -11,7 +11,7 @@ const item = { hidden: { opacity: 0, y: 14 }, show: { opacity: 1, y: 0, transiti
 
 const LEVELS = [
   'Class 2', 'Class 3', 'Class 4', 'Class 5', 'Class 6', 'Class 7',
-  'Class 8', 'Class 9', 'Class 10', 'Class 11', 'Class 12',
+  'Class 8', 'Class 9', 'Class 10', 'Class 11 CS', 'Class 11 App', 'Class 12 CS', 'Class 12 App',
   'BCA', 'B.Tech'
 ];
 
@@ -218,7 +218,7 @@ const Assignments = () => {
       if (groupVal === 'Class 2-5') return ['Class 2', 'Class 3', 'Class 4', 'Class 5'].includes(level);
       if (groupVal === 'Class 6-8') return ['Class 6', 'Class 7', 'Class 8'].includes(level);
       if (groupVal === 'Class 9-10') return ['Class 9', 'Class 10'].includes(level);
-      if (groupVal === 'Class 11-12') return ['Class 11', 'Class 12'].includes(level);
+      if (groupVal === 'Class 11-12') return ['Class 11 CS', 'Class 11 App', 'Class 12 CS', 'Class 12 App'].includes(level);
       return level === groupVal;
     };
 

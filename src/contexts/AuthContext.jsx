@@ -5,6 +5,8 @@ import { auth, db } from '../firebase';
 
 const AuthContext = createContext(null);
 
+const ADMIN_EMAILS = ['tapadarhribhu@gmail.com', 'biswa.maity2011@gmail.com'];
+
 export const useAuth = () => useContext(AuthContext);
 
 export const AuthProvider = ({ children }) => {
@@ -20,7 +22,7 @@ export const AuthProvider = ({ children }) => {
         const userSnap = await getDoc(userRef);
 
         if (!userSnap.exists()) {
-          const role = firebaseUser.email === 'tapadarhribhu@gmail.com' ? 'admin' : 'student';
+          const role = ADMIN_EMAILS.includes(firebaseUser.email?.toLowerCase()) ? 'admin' : 'student';
           const newProfile = {
             displayName: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || (role === 'admin' ? 'Admin' : 'Student'),
             email: firebaseUser.email,
@@ -32,11 +34,8 @@ export const AuthProvider = ({ children }) => {
             createdAt: new Date().toISOString()
           };
           await setDoc(userRef, newProfile);
-        } else {
-          if (firebaseUser.email === 'tapadarhribhu@gmail.com' && userSnap.data().role !== 'admin') {
-            await setDoc(userRef, { role: 'admin' }, { merge: true });
-          }
         }
+        // For existing users: role is READ from Firestore, never modified by the app
 
         unsubscribeProfile = onSnapshot(userRef, (docSnap) => {
           if (docSnap.exists()) {
@@ -45,13 +44,16 @@ export const AuthProvider = ({ children }) => {
               emailVerified: firebaseUser.emailVerified,
               ...docSnap.data()
             });
+          } else {
+            setUser(null);
           }
+          setLoading(false);
         });
       } else {
         setUser(null);
         if (unsubscribeProfile) unsubscribeProfile();
+        setLoading(false);
       }
-      setLoading(false);
     });
 
     return () => {

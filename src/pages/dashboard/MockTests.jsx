@@ -31,7 +31,7 @@ const leaderboard = [
 
 const CLASS_LEVELS = [
   'Class 2', 'Class 3', 'Class 4', 'Class 5', 'Class 6', 'Class 7',
-  'Class 8', 'Class 9', 'Class 10', 'Class 11', 'Class 12',
+  'Class 8', 'Class 9', 'Class 10', 'Class 11 CS', 'Class 11 App', 'Class 12 CS', 'Class 12 App',
   'BCA', 'B.Tech'
 ];
 
