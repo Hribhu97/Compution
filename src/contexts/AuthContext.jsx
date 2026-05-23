@@ -31,6 +31,8 @@ export const AuthProvider = ({ children }) => {
             course: 'Not specified',
             phone: '',
             role: role,
+            feeStatus: role === 'student' ? 'Pending' : '',
+            feesAmount: role === 'student' ? 2400 : 0,
             createdAt: new Date().toISOString()
           };
           await setDoc(userRef, newProfile);

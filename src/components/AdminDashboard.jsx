@@ -244,6 +244,8 @@ const AdminDashboard = () => {
         ...newStudent,
         role: 'student',
         verified: true,
+        feeStatus: 'Pending',
+        feesAmount: 2400,
         createdAt: serverTimestamp(),
       });
       
@@ -282,6 +284,10 @@ const AdminDashboard = () => {
     try {
       const userRef = doc(db, 'users', studentId);
       await updateDoc(userRef, { verified: true });
+      
+      // Update local state
+      setStudents(prev => prev.map(s => s.id === studentId ? { ...s, verified: true } : s));
+      
       setToast({ message: 'Student approved successfully!', type: 'success' });
     } catch (err) {
       console.error('Error approving student:', err);
@@ -297,6 +303,10 @@ const AdminDashboard = () => {
     setDeletingId(studentId);
     try {
       await deleteDoc(doc(db, 'users', studentId));
+      
+      // Update local state
+      setStudents(prev => prev.filter(s => s.id !== studentId));
+      
       setToast({ message: `${studentName} rejected and removed from roster`, type: 'danger' });
     } catch (err) {
       console.error('Error rejecting student:', err);

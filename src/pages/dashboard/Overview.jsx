@@ -323,14 +323,18 @@ const StudentOverview = () => {
     setChecklist(prev => ({ ...prev, whatsapp: true }));
     
     setTimeout(() => {
-      const text = encodeURIComponent(`Hi! I'm ${displayName}, enrolled in "${course}". Just finished onboarding on the student portal and wanted to connect with the official student group.`);
-      window.open(`https://wa.me/919674035542?text=${text}`, '_blank');
+      window.open('https://chat.whatsapp.com/DlMMGd2FEDEDaOhDCRzu7O', '_blank');
     }, 1500);
   };
 
   const handleScheduleOrientation = () => {
-    setToast('1-on-1 Orientation Call booked! A mentor will call you soon.');
+    setToast('Opening WhatsApp to send confirmation reminder...');
     setChecklist(prev => ({ ...prev, orientation: true }));
+    
+    setTimeout(() => {
+      const text = encodeURIComponent(`Hi! I'm ${displayName}, enrolled in "${course}". I would like to confirm my 1-on-1 orientation call.`);
+      window.open(`https://wa.me/916290935898?text=${text}`, '_blank');
+    }, 1500);
   };
 
   const checkedCount = Object.values(checklist).filter(Boolean).length;
@@ -455,9 +459,9 @@ const StudentOverview = () => {
                     <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Get the lesson plans, topics, and code compiler targets</div>
                   </div>
                   <button 
-                    onClick={handleDownloadSyllabus}
-                    className={`btn ${checklist.syllabus ? 'btn-ghost' : 'btn-primary'}`} 
-                    style={{ padding: '6px 12px', fontSize: '0.75rem', borderRadius: '8px', height: 'fit-content' }}
+                    disabled
+                    className="btn btn-ghost" 
+                    style={{ padding: '6px 12px', fontSize: '0.75rem', borderRadius: '8px', height: 'fit-content', opacity: 0.5, cursor: 'not-allowed' }}
                   >
                     {checklist.syllabus ? <><ShieldCheck size={12} /> Downloaded</> : <><Download size={12} /> Get Syllabus</>}
                   </button>
