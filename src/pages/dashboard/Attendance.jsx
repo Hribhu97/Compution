@@ -2,466 +2,745 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../../contexts/AuthContext';
 import { db } from '../../firebase';
-import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
-import { CalendarCheck, UserX, Clock, CheckCircle2, MapPin, Search, Navigation, Map, Globe, Activity } from 'lucide-react';
+import { collection, onSnapshot, query, orderBy, where, addDoc, deleteDoc, doc, serverTimestamp, getDocs, updateDoc, setDoc } from 'firebase/firestore';
+import { CalendarCheck, UserX, Clock, CheckCircle2, Search, ArrowRight, BookOpen, AlertCircle, Calendar as CalendarIcon, CheckCircle, BarChart2, Loader2 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, PieChart, Pie } from 'recharts';
-import { format } from 'date-fns';
+import { format, parseISO } from 'date-fns';
+import Modal from '../../components/Modal';
 
 const stagger = { show: { transition: { staggerChildren: 0.08 } } };
 const item = { hidden: { opacity: 0, y: 14 }, show: { opacity: 1, y: 0, transition: { duration: 0.4, ease: [0.16, 1, 0.3, 1] } } };
 
-const CustomTooltip = ({ active, payload }) => {
-  if (active && payload && payload.length) {
-    const data = payload[0].payload;
-    return (
-      <div style={{ background: 'var(--dark)', color: 'white', padding: '8px 14px', borderRadius: '8px', fontSize: '0.85rem' }}>
-        <div style={{ fontWeight: 700, marginBottom: '4px' }}>{data.date}</div>
-        <div style={{ textTransform: 'capitalize', color: data.status === 'present' ? '#66BB6A' : data.status === 'absent' ? '#EF5350' : '#FFA726' }}>
-          {data.status}
-        </div>
-      </div>
-    );
-  }
-  return null;
-};
-
-const CustomChartTooltip = ({ active, payload }) => {
-  if (active && payload && payload.length) {
-    return (
-      <div style={{ background: 'var(--dark)', color: 'white', padding: '8px 12px', borderRadius: '8px', fontSize: '0.85rem', fontWeight: 600 }}>
-        {payload[0].name}: {payload[0].value} students
-      </div>
-    );
-  }
-  return null;
-};
-
-// Colors for location breakdown pie chart
-const PIE_COLORS = ['#536DFE', '#00E676', '#FF3D00', '#FFA000', '#D500F9', '#00B0FF', '#76FF03', '#FFEB3B'];
+const PIE_COLORS = ['#66BB6A', '#EF5350', '#FFA726']; // Present (Green), Absent (Red), Late (Orange)
 
 const Attendance = () => {
   const { user } = useAuth();
   
-  // Student view states
-  const [records, setRecords] = useState([]);
-  const [stats, setStats] = useState({ total: 0, present: 0, absent: 0, late: 0, percentage: 0 });
-  const [loading, setLoading] = useState(true);
-
-  // Admin view states
+  // Student View States
+  const [studentRecords, setStudentRecords] = useState([]);
+  const [studentStats, setStudentStats] = useState({ total: 0, present: 0, absent: 0, late: 0, percentage: 0 });
+  
+  // Faculty/Admin View States
   const [students, setStudents] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [hoveredPoint, setHoveredPoint] = useState(null);
+  const [selectedSubject, setSelectedSubject] = useState('Python Mastery');
+  const [attendanceDate, setAttendanceDate] = useState(format(new Date(), 'yyyy-MM-dd'));
+  const [attendanceStatusMap, setAttendanceStatusMap] = useState({}); // studentId -> status
 
-  // Fetch individual student attendance
+  // Student Today's Schedules & Calendar
+  const [todaySchedules, setTodaySchedules] = useState([]);
+  const [todayCalendarEvents, setTodayCalendarEvents] = useState([]);
+  
+  // Loading and alerts
+  const [loading, setLoading] = useState(true);
+  const [toast, setToast] = useState('');
+
+  const canManage = user?.role === 'admin';
+
+  // 1. FETCH STUDENTS (for marking) AND GLOBAL ATTENDANCE (for dashboard)
   useEffect(() => {
-    if (!user?.uid || user?.role === 'admin') return;
+    if (!user) return;
+
+    let unsubStudents = () => {};
+    let unsubAttendance = () => {};
+    let unsubTodaySched = () => {};
+    let unsubTodayCal = () => {};
+
+    if (canManage) {
+      // Load all students to mark attendance
+      const studentsQuery = query(collection(db, 'users'), where('role', '==', 'student'));
+      unsubStudents = onSnapshot(studentsQuery, (snap) => {
+        const list = [];
+        snap.forEach(doc => {
+          list.push({ id: doc.id, ...doc.data() });
+        });
+        setStudents(list);
+        setLoading(false);
+      });
+
+      // Load today's marked attendance status to pre-populate map
+      const dateStr = format(parseISO(attendanceDate), 'dd MMM yyyy');
+      const attTodayQuery = query(
+        collection(db, 'attendance'),
+        where('date', '==', dateStr),
+        where('subject', '==', selectedSubject)
+      );
+
+      getDocs(attTodayQuery).then(snap => {
+        const statuses = {};
+        snap.forEach(doc => {
+          const data = doc.data();
+          statuses[data.studentId] = data.status;
+        });
+        setAttendanceStatusMap(statuses);
+      });
+
+    } else {
+      // Load student's own attendance from top-level attendance collection
+      const attQuery = query(
+        collection(db, 'attendance'),
+        where('studentId', '==', user.uid),
+        orderBy('timestamp', 'desc')
+      );
+
+      unsubAttendance = onSnapshot(attQuery, (snap) => {
+        const records = [];
+        let p = 0, a = 0, l = 0, t = 0;
+        
+        snap.forEach(doc => {
+          const d = { id: doc.id, ...doc.data() };
+          records.push(d);
+          t++;
+          if (d.status === 'present') p++;
+          else if (d.status === 'absent') a++;
+          else if (d.status === 'late') { l++; p++; } // Late present still increments attendance count
+        });
+
+        setStudentRecords(records);
+        setStudentStats({
+          total: t, present: p, absent: a, late: l,
+          percentage: t === 0 ? 0 : Math.round((p / t) * 100)
+        });
+        setLoading(false);
+      });
+
+      // Load today's schedule for student check-in
+      const todayDateStr = format(new Date(), 'yyyy-MM-dd');
+      const schedTodayQuery = query(
+        collection(db, 'studentSchedules'),
+        where('studentId', '==', user.uid),
+        where('date', '==', todayDateStr)
+      );
+      unsubTodaySched = onSnapshot(schedTodayQuery, (snap) => {
+        const list = [];
+        snap.forEach(doc => {
+          list.push({ id: doc.id, ...doc.data() });
+        });
+        setTodaySchedules(list);
+      });
+
+      // Load today's calendar events for student check-in
+      const calTodayQuery = query(
+        collection(db, 'studentCalendar'),
+        where('studentId', '==', user.uid),
+        where('date', '==', todayDateStr),
+        where('type', '==', 'class')
+      );
+      unsubTodayCal = onSnapshot(calTodayQuery, (snap) => {
+        const list = [];
+        snap.forEach(doc => {
+          list.push({ id: doc.id, ...doc.data() });
+        });
+        setTodayCalendarEvents(list);
+      });
+    }
+
+    return () => {
+      unsubStudents();
+      unsubAttendance();
+      unsubTodaySched();
+      unsubTodayCal();
+    };
+  }, [user, attendanceDate, selectedSubject]);
+
+  const triggerToast = (msg) => {
+    setToast(msg);
+    setTimeout(() => setToast(''), 3000);
+  };
+
+  // ── FACULTY: MARK ATTENDANCE FOR INDIVIDUAL STUDENT ──
+  const handleMarkStatus = async (studentId, studentName, status) => {
+    const dateStr = format(parseISO(attendanceDate), 'dd MMM yyyy');
+    const docId = `${studentId}_${dateStr.replace(/\s+/g, '_')}_${selectedSubject.replace(/\s+/g, '_')}`;
     
-    const attRef = query(collection(db, `users/${user.uid}/attendance`), orderBy('createdAt', 'desc'));
-    const unsub = onSnapshot(attRef, (snap) => {
-      const data = [];
-      let p = 0, a = 0, l = 0, t = 0;
-      
-      snap.forEach(doc => {
-        const d = { id: doc.id, ...doc.data() };
-        data.push(d);
-        t++;
-        if (d.status === 'present') p++;
-        else if (d.status === 'absent') a++;
-        else if (d.status === 'late') { l++; p++; }
-      });
-      
-      setRecords(data);
-      setStats({
-        total: t, present: p, absent: a, late: l,
-        percentage: t === 0 ? 0 : Math.round((p / t) * 100)
-      });
-      setLoading(false);
-    });
+    try {
+      // 1. Write attendance record deterministically (idempotent write)
+      await setDoc(doc(db, 'attendance', docId), {
+        studentId,
+        studentName,
+        date: dateStr,
+        status,
+        subject: selectedSubject,
+        faculty: user.displayName || 'Faculty Mentor',
+        timestamp: serverTimestamp()
+      }, { merge: true });
 
-    return () => unsub();
-  }, [user]);
+      // Update local state map
+      setAttendanceStatusMap(prev => ({ ...prev, [studentId]: status }));
+      triggerToast(`Marked ${studentName} as ${status}`);
 
-  // Fetch all students (for admin)
-  useEffect(() => {
-    if (user?.role !== 'admin') return;
+      // 2. Client-side fallback trigger: Create absent notification if status is absent and not already logged
+      if (status === 'absent') {
+        const notifDocId = docId; // Use same deterministic ID to prevent duplicates
+        const notifRef = doc(db, 'attendanceNotifications', notifDocId);
+        const notifSnap = await getDocs(query(collection(db, 'attendanceNotifications'), where('studentId', '==', studentId), where('date', '==', dateStr), where('subject', '==', selectedSubject)));
 
-    const unsub = onSnapshot(collection(db, 'users'), (snap) => {
-      const data = [];
-      snap.forEach(doc => {
-        const d = doc.data();
-        if (d.role !== 'admin') {
-          // Fallback mock address if none specified yet
-          const testLocations = [
-            'Salt Lake, Sector V, Kolkata',
-            'New Town, Action Area 1, Kolkata',
-            'Gariahat, Ballygunge, Kolkata',
-            'Howrah AC Market, Howrah',
-            'Behala Chowrasta, Kolkata',
-            'Dum Dum Cantonment, Kolkata',
-            'Jadavpur University Area, Kolkata'
-          ];
-          const mockLoc = d.location && d.location !== '' ? d.location : testLocations[Math.floor(Math.random() * testLocations.length)];
-          data.push({ 
-            id: doc.id, 
-            ...d,
-            location: mockLoc
+        if (notifSnap.empty) {
+          // Fetch parent phone
+          let parentPhone = '';
+          let parentName = '';
+          const usersSnap = await getDocs(query(collection(db, 'users')));
+          usersSnap.forEach(docSnap => {
+            if (docSnap.id === studentId) {
+              const sData = docSnap.data();
+              parentPhone = sData.guardianPhone || sData.phone || '';
+              parentName = sData.guardianName || 'Parent';
+            }
           });
+
+          await setDoc(notifRef, {
+            studentId,
+            studentName,
+            parentName,
+            parentPhone,
+            date: dateStr,
+            subject: selectedSubject,
+            status: 'pending',
+            message: `Dear Parent, your child ${studentName} was marked absent today at Compution for ${selectedSubject}. Please contact the institute if needed.`,
+            timestamp: serverTimestamp()
+          });
+        } else {
+          console.log(`Alert already logged for ${studentName} today`);
+        }
+      }
+    } catch (err) {
+      console.error("Error logging attendance:", err);
+      triggerToast('Failed to log attendance');
+    }
+  };
+
+  // ── FACULTY: BULK MARK ATTENDANCE ──
+  const handleBulkMark = async (status) => {
+    const dateStr = format(parseISO(attendanceDate), 'dd MMM yyyy');
+    
+    try {
+      const promises = students.map(async (student) => {
+        // Skip if already marked to prevent overriding custom marks
+        if (attendanceStatusMap[student.id]) return;
+
+        const docId = `${student.id}_${dateStr.replace(/\s+/g, '_')}_${selectedSubject.replace(/\s+/g, '_')}`;
+        await setDoc(doc(db, 'attendance', docId), {
+          studentId: student.id,
+          studentName: student.displayName,
+          date: dateStr,
+          status: status,
+          subject: selectedSubject,
+          faculty: user.displayName || 'Faculty Mentor',
+          timestamp: serverTimestamp()
+        }, { merge: true });
+
+        // Update local map state
+        setAttendanceStatusMap(prev => ({ ...prev, [student.id]: status }));
+
+        // Handle absent notifications for bulk absents
+        if (status === 'absent') {
+          const notifDocId = docId;
+          const notifRef = doc(db, 'attendanceNotifications', notifDocId);
+          
+          let parentPhone = student.guardianPhone || student.phone || '';
+          let parentName = student.guardianName || 'Parent';
+
+          const notifSnap = await getDocs(query(collection(db, 'attendanceNotifications'), where('studentId', '==', student.id), where('date', '==', dateStr), where('subject', '==', selectedSubject)));
+          if (notifSnap.empty) {
+            await setDoc(notifRef, {
+              studentId: student.id,
+              studentName: student.displayName,
+              parentName,
+              parentPhone,
+              date: dateStr,
+              subject: selectedSubject,
+              status: 'pending',
+              message: `Dear Parent, your child ${student.displayName} was marked absent today at Compution for ${selectedSubject}. Please contact the institute if needed.`,
+              timestamp: serverTimestamp()
+            });
+          }
         }
       });
-      setStudents(data);
-      setLoading(false);
-    });
 
-    return () => unsub();
-  }, [user]);
-
-  // Helper to extract city/neighborhood
-  const getArea = (loc) => {
-    if (!loc) return 'Unspecified';
-    const parts = loc.split(',');
-    if (parts.length >= 2) {
-      return parts[parts.length - 2].trim();
+      await Promise.all(promises);
+      triggerToast(`All unmarked students marked as ${status}`);
+    } catch (err) {
+      console.error("Error in bulk marking attendance:", err);
+      triggerToast('Bulk marking failed');
     }
-    return parts[0].trim();
   };
 
-  // Compile geographic analytics data
-  const getGeoStats = () => {
-    const counts = {};
-    students.forEach(s => {
-      const area = getArea(s.location);
-      counts[area] = (counts[area] || 0) + 1;
-    });
+  // Student analytics charts compilation
+  const todayClasses = [
+    ...todaySchedules.map(s => ({
+      id: s.id,
+      source: 'studentSchedules',
+      title: s.subject || 'Class',
+      time: s.time || '',
+      facultyId: s.facultyId || '',
+      faculty: s.faculty || 'Faculty Mentor'
+    })),
+    ...todayCalendarEvents.map(c => ({
+      id: c.id,
+      source: 'studentCalendar',
+      title: c.title || 'Class',
+      time: c.time || '',
+      facultyId: c.facultyId || '',
+      faculty: c.faculty || 'Faculty Mentor'
+    }))
+  ];
 
-    return Object.entries(counts).map(([name, value]) => ({
-      name,
-      value
-    })).sort((a, b) => b.value - a.value);
-  };
+  const getCheckInStatus = (classTimeStr) => {
+    try {
+      const [hours, minutes] = classTimeStr.split(':').map(Number);
+      if (isNaN(hours) || isNaN(minutes)) return { allowed: false, reason: 'Invalid timing format' };
 
-  const geoData = getGeoStats();
-  const totalUniqueAreas = geoData.length;
-  const topLocation = geoData[0]?.name || 'N/A';
+      const now = new Date();
+      const classTime = new Date();
+      classTime.setHours(hours, minutes, 0, 0);
 
-  // ── ADMIN VIEW ───────────────────────────────────────
-  if (user?.role === 'admin') {
-    const filteredStudents = students.filter(s =>
-      s.displayName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      s.location?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      s.course?.toLowerCase().includes(searchQuery.toLowerCase())
-    );
+      const windowStart = new Date(classTime.getTime() - 15 * 60 * 1000);
+      const windowEnd = new Date(classTime.getTime() + 60 * 60 * 1000);
 
-    // Dynamic map dots distribution simulation coordinates
-    const mapStudents = filteredStudents.map((s, idx) => {
-      // Create reproducible mock coordinates based on student ID string hashes
-      let hash = 0;
-      for (let i = 0; i < s.id.length; i++) {
-        hash = s.id.charCodeAt(i) + ((hash << 5) - hash);
+      if (now < windowStart) {
+        return {
+          allowed: false,
+          status: 'pending',
+          reason: `Opens at ${format(windowStart, 'hh:mm a')}`
+        };
       }
-      const x = 50 + (hash % 35); // scatter around center x: 15% to 85%
-      const y = 50 + ((hash >> 4) % 35); // scatter around center y
-      return { ...s, mapX: x, mapY: y };
-    });
 
-    return (
-      <motion.div variants={stagger} initial="hidden" animate="show" style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
-        
-        {/* Admin Header */}
-        <motion.div variants={item}>
-          <h1 style={{ fontSize: '1.75rem', fontWeight: 800, marginBottom: '6px' }}>Student Location Tracking</h1>
-          <p style={{ color: 'var(--text-muted)' }}>Interactive distribution dashboard mapping student demographics and addresses</p>
-        </motion.div>
+      if (now > windowEnd) {
+        return {
+          allowed: false,
+          status: 'absent',
+          reason: 'Check-in expired (closes 60m after starts)'
+        };
+      }
 
-        {/* Dynamic Metric Indicator Row */}
-        <div className="grid-stats-dashboard" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
-          {[
-            { label: 'Total Mapped Students', value: students.length, icon: <Globe size={24} />, color: 'var(--primary)', bg: 'rgba(83,109,254,0.08)' },
-            { label: 'Neighborhoods Covered', value: totalUniqueAreas, icon: <Map size={24} />, color: 'var(--success)', bg: 'rgba(0,230,118,0.08)' },
-            { label: 'Top Hub Location', value: topLocation, icon: <MapPin size={24} />, color: '#FF3D00', bg: 'rgba(255,61,0,0.08)' },
-            { label: 'Active Address Sync', value: '100% Verified', icon: <Activity size={24} />, color: '#D500F9', bg: 'rgba(213,0,249,0.08)' },
-          ].map((stat, i) => (
-            <motion.div key={i} variants={item} className="card card-p" style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-              <div style={{ width: 54, height: 54, borderRadius: '16px', background: stat.bg, color: stat.color, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                {stat.icon}
-              </div>
-              <div>
-                <div style={{ fontSize: '1.4rem', fontWeight: 900, fontFamily: 'var(--font-heading)', color: 'var(--dark)' }}>{stat.value}</div>
-                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 500 }}>{stat.label}</div>
-              </div>
-            </motion.div>
-          ))}
-        </div>
+      const lateCutoff = new Date(classTime.getTime() + 15 * 60 * 1000);
+      if (now <= lateCutoff) {
+        return {
+          allowed: true,
+          status: 'present',
+          reason: 'On-time (Present)'
+        };
+      } else {
+        return {
+          allowed: true,
+          status: 'late',
+          reason: 'Late presence'
+        };
+      }
+    } catch (e) {
+      return { allowed: false, reason: 'Error parsing time' };
+    }
+  };
 
-        {/* MIDDLE SECTION - CHARTS AND SVG MAP */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '24px' }} className="grid-2-col-mobile">
-          
-          {/* Smart SVG Interactive Map Visualizer */}
-          <motion.div variants={item} className="card card-p" style={{ display: 'flex', flexDirection: 'column', height: '400px', position: 'relative' }}>
-            <h3 style={{ fontSize: '1.05rem', fontWeight: 800, marginBottom: '4px' }}>Interactive Location Scatter Map</h3>
-            <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '16px' }}>Hover over map coordinates to inspect student coordinates</p>
-            
-            <div style={{ flex: 1, position: 'relative', width: '100%', background: 'linear-gradient(to bottom, #F5F7FA, #E4E8F0)', borderRadius: '12px', overflow: 'hidden', border: '1px solid var(--border)' }}>
-              
-              {/* Fake Map Grid lines */}
-              <div style={{ position: 'absolute', inset: 0, backgroundImage: 'radial-gradient(circle, #CBD5E1 1px, transparent 1.5px)', backgroundSize: '24px 24px', opacity: 0.5 }} />
-              
-              {/* Map Scatter Coordinate Overlay */}
-              <svg width="100%" height="100%" style={{ position: 'absolute', top: 0, left: 0 }}>
-                {/* SVG connection lines for active student groups */}
-                {mapStudents.map((ms, idx) => (
-                  <circle
-                    key={ms.id}
-                    cx={`${ms.mapX}%`}
-                    cy={`${ms.mapY}%`}
-                    r={hoveredPoint?.id === ms.id ? 9 : 6}
-                    fill={hoveredPoint?.id === ms.id ? 'var(--primary)' : 'rgba(83,109,254,0.7)'}
-                    stroke="white"
-                    strokeWidth={hoveredPoint?.id === ms.id ? 3 : 1.5}
-                    style={{ transition: 'all 0.2s', cursor: 'pointer' }}
-                    onMouseEnter={() => setHoveredPoint(ms)}
-                    onMouseLeave={() => setHoveredPoint(null)}
-                    onClick={() => {
-                      const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(ms.location)}`;
-                      window.open(mapsUrl, '_blank');
-                    }}
-                  />
-                ))}
-              </svg>
+  const todayDateStrFormatted = format(new Date(), 'dd MMM yyyy');
+  const getMarkedStatus = (classTitle) => {
+    const record = studentRecords.find(r => r.date === todayDateStrFormatted && r.subject === classTitle);
+    return record ? record.status : null;
+  };
 
-              {/* Dynamic Coordinate Tooltip overlay */}
-              <AnimatePresence>
-                {hoveredPoint && (
-                  <motion.div
-                    initial={{ opacity: 0, scale: 0.9, y: 10 }}
-                    animate={{ opacity: 1, scale: 1, y: 0 }}
-                    exit={{ opacity: 0, scale: 0.9, y: 10 }}
-                    style={{
-                      position: 'absolute',
-                      bottom: '16px',
-                      left: '16px',
-                      right: '16px',
-                      background: 'rgba(17, 24, 39, 0.95)',
-                      backdropFilter: 'blur(10px)',
-                      color: 'white',
-                      padding: '12px 16px',
-                      borderRadius: '12px',
-                      border: '1px solid rgba(255,255,255,0.1)',
-                      zIndex: 20,
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '12px'
-                    }}
-                  >
-                    <div style={{
-                      width: '36px', height: '36px', borderRadius: '50%',
-                      background: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: '0.9rem'
-                    }}>
-                      {hoveredPoint.displayName?.charAt(0)}
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontWeight: 700, fontSize: '0.88rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{hoveredPoint.displayName}</div>
-                      <div style={{ fontSize: '0.75rem', color: '#9CA3AF', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '3px' }}><MapPin size={11} /> {hoveredPoint.location}</div>
-                    </div>
-                    <span style={{ fontSize: '0.7rem', background: 'rgba(255,255,255,0.15)', padding: '3px 8px', borderRadius: '4px', textTransform: 'uppercase', fontWeight: 600 }}>{hoveredPoint.course || 'General'}</span>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
-          </motion.div>
+  const handleStudentSubmitAttendance = async (classItem, status) => {
+    const dateStr = format(new Date(), 'dd MMM yyyy');
+    const docId = `${user.uid}_${dateStr.replace(/\s+/g, '_')}_${classItem.title.replace(/\s+/g, '_')}`;
 
-          {/* Regional distribution Chart */}
-          <motion.div variants={item} className="card card-p" style={{ display: 'flex', flexDirection: 'column', height: '400px' }}>
-            <h3 style={{ fontSize: '1.05rem', fontWeight: 800, marginBottom: '20px' }}>Neighborhood Density</h3>
-            <div style={{ flex: 1, minHeight: 0 }}>
-              {geoData.length === 0 ? (
-                <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-light)' }}>No address records available.</div>
-              ) : (
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={geoData} layout="vertical" margin={{ top: 0, right: 10, left: 10, bottom: 0 }}>
-                    <XAxis type="number" hide />
-                    <YAxis dataKey="name" type="category" width={110} axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: 'var(--text-muted)', fontWeight: 600 }} />
-                    <Tooltip content={<CustomChartTooltip />} cursor={{ fill: 'rgba(0,0,0,0.02)' }} />
-                    <Bar dataKey="value" radius={[0, 4, 4, 0]} barSize={16}>
-                      {geoData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              )}
-            </div>
-          </motion.div>
-        </div>
+    try {
+      await setDoc(doc(db, 'attendance', docId), {
+        studentId: user.uid,
+        studentName: user.displayName || 'Student',
+        date: dateStr,
+        status: status,
+        subject: classItem.title,
+        faculty: classItem.faculty,
+        timestamp: serverTimestamp()
+      }, { merge: true });
 
-        {/* BOTTOM SECTION - SEARCH & INTERACTIVE STUDENT CARDS */}
-        <motion.div variants={item}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
-            <h3 style={{ fontSize: '1.2rem', fontWeight: 800 }}>Student Address Directory</h3>
-            
-            <div style={{ position: 'relative', width: '100%', maxWidth: '320px' }}>
-              <Search size={18} style={{ position: 'absolute', left: '16px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-              <input
-                placeholder="Search students or locations..."
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                style={{
-                  width: '100%', padding: '10px 16px 10px 46px', borderRadius: '100px', border: '1px solid var(--border)',
-                  background: 'white', fontSize: '0.9rem', outline: 'none', color: 'var(--dark)'
-                }}
-              />
-            </div>
-          </div>
+      const personalAttRef = doc(collection(db, `users/${user.uid}/attendance`));
+      await setDoc(personalAttRef, {
+        date: format(new Date(), 'yyyy-MM-dd'),
+        status: status,
+        subject: classItem.title,
+        faculty: classItem.faculty,
+        timestamp: serverTimestamp()
+      });
 
-          <div className="grid-auto-cards-sm">
-            {filteredStudents.map((student) => {
-              const initials = student.displayName?.split(' ').map(n=>n[0]).join('').slice(0,2).toUpperCase() || 'S';
-              return (
-                <motion.div key={student.id} whileHover={{ y: -4 }} className="card card-p" style={{ display: 'flex', flexDirection: 'column', gap: '14px', background: 'white' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    {student.photoURL ? (
-                      <img src={student.photoURL} alt={student.displayName} style={{ width: 42, height: 42, borderRadius: '50%', objectFit: 'cover' }} />
-                    ) : (
-                      <div style={{ width: 42, height: 42, borderRadius: '50%', background: 'var(--surface)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.85rem', fontWeight: 600, color: 'var(--dark)' }}>{initials}</div>
-                    )}
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontWeight: 700, fontSize: '0.95rem', color: 'var(--dark)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{student.displayName}</div>
-                      <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>ID: {student.studentId}</div>
-                    </div>
-                  </div>
+      triggerToast(`Attendance marked as ${status}! 🎉`);
+    } catch (err) {
+      console.error(err);
+      triggerToast('Failed to mark attendance');
+    }
+  };
 
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '0.82rem', padding: '10px 12px', background: 'var(--surface)', borderRadius: '8px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span>Course:</span>
-                      <strong style={{ color: 'var(--dark)' }}>{student.course || 'Not Enrolled'}</strong>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span>Class / Level:</span>
-                      <strong style={{ color: 'var(--dark)' }}>{student.grade || 'Not Specified'}</strong>
-                    </div>
-                  </div>
-
-                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', fontSize: '0.85rem', color: 'var(--text-muted)', minHeight: '36px' }}>
-                    <MapPin size={16} style={{ flexShrink: 0, color: 'var(--primary)', marginTop: '2px' }} />
-                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
-                      {student.location}
-                    </span>
-                  </div>
-
-                  <button
-                    onClick={() => {
-                      const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(student.location)}`;
-                      window.open(mapsUrl, '_blank');
-                    }}
-                    className="btn btn-secondary"
-                    style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '10px', fontSize: '0.82rem' }}
-                  >
-                    <Navigation size={14} /> Open in Google Maps
-                  </button>
-                </motion.div>
-              );
-            })}
-          </div>
-        </motion.div>
-
-      </motion.div>
-    );
-  }
-
-  // ── STUDENT VIEW ─────────────────────────────────────
-  const chartData = [...records].reverse().slice(-14).map((r, i) => ({
-    name: `Class ${i+1}`,
+  const chartTimeline = [...studentRecords].reverse().slice(-10).map((r, i) => ({
+    name: `L${i+1}`,
     date: r.date,
     status: r.status,
     val: 1
   }));
 
-  const statCards = [
-    { label: 'Total Present', value: stats.present, icon: <CheckCircle2 size={24} />, color: 'var(--success)', bg: 'rgba(102,187,106,0.1)' },
-    { label: 'Total Absent', value: stats.absent, icon: <UserX size={24} />, color: 'var(--danger)', bg: 'rgba(239,83,80,0.1)' },
-    { label: 'Late Present', value: stats.late, icon: <Clock size={24} />, color: '#FFA726', bg: 'rgba(255,167,38,0.1)' },
-    { label: 'Attendance %', value: `${stats.percentage}%`, icon: <CalendarCheck size={24} />, color: 'var(--primary)', bg: 'rgba(83,109,254,0.1)' },
-  ];
+  const pieData = [
+    { name: 'Present', value: studentStats.present },
+    { name: 'Absent', value: studentStats.absent },
+    { name: 'Late', value: studentStats.late }
+  ].filter(d => d.value > 0);
+
+  // Filter student lists (Faculty search)
+  const filteredStudents = students.filter(s =>
+    s.displayName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    s.course?.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   return (
     <motion.div variants={stagger} initial="hidden" animate="show" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       
-      <motion.div variants={item} style={{ marginBottom: '8px' }}>
-        <h1 style={{ fontSize: '1.75rem', marginBottom: '6px' }}>My Attendance</h1>
-        <p style={{ color: 'var(--text-muted)' }}>Track your class presence and overview your history</p>
-      </motion.div>
+      {/* Toast Alert */}
+      <AnimatePresence>
+        {toast && (
+          <motion.div initial={{ opacity: 0, y: -20, x: '-50%' }} animate={{ opacity: 1, y: 0, x: '-50%' }} exit={{ opacity: 0, y: -20, x: '-50%' }} style={{ position: 'fixed', top: 32, left: '50%', zIndex: 9999, background: 'rgba(34,37,43,0.95)', color: 'white', padding: '12px 24px', borderRadius: '12px', boxShadow: 'var(--shadow-lg)', fontWeight: 600, fontSize: '0.9rem' }}>
+            {toast}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-      <div className="grid-stats-dashboard">
-        {statCards.map((s, i) => (
-          <motion.div key={i} variants={item} className="card card-p" style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-            <div style={{ width: 54, height: 54, borderRadius: '16px', background: s.bg, color: s.color, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              {s.icon}
-            </div>
+      {/* ==================== 1. FACULTY / ADMIN VIEW ==================== */}
+      {canManage && (
+        <>
+          <motion.div variants={item} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
             <div>
-              {loading ? <div style={{ height: 28, width: 48, background: 'var(--surface)', borderRadius: 6, marginBottom: 4 }} /> : 
-              <div style={{ fontSize: '1.5rem', fontWeight: 900, fontFamily: 'var(--font-heading)' }}>{s.value}</div>}
-              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 500 }}>{s.label}</div>
+              <h1 style={{ fontSize: '1.75rem', fontWeight: 800, marginBottom: '6px' }}>Online Attendance Sheet</h1>
+              <p style={{ color: 'var(--text-muted)' }}>Select date and subject track to log student classroom attendance roster</p>
             </div>
           </motion.div>
-        ))}
-      </div>
 
-      <motion.div variants={item} className="card card-p" style={{ height: '300px' }}>
-        <h3 style={{ fontSize: '1.1rem', fontWeight: 700, marginBottom: '24px' }}>Recent Timeline</h3>
-        {loading ? (
-          <div style={{ height: '200px', display: 'flex', alignItems: 'flex-end', gap: '10px' }}>
-            {[...Array(14)].map((_, i) => <div key={i} style={{ flex: 1, background: 'var(--surface)', height: `${Math.random() * 60 + 20}%`, borderRadius: '4px 4px 0 0' }} />)}
-          </div>
-        ) : chartData.length === 0 ? (
-          <div style={{ height: '200px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-light)' }}>
-            No attendance data available.
-          </div>
-        ) : (
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={chartData} margin={{ top: 0, right: 0, left: 0, bottom: 0 }} barSize={32}>
-              <XAxis dataKey="name" hide />
-              <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(0,0,0,0.02)' }} />
-              <Bar dataKey="val" radius={[6, 6, 6, 6]}>
-                {chartData.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={entry.status === 'present' ? '#66BB6A' : entry.status === 'absent' ? '#EF5350' : '#FFA726'} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        )}
-      </motion.div>
+          {/* Config card */}
+          <motion.div variants={item} className="card card-p" style={{ padding: '20px 24px', background: 'white', display: 'flex', gap: '16px', flexWrap: 'wrap', alignItems: 'center' }}>
+            
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: '220px' }}>
+              <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-muted)' }}>Class Date:</span>
+              <input
+                type="date"
+                value={attendanceDate}
+                onChange={e => setAttendanceDate(e.target.value)}
+                className="custom-date-picker"
+                style={{ maxWidth: '160px' }}
+              />
+            </div>
 
-      <motion.div variants={item} className="card card-p" style={{ padding: '0' }}>
-        <div style={{ padding: '24px', borderBottom: '1px solid var(--border)' }}>
-          <h3 style={{ fontSize: '1.1rem', fontWeight: 700 }}>Attendance Logs</h3>
-        </div>
-        <div style={{ padding: '0 24px' }}>
-          {loading ? (
-            <div style={{ padding: '24px 0' }}>Loading logs...</div>
-          ) : records.length === 0 ? (
-            <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--text-light)' }}>No records found.</div>
-          ) : (
-            records.map((r, i) => (
-              <div key={r.id} style={{ 
-                display: 'flex', justifyContent: 'space-between', alignItems: 'center', 
-                padding: '16px 0', borderBottom: i < records.length - 1 ? '1px solid var(--border)' : 'none' 
-              }}>
-                <div>
-                  <div style={{ fontWeight: 600, color: 'var(--dark)' }}>{r.date}</div>
-                  <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>{r.subject || 'General Class'}</div>
-                </div>
-                <div style={{ 
-                  padding: '6px 12px', borderRadius: '100px', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase',
-                  background: r.status === 'present' ? 'rgba(102,187,106,0.1)' : r.status === 'absent' ? 'rgba(239,83,80,0.1)' : 'rgba(255,167,38,0.1)',
-                  color: r.status === 'present' ? 'var(--success)' : r.status === 'absent' ? 'var(--danger)' : '#FFA726'
-                }}>
-                  {r.status}
-                </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: '260px', flex: 1 }}>
+              <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-muted)' }}>Subject:</span>
+              <select
+                value={selectedSubject}
+                onChange={e => setSelectedSubject(e.target.value)}
+                style={{ flex: 1, padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--white)', outline: 'none', fontSize: '0.88rem' }}
+              >
+                <option value="Python Mastery">Python Mastery</option>
+                <option value="Data Structures & Algorithms">Data Structures & Algorithms</option>
+                <option value="Class 11 CS">Class 11 CS</option>
+                <option value="Class 11 App">Class 11 App</option>
+                <option value="Class 12 CS">Class 12 CS</option>
+                <option value="Class 12 App">Class 12 App</option>
+                <option value="Web Development (HTML/CSS/JS)">Web Development (HTML/CSS/JS)</option>
+                <option value="Java Development">Java Development</option>
+                <option value="C & C++ Fundamentals">C & C++ Fundamentals</option>
+                <option value="Tally Prime">Tally Prime</option>
+                <option value="Advanced Excel">Advanced Excel</option>
+                <option value="Basic Computer">Basic Computer</option>
+              </select>
+            </div>
+
+            {/* Bulk actions */}
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button onClick={() => handleBulkMark('present')} style={{ background: 'rgba(102,187,106,0.1)', color: 'var(--success)', border: '1px solid rgba(102,187,106,0.2)', padding: '6px 12px', borderRadius: '6px', fontSize: '0.78rem', fontWeight: 700 }}>
+                All Present
+              </button>
+              <button onClick={() => handleBulkMark('absent')} style={{ background: 'rgba(239,83,80,0.1)', color: 'var(--danger)', border: '1px solid rgba(239,83,80,0.2)', padding: '6px 12px', borderRadius: '6px', fontSize: '0.78rem', fontWeight: 700 }}>
+                All Absent
+              </button>
+            </div>
+          </motion.div>
+
+          {/* Search roster and grid */}
+          <motion.div variants={item}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <h3 style={{ fontSize: '1.15rem', fontWeight: 800 }}>Student Roster</h3>
+              <div style={{ position: 'relative', width: '260px' }}>
+                <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-light)' }} />
+                <input
+                  placeholder="Search students..."
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  style={{ width: '100%', padding: '6px 12px 6px 36px', borderRadius: '8px', border: '1px solid var(--border)', fontSize: '0.85rem' }}
+                />
               </div>
-            ))
-          )}
-        </div>
-      </motion.div>
+            </div>
 
+            {loading ? (
+              <div style={{ height: '200px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Loader2 className="spinning" size={24} /></div>
+            ) : filteredStudents.length === 0 ? (
+              <div style={{ padding: '40px', background: 'white', borderRadius: '16px', textAlign: 'center', color: 'var(--text-light)' }}>No matching students.</div>
+            ) : (
+              <div className="grid-auto-cards-sm" style={{ gap: '20px' }}>
+                {filteredStudents.map(student => {
+                  const status = attendanceStatusMap[student.id] || '';
+                  const initials = student.displayName?.split(' ').map(n=>n[0]).join('').slice(0,2).toUpperCase() || 'ST';
+                  
+                  return (
+                    <div key={student.id} className="card card-p" style={{ background: 'white', display: 'flex', flexDirection: 'column', gap: '14px', border: status === 'present' ? '1.5px solid var(--success)' : status === 'absent' ? '1.5px solid var(--danger)' : status === 'late' ? '1.5px solid var(--warning)' : '1px solid var(--border)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <div style={{ width: 38, height: 38, borderRadius: '50%', background: 'var(--surface)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: '0.85rem' }}>{initials}</div>
+                        <div>
+                          <h4 style={{ fontWeight: 700, fontSize: '0.92rem' }}>{student.displayName}</h4>
+                          <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{student.course || 'Unassigned'}</p>
+                        </div>
+                      </div>
+
+                      {/* Marking controls */}
+                      <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+                        <button
+                          onClick={() => handleMarkStatus(student.id, student.displayName, 'present')}
+                          style={{
+                            flex: 1, padding: '8px', borderRadius: '8px', fontSize: '0.78rem', fontWeight: 700, cursor: 'pointer',
+                            background: status === 'present' ? 'var(--success)' : 'var(--surface)',
+                            color: status === 'present' ? 'white' : 'var(--text-muted)'
+                          }}
+                        >
+                          Present
+                        </button>
+                        <button
+                          onClick={() => handleMarkStatus(student.id, student.displayName, 'absent')}
+                          style={{
+                            flex: 1, padding: '8px', borderRadius: '8px', fontSize: '0.78rem', fontWeight: 700, cursor: 'pointer',
+                            background: status === 'absent' ? 'var(--danger)' : 'var(--surface)',
+                            color: status === 'absent' ? 'white' : 'var(--text-muted)'
+                          }}
+                        >
+                          Absent
+                        </button>
+                        <button
+                          onClick={() => handleMarkStatus(student.id, student.displayName, 'late')}
+                          style={{
+                            flex: 1, padding: '8px', borderRadius: '8px', fontSize: '0.78rem', fontWeight: 700, cursor: 'pointer',
+                            background: status === 'late' ? 'var(--warning)' : 'var(--surface)',
+                            color: status === 'late' ? 'white' : 'var(--text-muted)'
+                          }}
+                        >
+                          Late
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </motion.div>
+        </>
+      )}
+
+      {/* ==================== 2. STUDENT / PARENT VIEW ==================== */}
+      {user?.role === 'student' && (
+        <>
+          <motion.div variants={item}>
+            <h1 style={{ fontSize: '1.75rem', fontWeight: 800, marginBottom: '6px' }}>My Attendance</h1>
+            <p style={{ color: 'var(--text-muted)' }}>Realtime class presence analysis and logs for student & parent review</p>
+          </motion.div>
+
+          {/* Today's Class Check-In Card */}
+          <motion.div variants={item} className="card card-p" style={{ background: 'white', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <h3 style={{ fontSize: '1.25rem', fontWeight: 800 }}>Today's Class Attendance Check-In</h3>
+            {todayClasses.length === 0 ? (
+              <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)', border: '1.5px dashed var(--border)', borderRadius: '12px', fontSize: '0.88rem' }}>
+                <CalendarIcon size={28} style={{ margin: '0 auto 8px', color: 'var(--text-light)', opacity: 0.6 }} />
+                <span>No classes scheduled for today. Attendance check-in is active only on class days.</span>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {todayClasses.map(classItem => {
+                  const checkIn = getCheckInStatus(classItem.time);
+                  const markedStatus = getMarkedStatus(classItem.title);
+
+                  return (
+                    <div key={classItem.id} style={{ display: 'flex', gap: '16px', alignItems: 'center', background: 'var(--surface)', padding: '16px', borderRadius: '12px', border: '1px solid var(--border)', flexWrap: 'wrap', justifyContent: 'space-between' }}>
+                      <div>
+                        <h4 style={{ fontWeight: 800, fontSize: '0.95rem', color: 'var(--dark)' }}>{classItem.title}</h4>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '4px' }}>
+                          <div>🕒 Time: {classItem.time}</div>
+                          <div>👨‍🏫 Faculty: {classItem.faculty}</div>
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                        {markedStatus ? (
+                          <span style={{
+                            padding: '6px 12px', borderRadius: '8px', fontSize: '0.78rem', fontWeight: 800, textTransform: 'uppercase',
+                            background: markedStatus === 'present' ? 'rgba(102,187,106,0.1)' : markedStatus === 'late' ? 'rgba(255,167,38,0.1)' : 'rgba(239,83,80,0.1)',
+                            color: markedStatus === 'present' ? 'var(--success)' : markedStatus === 'late' ? '#FFA726' : 'var(--danger)'
+                          }}>
+                            {markedStatus} (Marked)
+                          </span>
+                        ) : (
+                          <>
+                            <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 600 }}>
+                              {checkIn.reason}
+                            </span>
+                            <button
+                              disabled={!checkIn.allowed}
+                              onClick={() => handleStudentSubmitAttendance(classItem, checkIn.status)}
+                              className="btn btn-primary"
+                              style={{ padding: '8px 16px', borderRadius: '8px', fontSize: '0.78rem', fontWeight: 700 }}
+                            >
+                              Check In
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </motion.div>
+
+          {/* Metric Stats Cards */}
+          <div className="grid-stats-dashboard">
+            {[
+              { label: 'Total Classes Checked', value: studentStats.total, icon: <BarChart2 size={24} />, color: 'var(--primary)', bg: 'rgba(83,109,254,0.08)' },
+              { label: 'Classes Present', value: studentStats.present, icon: <CheckCircle size={24} />, color: 'var(--success)', bg: 'rgba(102,187,106,0.08)' },
+              { label: 'Classes Absent', value: studentStats.absent, icon: <UserX size={24} />, color: 'var(--danger)', bg: 'rgba(239,83,80,0.08)' },
+              { label: 'Attendance Score', value: `${studentStats.percentage}%`, icon: <CalendarCheck size={24} />, color: studentStats.percentage >= 80 ? 'var(--success)' : 'var(--primary)', bg: 'rgba(83,109,254,0.08)' },
+            ].map((stat, i) => (
+              <motion.div key={i} variants={item} className="card card-p" style={{ display: 'flex', alignItems: 'center', gap: '16px', background: 'white' }}>
+                <div style={{ width: 52, height: 52, borderRadius: '16px', background: stat.bg, color: stat.color, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  {stat.icon}
+                </div>
+                <div>
+                  {loading ? <div style={{ height: 28, width: 48, background: 'var(--surface)', borderRadius: 6 }} /> : 
+                  <div style={{ fontSize: '1.4rem', fontWeight: 900, fontFamily: 'var(--font-heading)' }}>{stat.value}</div>}
+                  <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 500 }}>{stat.label}</div>
+                </div>
+              </motion.div>
+            ))}
+          </div>
+
+          {/* Chart Insights */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: '24px' }} className="grid-2-col-mobile">
+            
+            {/* Timeline Bar Chart */}
+            <motion.div variants={item} className="card card-p" style={{ background: 'white', height: '320px', display: 'flex', flexDirection: 'column' }}>
+              <h3 style={{ fontSize: '1.1rem', fontWeight: 700, marginBottom: '20px' }}>Recent Attendance Activity Timeline</h3>
+              <div style={{ flex: 1, minHeight: 0 }}>
+                {loading ? <div style={{ height: '100%', background: 'var(--surface)', borderRadius: 12, animation: 'pulse 1.5s infinite' }} /> :
+                chartTimeline.length === 0 ? (
+                  <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-light)', fontSize: '0.85rem' }}>No attendance record history logged yet.</div>
+                ) : (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={chartTimeline} barSize={26}>
+                      <XAxis dataKey="name" hide />
+                      <Tooltip content={({ active, payload }) => {
+                        if (active && payload && payload.length) {
+                          const itemData = payload[0].payload;
+                          return (
+                            <div style={{ background: 'var(--dark)', color: 'white', padding: '8px 12px', borderRadius: '8px', fontSize: '0.8rem' }}>
+                              <div style={{ fontWeight: 700 }}>{itemData.date}</div>
+                              <div style={{ textTransform: 'capitalize', color: itemData.status === 'present' ? '#66BB6A' : itemData.status === 'absent' ? '#EF5350' : '#FFA726', marginTop: '2px', fontWeight: 700 }}>{itemData.status}</div>
+                            </div>
+                          );
+                        }
+                        return null;
+                      }} />
+                      <Bar dataKey="val" radius={[4, 4, 4, 4]}>
+                        {chartTimeline.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={entry.status === 'present' ? '#66BB6A' : entry.status === 'absent' ? '#EF5350' : '#FFA726'} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
+              </div>
+            </motion.div>
+
+            {/* Distribution Pie Chart */}
+            <motion.div variants={item} className="card card-p" style={{ background: 'white', height: '320px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+              <h3 style={{ fontSize: '1.1rem', fontWeight: 700, marginBottom: '16px', alignSelf: 'flex-start' }}>Status Share</h3>
+              <div style={{ flex: 1, minHeight: 0, width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                {loading ? <div style={{ width: 140, height: 140, borderRadius: '50%', background: 'var(--surface)', animation: 'pulse 1.5s infinite' }} /> :
+                pieData.length === 0 ? <span style={{ fontSize: '0.85rem', color: 'var(--text-light)' }}>No distribution data</span> : (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={pieData}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={60}
+                        outerRadius={80}
+                        paddingAngle={4}
+                        dataKey="value"
+                      >
+                        {pieData.map((entry, index) => {
+                          const colorMap = { 'Present': '#66BB6A', 'Absent': '#EF5350', 'Late': '#FFA726' };
+                          return <Cell key={`cell-${index}`} fill={colorMap[entry.name]} />;
+                        })}
+                      </Pie>
+                      <Tooltip />
+                    </PieChart>
+                  </ResponsiveContainer>
+                )}
+              </div>
+              
+              {/* Legends */}
+              <div style={{ display: 'flex', gap: '16px', fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-muted)', marginTop: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><div style={{ width: 10, height: 10, borderRadius: '50%', background: '#66BB6A' }} /> Present</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><div style={{ width: 10, height: 10, borderRadius: '50%', background: '#EF5350' }} /> Absent</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><div style={{ width: 10, height: 10, borderRadius: '50%', background: '#FFA726' }} /> Late</div>
+              </div>
+            </motion.div>
+          </div>
+
+          {/* Logs table list */}
+          <motion.div variants={item} className="card" style={{ background: 'white', overflow: 'hidden' }}>
+            <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border)' }}>
+              <h3 style={{ fontSize: '1.1rem', fontWeight: 700 }}>Detailed Attendance Logs</h3>
+            </div>
+            
+            <div style={{ padding: '0 24px' }}>
+              {loading ? (
+                <div style={{ padding: '24px 0', textAlign: 'center' }}><Loader2 className="spinning" /></div>
+              ) : studentRecords.length === 0 ? (
+                <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--text-light)' }}>No class logs mapped yet.</div>
+              ) : (
+                studentRecords.map((r, i) => (
+                  <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 0', borderBottom: i < studentRecords.length - 1 ? '1px solid var(--border)' : 'none' }}>
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: '0.92rem', color: 'var(--dark)' }}>{r.date}</div>
+                      <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '2px' }}>{r.subject} · Verified by {r.faculty}</div>
+                    </div>
+                    <div style={{
+                      padding: '4px 10px', borderRadius: '100px', fontSize: '0.72rem', fontWeight: 800, textTransform: 'uppercase',
+                      background: r.status === 'present' ? 'rgba(102,187,106,0.1)' : r.status === 'absent' ? 'rgba(239,83,80,0.1)' : 'rgba(255,167,38,0.1)',
+                      color: r.status === 'present' ? 'var(--success)' : r.status === 'absent' ? 'var(--danger)' : '#E65100'
+                    }}>{r.status}</div>
+                  </div>
+                ))
+              )}
+            </div>
+          </motion.div>
+        </>
+      )}
+
+      {/* ==================== 3. RESTRICTED VIEW FOR FACULTY/MEMBERS ==================== */}
+      {user?.role !== 'admin' && user?.role !== 'student' && (
+        <motion.div variants={item} className="card card-p" style={{ padding: '48px', textAlign: 'center', background: 'white', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
+          <AlertCircle size={48} style={{ color: 'var(--primary)' }} />
+          <h2 style={{ fontSize: '1.25rem', fontWeight: 800 }}>Access Restricted</h2>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem', maxWidth: '400px', margin: '0 auto' }}>
+            Student attendance logs and marking operations are restricted to administrators only.
+          </p>
+        </motion.div>
+      )}
+
+      {/* Spinner stylesheet */}
+      <style>{`
+        .spinning { animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+      `}</style>
+      
     </motion.div>
   );
 };

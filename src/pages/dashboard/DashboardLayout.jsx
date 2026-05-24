@@ -8,7 +8,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import {
   LayoutDashboard, BookOpen, ClipboardList,
   FileText, Settings, LogOut, Search, Bell,
-  CalendarCheck, MessageSquare, User, Sparkles, ShieldAlert, Loader2
+  CalendarCheck, Calendar, MessageSquare, User, Sparkles, ShieldAlert, Loader2
 } from 'lucide-react';
 
 const ADMISSION_SUBJECTS = [
@@ -31,7 +31,10 @@ const ADMISSION_SUBJECTS = [
   'Java Development',
   'C & C++ Fundamentals',
   'BCA',
-  'B.Tech'
+  'B.Tech',
+  'Tally Prime',
+  'Advanced Excel',
+  'Basic Computer'
 ];
 
 const isProfileIncomplete = (u) => {
@@ -43,6 +46,7 @@ const isProfileIncomplete = (u) => {
 const NAV_MAIN = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, exact: true },
   { to: '/dashboard/courses', label: 'Course', icon: BookOpen },
+  { to: '/dashboard/schedule', label: 'Schedule', icon: Calendar },
   { to: '/dashboard/tests', label: 'Tests', icon: ClipboardList },
   { to: '/dashboard/attendance', label: 'Attendance', icon: CalendarCheck },
   { to: '/dashboard/assignments', label: 'Assignments', icon: FileText },
@@ -54,6 +58,20 @@ const DashboardLayout = () => {
   const { user } = useAuth();
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [hasUnread, setHasUnread] = useState(false);
+  const [isOffline, setIsOffline] = useState(!navigator.onLine);
+
+  useEffect(() => {
+    const handleOnline = () => setIsOffline(false);
+    const handleOffline = () => setIsOffline(true);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   const [formData, setFormData] = useState({
     displayName: '',
@@ -188,6 +206,7 @@ const DashboardLayout = () => {
   const bottomNav = [
     { to: '/dashboard', label: 'Home', icon: LayoutDashboard, exact: true },
     { to: '/dashboard/courses', label: 'Courses', icon: BookOpen },
+    { to: '/dashboard/schedule', label: 'Schedule', icon: Calendar },
     { to: '/dashboard/assignments', label: 'Tasks', icon: FileText },
     { to: '/dashboard/community', label: 'Chat', icon: MessageSquare },
   ];
@@ -204,7 +223,12 @@ const DashboardLayout = () => {
         </div>
 
         <nav style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '6px' }}>
-          {NAV_MAIN.map(({ to, label, icon: Icon, exact }) => (
+          {NAV_MAIN.filter(item => {
+            if (item.to === '/dashboard/attendance' && user?.role !== 'admin' && user?.role !== 'student') {
+              return false;
+            }
+            return true;
+          }).map(({ to, label, icon: Icon, exact }) => (
             <NavLink key={to} to={to} end={exact}>
               {({ isActive }) => (
                 <div style={{
@@ -230,6 +254,39 @@ const DashboardLayout = () => {
       </aside>
 
       <div className="dash-main">
+        <AnimatePresence>
+          {isOffline && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              style={{
+                background: 'rgba(239,83,80,0.1)',
+                color: 'var(--danger)',
+                borderBottom: '1px solid rgba(239,83,80,0.2)',
+                padding: '12px 24px',
+                fontSize: '0.88rem',
+                fontWeight: 700,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                width: '100%',
+                boxSizing: 'border-box',
+                backdropFilter: 'blur(8px)',
+              }}
+            >
+              <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--danger)', animation: 'pulse 1.5s infinite' }} />
+              <span>Working offline. Changes will sync once connection is restored.</span>
+              <style>{`
+                @keyframes pulse {
+                  0% { transform: scale(0.95); opacity: 0.5; }
+                  50% { transform: scale(1.1); opacity: 1; }
+                  100% { transform: scale(0.95); opacity: 0.5; }
+                }
+              `}</style>
+            </motion.div>
+          )}
+        </AnimatePresence>
         <header className="dash-header-bar">
           <div className="dash-welcome" style={{ fontWeight: 600, color: 'var(--dark)', fontSize: '1.05rem', marginRight: '16px' }}>
             Welcome back, {user?.role === 'admin' ? 'Admin' : (user?.displayName || 'Student').split(' ')[0]} 👋

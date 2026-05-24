@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
+import React, { useState, useEffect, useRef } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { db } from '../../firebase';
-import { collection, onSnapshot, query, orderBy, addDoc, serverTimestamp } from 'firebase/firestore';
-import { MessageSquare, Plus, Clock } from 'lucide-react';
+import { collection, onSnapshot, query, orderBy, addDoc, serverTimestamp, where, doc, setDoc, updateDoc, increment, getDocs } from 'firebase/firestore';
+import { MessageSquare, Plus, Clock, Search, Send, Image, FileText, Check, CheckCheck, Loader2, User, Phone, Smile, Paperclip } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import Modal from '../../components/Modal';
 
@@ -12,128 +13,790 @@ const item = { hidden: { opacity: 0, y: 14 }, show: { opacity: 1, y: 0, transiti
 
 const Community = () => {
   const { user } = useAuth();
-  
+  const location = useLocation();
+  const [activeTab, setActiveTab] = useState('board'); // 'board' | 'chat'
+
+  // Post Board state
   const [posts, setPosts] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [postsLoading, setPostsLoading] = useState(true);
+
+
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [message, setMessage] = useState('');
 
+  // Private Chat state
+  const [rooms, setRooms] = useState([]);
+  const [activeRoom, setActiveRoom] = useState(null);
+  const [chatUsers, setChatUsers] = useState([]); // List of students/teachers you can chat with
+  const [messages, setMessages] = useState([]);
+  const [messagesLoading, setMessagesLoading] = useState(false);
+  const [newMessage, setNewMessage] = useState('');
+  const [chatSearch, setChatSearch] = useState('');
+  
+  // Attachments
+  const [attachment, setAttachment] = useState(null); // { data: base64, type: 'image'|'pdf', name }
+  const [uploadingAttachment, setUploadingAttachment] = useState(false);
+  
+  // Post Attachments
+  const [postAttachment, setPostAttachment] = useState(null); // { data: base64, type: 'image', name }
+  const [postAttachmentLoading, setPostAttachmentLoading] = useState(false);
+
+  // Typing & Presence
+  const [typingUsers, setTypingUsers] = useState({});
+  const typingTimeoutRef = useRef({});
+  const messagesEndRef = useRef(null);
+
+  const isFaculty = user?.role === 'faculty';
+  const isStudent = user?.role === 'student';
+  const isAdmin = user?.role === 'admin';
+  const isMember = user?.role === 'member';
+
+  // 1. POST BOARD - FETCH NOTES
   useEffect(() => {
-    if (!user?.uid) return;
+    if (!user || activeTab !== 'board') return;
     
-    const commRef = query(collection(db, `users/${user.uid}/community`), orderBy('createdAt', 'desc'));
+    const commRef = query(collection(db, 'community'), orderBy('createdAt', 'desc'));
     const unsub = onSnapshot(commRef, (snap) => {
       const data = [];
       snap.forEach(doc => data.push({ id: doc.id, ...doc.data() }));
       setPosts(data);
-      setLoading(false);
+      setPostsLoading(false);
     });
 
     return () => unsub();
-  }, [user]);
+  }, [user, activeTab]);
 
+  // 2. CHAT - FETCH LIST OF USERS & ACTIVE ROOMS
+  useEffect(() => {
+    if (!user || activeTab !== 'chat') return;
+
+    // Fetch all users to find potential chat partners based on assignment & fallbacks
+    const usersRef = collection(db, 'users');
+    const unsubUsers = onSnapshot(usersRef, (snap) => {
+      const allUsers = [];
+      snap.forEach(doc => {
+        allUsers.push({ id: doc.id, ...doc.data() });
+      });
+
+      if (isStudent) {
+        // Students can only message assigned faculty
+        const assigned = user.assignedFaculty || [];
+        let matchingFaculty = allUsers.filter(u => 
+          u.role === 'faculty' && (assigned.includes(u.id) || assigned.includes(u.email))
+        );
+
+        // Fallback matchmaking if not assigned
+        if (matchingFaculty.length === 0) {
+          const course = user.course || 'Python Mastery';
+          if (course.toLowerCase().includes('python') || course.toLowerCase().includes('basic computer') || course.toLowerCase().includes('class 11') || course.toLowerCase().includes('class 12') || course.toLowerCase().includes('tally') || course.toLowerCase().includes('excel')) {
+            const sharmistha = allUsers.find(u => u.email === 'sharmisthaghosh855@gmail.com');
+            if (sharmistha) matchingFaculty = [sharmistha];
+          } else {
+            const hribhu = allUsers.find(u => u.email === 'tapadarhribhu350@gmail.com');
+            if (hribhu) matchingFaculty = [hribhu];
+          }
+        }
+        setChatUsers(matchingFaculty);
+      } else if (isFaculty) {
+        // Faculty can only message assigned students
+        const facultyEmail = user.email?.toLowerCase();
+        const facultyId = user.uid;
+
+        const matchingStudents = allUsers.filter(u => {
+          if (u.role !== 'student') return false;
+          
+          const assigned = u.assignedFaculty || [];
+          if (assigned.includes(facultyId) || assigned.includes(facultyEmail)) return true;
+
+          // Course fallback match (if student doesn't have assigned faculty array)
+          if (assigned.length === 0) {
+            const course = u.course || '';
+            const isPythonClass = course.toLowerCase().includes('python') || course.toLowerCase().includes('basic computer') || course.toLowerCase().includes('class 11') || course.toLowerCase().includes('class 12') || course.toLowerCase().includes('tally') || course.toLowerCase().includes('excel');
+            if (facultyEmail === 'sharmisthaghosh855@gmail.com' && isPythonClass) return true;
+            if (facultyEmail === 'tapadarhribhu350@gmail.com' && !isPythonClass) return true;
+          }
+          return false;
+        });
+        setChatUsers(matchingStudents);
+      } else if (isAdmin || isMember) {
+        // Admin & Member can chat with anyone (all students + faculty)
+        const chatPartners = allUsers.filter(u => u.id !== user.uid);
+        setChatUsers(chatPartners);
+      }
+    });
+
+    // Fetch active chat rooms
+    const roomsQuery = query(
+      collection(db, 'chatRooms'),
+      where('participants', 'array-contains', user.uid)
+    );
+
+    const unsubRooms = onSnapshot(roomsQuery, (snap) => {
+      const roomList = [];
+      snap.forEach(doc => {
+        roomList.push({ id: doc.id, ...doc.data() });
+      });
+      roomList.sort((a, b) => (b.lastMessageTime?.seconds || 0) - (a.lastMessageTime?.seconds || 0));
+      setRooms(roomList);
+    });
+
+    return () => {
+      unsubUsers();
+      unsubRooms();
+    };
+  }, [user, activeTab]);
+
+  // 3. CHAT - FETCH MESSAGES OF ACTIVE ROOM
+  useEffect(() => {
+    if (!activeRoom) {
+      setMessages([]);
+      return;
+    }
+    setMessagesLoading(true);
+
+    const msgQuery = query(
+      collection(db, `chatRooms/${activeRoom.id}/messages`),
+      orderBy('createdAt', 'asc')
+    );
+
+    const unsubMsg = onSnapshot(msgQuery, (snap) => {
+      const list = [];
+      snap.forEach(doc => {
+        list.push({ id: doc.id, ...doc.data() });
+      });
+      setMessages(list);
+      setMessagesLoading(false);
+
+      // Scroll to bottom on load/new message
+      setTimeout(scrollToBottom, 100);
+
+      // Mark messages as seen/read
+      markMessagesAsRead(activeRoom.id);
+    });
+
+    // Listen to typing status
+    const unsubRoom = onSnapshot(doc(db, 'chatRooms', activeRoom.id), (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        setTypingUsers(data.typing || {});
+      }
+    });
+
+    return () => {
+      unsubMsg();
+      unsubRoom();
+    };
+  }, [activeRoom]);
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  const markMessagesAsRead = async (roomId) => {
+    try {
+      const roomRef = doc(db, 'chatRooms', roomId);
+      if (isFaculty || isAdmin || isMember) {
+        await updateDoc(roomRef, { facultyUnreadCount: 0 });
+      } else {
+        await updateDoc(roomRef, { studentUnreadCount: 0 });
+      }
+      
+      // Also update messages subcollection query for unread seen statuses
+      const unreadSnap = await getDocs(
+        query(
+          collection(db, `chatRooms/${roomId}/messages`), 
+          where('senderId', '!=', user.uid),
+          where('seen', '==', false)
+        )
+      );
+      unreadSnap.forEach(async (messageDoc) => {
+        await updateDoc(doc(db, `chatRooms/${roomId}/messages`, messageDoc.id), { seen: true });
+      });
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  // ── CREATE POST ──
   const handleCreatePost = async (e) => {
     e.preventDefault();
-    if (!message.trim()) return;
+    if (!message.trim() && !postAttachment) return;
     setIsSubmitting(true);
     try {
-      await addDoc(collection(db, `users/${user.uid}/community`), {
-        message,
+      const postObj = {
+        message: message.trim(),
         author: user?.displayName || 'Student',
         authorPhoto: user?.photoURL || '',
         createdAt: serverTimestamp()
-      });
-
-      // Send alert to student's WhatsApp number
-      if (user?.phone) {
-        let cleanPhone = user.phone.replace(/\D/g, '');
-        if (cleanPhone.length === 10) {
-          cleanPhone = '91' + cleanPhone;
-        }
-        const text = encodeURIComponent(
-          `Hello ${user.displayName},\n\n` +
-          `A new note has been added to your Compution Academy Student Community workspace:\n\n` +
-          `"${message}"\n\n` +
-          `Log in to view: https://compution.in\n\n` +
-          `Best regards,\n` +
-          `Compution Academy`
-        );
-        const waUrl = `https://wa.me/${cleanPhone}?text=${text}`;
-        window.open(waUrl, '_blank');
+      };
+      if (postAttachment) {
+        postObj.attachmentData = postAttachment.data;
+        postObj.attachmentType = postAttachment.type;
+        postObj.attachmentName = postAttachment.name;
       }
-
+      await addDoc(collection(db, 'community'), postObj);
       setIsModalOpen(false);
       setMessage('');
+      setPostAttachment(null);
     } catch(err) { console.error(err); }
     setIsSubmitting(false);
   };
 
-  const getInitials = (name) => name?.split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2) || 'ST';
+  // ── START CHAT ROOM ──
+  const handleStartChat = async (targetUser) => {
+    const roomId = user.uid < targetUser.id ? `${user.uid}_${targetUser.id}` : `${targetUser.id}_${user.uid}`;
+    
+    // Check if room exists
+    const roomRef = doc(db, 'chatRooms', roomId);
+    try {
+      await setDoc(roomRef, {
+        id: roomId,
+        participants: [user.uid, targetUser.id],
+        studentId: isStudent ? user.uid : targetUser.id,
+        studentName: isStudent ? user.displayName : targetUser.displayName,
+        studentPhoto: isStudent ? (user.photoURL || '') : (targetUser.photoURL || ''),
+        facultyId: isFaculty ? user.uid : targetUser.id,
+        facultyName: isFaculty ? user.displayName : targetUser.displayName,
+        facultyPhoto: isFaculty ? (user.photoURL || '') : (targetUser.photoURL || ''),
+        lastMessage: 'Chat started',
+        lastMessageTime: serverTimestamp(),
+        lastMessageSenderId: user.uid,
+        studentUnreadCount: 0,
+        facultyUnreadCount: 0,
+        typing: { [user.uid]: false, [targetUser.id]: false }
+      }, { merge: true });
+
+      setActiveRoom({
+        id: roomId,
+        displayName: targetUser.displayName,
+        photoURL: targetUser.photoURL,
+        role: targetUser.role,
+        email: targetUser.email,
+        phone: targetUser.phone,
+        availability: targetUser.availability || 'Available',
+        officeTimings: targetUser.officeTimings || 'Flexible Hours'
+      });
+    } catch (err) {
+      console.error("Error starting chat:", err);
+    }
+  };
+
+  // Auto-redirect chat handler
+  useEffect(() => {
+    if (location.state?.startChatWith && chatUsers.length > 0) {
+      const target = chatUsers.find(u => u.id === location.state.startChatWith || u.email?.toLowerCase() === location.state.startChatWith?.toLowerCase());
+      if (target) {
+        setActiveTab('chat');
+        handleStartChat(target);
+      }
+    }
+  }, [location.state, chatUsers]);
+
+  // ── SEND MESSAGE ──
+  const handleSendMessage = async (e) => {
+    if (e) e.preventDefault();
+    if (!newMessage.trim() && !attachment) return;
+
+    const currentText = newMessage.trim();
+    const currentAttachment = attachment;
+    
+    setNewMessage('');
+    setAttachment(null);
+
+    const roomDocId = activeRoom.id;
+    const isRoomFacultyMsg = isFaculty || isAdmin || isMember;
+
+    try {
+      // Create message object
+      const msgObj = {
+        senderId: user.uid,
+        senderName: user.displayName,
+        text: currentText,
+        seen: false,
+        createdAt: serverTimestamp()
+      };
+
+      if (currentAttachment) {
+        msgObj.attachmentType = currentAttachment.type;
+        msgObj.attachmentData = currentAttachment.data;
+        msgObj.attachmentName = currentAttachment.name;
+      }
+
+      // 1. Add to messages subcollection
+      await addDoc(collection(db, `chatRooms/${roomDocId}/messages`), msgObj);
+
+      // 2. Update room document metadata
+      const updateObj = {
+        lastMessage: currentAttachment ? `Sent a ${currentAttachment.type}` : currentText,
+        lastMessageTime: serverTimestamp(),
+        lastMessageSenderId: user.uid,
+        typing: { ...typingUsers, [user.uid]: false }
+      };
+
+      if (isRoomFacultyMsg) {
+        updateObj.studentUnreadCount = increment(1);
+      } else {
+        updateObj.facultyUnreadCount = increment(1);
+      }
+
+      await updateDoc(doc(db, 'chatRooms', roomDocId), updateObj);
+
+    } catch (err) {
+      console.error("Error sending message:", err);
+    }
+  };
+
+  // ── FILE HANDLING (Base64) ──
+  const handleFileChange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    if (file.size > 1 * 1024 * 1024) {
+      alert("File is too large. Keep it under 1MB for Firestore upload.");
+      return;
+    }
+
+    setUploadingAttachment(true);
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const type = file.type.startsWith('image/') ? 'image' : 'pdf';
+      setAttachment({
+        data: reader.result,
+        type: type,
+        name: file.name
+      });
+      setUploadingAttachment(false);
+    };
+    reader.onerror = () => {
+      alert("Failed to read file");
+      setUploadingAttachment(false);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // ── POST BOARD FILE HANDLING (Base64) ──
+  const handlePostFileChange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    if (file.size > 1 * 1024 * 1024) {
+      alert("File is too large. Keep it under 1MB for Firestore upload.");
+      return;
+    }
+
+    setPostAttachmentLoading(true);
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setPostAttachment({
+        data: reader.result,
+        type: 'image',
+        name: file.name
+      });
+      setPostAttachmentLoading(false);
+    };
+    reader.onerror = () => {
+      alert("Failed to read file");
+      setPostAttachmentLoading(false);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // ── TYPING STATUS INDICATOR ──
+  const handleTyping = async () => {
+    if (!activeRoom) return;
+
+    // Send typing: true
+    if (!typingUsers[user.uid]) {
+      await updateDoc(doc(db, 'chatRooms', activeRoom.id), {
+        [`typing.${user.uid}`]: true
+      });
+    }
+
+    // Reset typing status after 3 seconds of inactivity
+    if (typingTimeoutRef.current[activeRoom.id]) {
+      clearTimeout(typingTimeoutRef.current[activeRoom.id]);
+    }
+
+    typingTimeoutRef.current[activeRoom.id] = setTimeout(async () => {
+      await updateDoc(doc(db, 'chatRooms', activeRoom.id), {
+        [`typing.${user.uid}`]: false
+      });
+    }, 3000);
+  };
+
+  const getInitials = (name) => name?.split(' ').map(n=>n[0]).join('').slice(0,2).toUpperCase() || 'ST';
+
+  // Filtered chats based on search query
+  const filteredChatUsers = chatUsers.filter(u => 
+    u.displayName?.toLowerCase().includes(chatSearch.toLowerCase()) ||
+    u.email?.toLowerCase().includes(chatSearch.toLowerCase())
+  );
 
   return (
-    <motion.div variants={stagger} initial="hidden" animate="show" style={{ display: 'flex', flexDirection: 'column', gap: '24px', maxWidth: '800px', margin: '0 auto', width: '100%' }}>
+    <div style={{ maxWidth: '1000px', margin: '0 auto', width: '100%', height: 'calc(100vh - 120px)', display: 'flex', flexDirection: 'column' }}>
       
-      <motion.div variants={item} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      {/* Top Navbar Menu */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexShrink: 0 }}>
         <div>
-          <h1 style={{ fontSize: '1.75rem', marginBottom: '6px' }}>Student Community</h1>
-          <p style={{ color: 'var(--text-muted)' }}>Discuss, share, and learn with your peers</p>
+          <h1 style={{ fontSize: '1.75rem', fontWeight: 800, marginBottom: '4px' }}>Community Workspace</h1>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Ask doubt queries, collaborate, and access classroom announcement logs</p>
         </div>
-        <button onClick={() => setIsModalOpen(true)} className="btn btn-primary" style={{ padding: '10px 20px', borderRadius: '10px' }}>
-          <Plus size={18} /> Create Post
-        </button>
-      </motion.div>
 
-      {loading ? (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          {[1,2,3].map(i => <div key={i} style={{ height: 140, background: 'white', borderRadius: 20, animation: 'pulse 1.5s infinite' }} />)}
+        {/* Tab switcher button */}
+        <div style={{ display: 'flex', background: 'var(--surface)', borderRadius: '100px', padding: '3px' }}>
+          <button onClick={() => setActiveTab('board')} style={{ padding: '8px 18px', borderRadius: '100px', fontSize: '0.85rem', fontWeight: 700, background: activeTab === 'board' ? 'white' : 'transparent', color: activeTab === 'board' ? 'var(--dark)' : 'var(--text-muted)' }}>
+            📢 Announcements
+          </button>
+          <button onClick={() => setActiveTab('chat')} style={{ padding: '8px 18px', borderRadius: '100px', fontSize: '0.85rem', fontWeight: 700, background: activeTab === 'chat' ? 'white' : 'transparent', color: activeTab === 'chat' ? 'var(--dark)' : 'var(--text-muted)' }}>
+            💬 Doubt Clearing Chat
+          </button>
         </div>
-      ) : posts.length === 0 ? (
-        <motion.div variants={item} style={{ textAlign: 'center', padding: '80px', color: 'var(--text-light)', background: 'white', borderRadius: 20, border: '1px dashed var(--border-strong)' }}>
-          <MessageSquare size={48} style={{ margin: '0 auto 16px', opacity: 0.5 }} />
-          <h3 style={{ fontSize: '1.2rem', color: 'var(--dark)', marginBottom: '8px' }}>No posts yet</h3>
-          <p>Be the first to start a discussion!</p>
-        </motion.div>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          {posts.map(post => (
-            <motion.div key={post.id} variants={item} className="card card-p" style={{ padding: '24px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
-                {post.authorPhoto ? (
-                  <img src={post.authorPhoto} alt={post.author} style={{ width: 44, height: 44, borderRadius: '50%', objectFit: 'cover' }} />
-                ) : (
-                  <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'linear-gradient(135deg, var(--primary), var(--accent))', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 700, fontSize: '0.9rem' }}>
-                    {getInitials(post.author)}
+      </div>
+
+      <div style={{ flex: 1, minHeight: 0, background: 'white', borderRadius: '24px', border: '1px solid var(--border)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden' }}>
+        
+        {/* ==================== TAB 1: POST BOARD ==================== */}
+        {activeTab === 'board' && (
+          <div style={{ height: '100%', display: 'flex', flexDirection: 'column', padding: '24px', overflowY: 'auto' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', borderBottom: '1px solid var(--border)', paddingBottom: '16px' }}>
+              <h2 style={{ fontSize: '1.25rem', fontWeight: 800 }}>Student Announcement Board</h2>
+              <button onClick={() => setIsModalOpen(true)} className="btn btn-primary" style={{ padding: '10px 18px', fontSize: '0.85rem', borderRadius: '10px' }}>
+                <Plus size={16} /> Create Notice Note
+              </button>
+            </div>
+
+            {postsLoading ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                {[1,2,3].map(i => <div key={i} style={{ height: 120, background: 'var(--surface)', borderRadius: 16, animation: 'pulse 1.5s infinite' }} />)}
+              </div>
+            ) : posts.length === 0 ? (
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '48px', color: 'var(--text-light)' }}>
+                <MessageSquare size={48} style={{ opacity: 0.5, marginBottom: '16px' }} />
+                <h3>No announcement notices logged</h3>
+                <p style={{ fontSize: '0.85rem' }}>Be the first to post a study tip or notification query!</p>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                {posts.map(post => (
+                  <div key={post.id} className="card card-p" style={{ padding: '20px', border: '1px solid var(--border)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
+                      {post.authorPhoto ? (
+                        <img src={post.authorPhoto} alt={post.author} style={{ width: 38, height: 38, borderRadius: '50%', objectFit: 'cover' }} />
+                      ) : (
+                        <div style={{ width: 38, height: 38, borderRadius: '50%', background: 'linear-gradient(135deg, var(--primary), var(--accent))', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 700, fontSize: '0.8rem' }}>
+                          {getInitials(post.author)}
+                        </div>
+                      )}
+                      <div>
+                        <div style={{ fontWeight: 700, fontSize: '0.92rem', color: 'var(--dark)' }}>{post.author}</div>
+                        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <Clock size={11} /> {post.createdAt ? formatDistanceToNow(post.createdAt.toDate(), { addSuffix: true }) : 'just now'}
+                        </div>
+                      </div>
+                    </div>
+                    <p style={{ color: 'var(--dark)', lineHeight: 1.5, fontSize: '0.9rem', whiteSpace: 'pre-wrap' }}>{post.message}</p>
+                    {post.attachmentData && (
+                      <div style={{ marginTop: '12px', borderRadius: '12px', overflow: 'hidden', border: '1px solid var(--border)', maxWidth: '100%', maxHeight: '400px' }}>
+                        <img src={post.attachmentData} alt={post.attachmentName || 'Notice Attachment'} style={{ width: '100%', height: 'auto', maxHeight: '400px', objectFit: 'contain' }} />
+                      </div>
+                    )}
                   </div>
-                )}
-                <div>
-                  <div style={{ fontWeight: 700, color: 'var(--dark)' }}>{post.author}</div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    <Clock size={12} /> {post.createdAt ? formatDistanceToNow(post.createdAt.toDate(), { addSuffix: true }) : 'just now'}
-                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ==================== TAB 2: PRIVATE DOUBT CHAT ==================== */}
+        {activeTab === 'chat' && (
+          <div style={{ height: '100%', display: 'flex' }}>
+            
+            {/* Left pane: chats and directory list */}
+            <div style={{ width: '320px', borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column', background: '#F9FAFB' }}>
+              
+              {/* Search Bar */}
+              <div style={{ padding: '16px', borderBottom: '1px solid var(--border)' }}>
+                <div style={{ position: 'relative' }}>
+                  <Search size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-light)' }} />
+                  <input
+                    placeholder={isStudent ? "Search assigned faculty..." : "Search assigned students..."}
+                    value={chatSearch}
+                    onChange={e => setChatSearch(e.target.value)}
+                    style={{ width: '100%', padding: '8px 12px 8px 36px', borderRadius: '8px', border: '1px solid var(--border)', fontSize: '0.85rem', outline: 'none' }}
+                  />
                 </div>
               </div>
-              <p style={{ color: 'var(--dark)', lineHeight: 1.6, fontSize: '0.95rem' }}>{post.message}</p>
-            </motion.div>
-          ))}
-        </div>
-      )}
 
-      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Create Post">
+              {/* List Pane */}
+              <div style={{ flex: 1, overflowY: 'auto', padding: '12px' }}>
+                <h3 style={{ fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-light)', letterSpacing: '0.05em', paddingLeft: '8px', marginBottom: '10px' }}>
+                  {isStudent ? 'Assigned Mentors' : isFaculty ? 'Assigned Students' : 'Direct Contacts'}
+                </h3>
+
+                {filteredChatUsers.length === 0 ? (
+                  <div style={{ padding: '24px 8px', textLight: 'center', color: 'var(--text-light)', fontSize: '0.8rem', textAlign: 'center' }}>
+                    No assigned profiles found matching query.
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    {filteredChatUsers.map(itemUser => {
+                      const roomId = user.uid < itemUser.id ? `${user.uid}_${itemUser.id}` : `${itemUser.id}_${user.uid}`;
+                      const roomDoc = rooms.find(r => r.id === roomId);
+                      const isUnread = roomDoc ? (isFaculty ? roomDoc.facultyUnreadCount > 0 : roomDoc.studentUnreadCount > 0) : false;
+                      const unreadCount = roomDoc ? (isFaculty ? roomDoc.facultyUnreadCount : roomDoc.studentUnreadCount) : 0;
+                      const isUserActive = activeRoom?.id === roomId;
+
+                      return (
+                        <div
+                          key={itemUser.id}
+                          onClick={() => handleStartChat(itemUser)}
+                          style={{
+                            display: 'flex', gap: '10px', alignItems: 'center', padding: '10px 12px', borderRadius: '12px',
+                            background: isUserActive ? 'var(--primary-light)' : 'transparent',
+                            cursor: 'pointer', transition: 'var(--transition)'
+                          }}
+                          onMouseEnter={e => !isUserActive && (e.currentTarget.style.background = 'rgba(0,0,0,0.02)')}
+                          onMouseLeave={e => !isUserActive && (e.currentTarget.style.background = 'transparent')}
+                        >
+                          <div style={{ position: 'relative' }}>
+                            <img src={itemUser.photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=100'} alt={itemUser.displayName} style={{ width: 40, height: 40, borderRadius: '50%', objectFit: 'cover' }} />
+                            <span style={{ position: 'absolute', bottom: 0, right: 0, width: 10, height: 10, borderRadius: '50%', background: itemUser.availability === 'Busy' ? 'var(--warning)' : 'var(--success)', border: '2px solid white' }} />
+                          </div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                              <h4 style={{ fontSize: '0.88rem', fontWeight: isUnread ? 800 : 700, color: 'var(--dark)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{itemUser.displayName}</h4>
+                              {isUnread && (
+                                <span style={{ background: 'var(--primary)', color: 'white', fontSize: '0.65rem', fontWeight: 800, minWidth: '16px', height: '16px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2px' }}>
+                                  {unreadCount}
+                                </span>
+                              )}
+                            </div>
+                            <p style={{ fontSize: '0.75rem', color: isUnread ? 'var(--dark)' : 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: isUnread ? 600 : 400 }}>
+                              {roomDoc ? roomDoc.lastMessage : itemUser.role || 'Student'}
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Right pane: message window */}
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: '#F8FAFC' }}>
+              {activeRoom ? (
+                <>
+                  {/* Chat header */}
+                  <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--border)', background: 'white', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <img src={activeRoom.photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=100'} alt={activeRoom.displayName} style={{ width: 42, height: 42, borderRadius: '50%', objectFit: 'cover' }} />
+                      <div>
+                        <h4 style={{ fontWeight: 800, fontSize: '0.95rem', color: 'var(--dark)' }}>{activeRoom.displayName}</h4>
+                        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
+                          <span style={{ width: 6, height: 6, borderRadius: '50%', background: activeRoom.availability === 'Busy' ? 'var(--warning)' : 'var(--success)' }} />
+                          {activeRoom.availability === 'Busy' ? `Busy (Office Hours: ${activeRoom.officeTimings || 'Flexible'})` : 'Available'}
+                        </div>
+                      </div>
+                    </div>
+                    {/* Secondary details */}
+                    <div style={{ textAlignment: 'right', fontSize: '0.8rem', color: 'var(--text-light)', display: 'flex', gap: '8px' }}>
+                      {activeRoom.phone && <a href={`tel:${activeRoom.phone}`} style={{ padding: '8px', borderRadius: '8px', background: 'var(--surface)', color: 'var(--primary)' }}><Phone size={14} /></a>}
+                    </div>
+                  </div>
+
+                  {/* Messages window stream */}
+                  <div style={{ flex: 1, overflowY: 'auto', padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                    {messagesLoading ? (
+                      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <Loader2 className="spinning" size={24} style={{ color: 'var(--primary)' }} />
+                      </div>
+                    ) : (
+                      <>
+                        {messages.map((msg, index) => {
+                          const isMe = msg.senderId === user.uid;
+                          return (
+                            <div key={msg.id || index} style={{ display: 'flex', justifyContent: isMe ? 'flex-end' : 'flex-start', width: '100%' }}>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxWidth: '70%' }}>
+                                <div style={{
+                                  padding: '12px 16px', borderRadius: isMe ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
+                                  background: isMe ? 'var(--primary)' : 'white',
+                                  color: isMe ? 'white' : 'var(--dark)',
+                                  boxShadow: 'var(--shadow-sm)',
+                                  border: isMe ? 'none' : '1px solid var(--border)'
+                                }}>
+                                  
+                                  {/* Attachment block if exists */}
+                                  {msg.attachmentData && (
+                                    <div style={{ marginBottom: '8px', borderRadius: '8px', overflow: 'hidden' }}>
+                                      {msg.attachmentType === 'image' ? (
+                                        <img src={msg.attachmentData} alt={msg.attachmentName || 'attachment'} style={{ maxWidth: '100%', maxHeight: '200px', objectFit: 'cover' }} />
+                                      ) : (
+                                        <a href={msg.attachmentData} download={msg.attachmentName} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px', background: isMe ? 'rgba(255,255,255,0.15)' : 'var(--surface)', borderRadius: '6px', color: isMe ? 'white' : 'var(--primary)', fontWeight: 600, fontSize: '0.8rem' }}>
+                                          <FileText size={16} />
+                                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '140px' }}>{msg.attachmentName}</span>
+                                        </a>
+                                      )}
+                                    </div>
+                                  )}
+
+                                  {/* Text message */}
+                                  {msg.text && <p style={{ fontSize: '0.88rem', wordBreak: 'break-word', lineHeight: 1.4 }}>{msg.text}</p>}
+                                </div>
+                                
+                                {/* Timestamp and seen ticks */}
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px', fontSize: '0.68rem', color: 'var(--text-light)', padding: '0 4px' }}>
+                                  <span>
+                                    {msg.createdAt ? format(msg.createdAt.toDate(), 'h:mm a') : 'sending...'}
+                                  </span>
+                                  {isMe && (
+                                    <span>
+                                      {msg.seen ? <CheckCheck size={12} style={{ color: 'var(--success)' }} /> : <Check size={12} />}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                        {/* Typing indicator */}
+                        {Object.entries(typingUsers).map(([userId, typingVal]) => {
+                          if (userId !== user.uid && typingVal) {
+                            return (
+                              <div key={userId} style={{ display: 'flex', justifyContent: 'flex-start', padding: '4px' }}>
+                                <div style={{ display: 'flex', gap: '4px', padding: '8px 12px', borderRadius: '12px', background: '#E2E8F0', color: 'var(--text-muted)', fontSize: '0.75rem', fontWeight: 600 }}>
+                                  <span>{activeRoom.displayName} is typing</span>
+                                  <motion.span animate={{ opacity: [0, 1, 0] }} transition={{ repeat: Infinity, duration: 1 }}>.</motion.span>
+                                  <motion.span animate={{ opacity: [0, 1, 0] }} transition={{ repeat: Infinity, duration: 1, delay: 0.2 }}>.</motion.span>
+                                  <motion.span animate={{ opacity: [0, 1, 0] }} transition={{ repeat: Infinity, duration: 1, delay: 0.4 }}>.</motion.span>
+                                </div>
+                              </div>
+                            );
+                          }
+                          return null;
+                        })}
+                        <div ref={messagesEndRef} />
+                      </>
+                    )}
+                  </div>
+
+                  {/* Attachment Preview panel */}
+                  {attachment && (
+                    <div style={{ padding: '8px 24px', background: '#F1F5F9', borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        {attachment.type === 'image' ? <Image size={18} style={{ color: 'var(--primary)' }} /> : <FileText size={18} style={{ color: 'var(--danger)' }} />}
+                        <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--dark)' }}>{attachment.name}</span>
+                      </div>
+                      <button onClick={() => setAttachment(null)} style={{ fontSize: '0.8rem', color: 'var(--danger)', fontWeight: 600 }}>Remove</button>
+                    </div>
+                  )}
+
+                  {/* Input entry bar */}
+                  <form onSubmit={handleSendMessage} style={{ padding: '16px 24px', borderTop: '1px solid var(--border)', background: 'white', display: 'flex', gap: '12px', alignItems: 'center', flexShrink: 0 }}>
+                    {/* Attachment trigger */}
+                    <div style={{ position: 'relative' }}>
+                      <label htmlFor="chat-attachment-file" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '38px', height: '38px', borderRadius: '50%', background: 'var(--surface)', color: 'var(--text-muted)', cursor: 'pointer', transition: 'all 0.2s' }} onMouseEnter={e => e.currentTarget.style.color = 'var(--primary)'} onMouseLeave={e => e.currentTarget.style.color = 'var(--text-muted)'}>
+                        <Paperclip size={18} />
+                      </label>
+                      <input
+                        id="chat-attachment-file"
+                        type="file"
+                        accept="image/*,application/pdf"
+                        onChange={handleFileChange}
+                        disabled={uploadingAttachment}
+                        style={{ display: 'none' }}
+                      />
+                    </div>
+
+                    <input
+                      type="text"
+                      placeholder="Type a doubt message..."
+                      value={newMessage}
+                      onChange={e => { setNewMessage(e.target.value); handleTyping(); }}
+                      style={{ flex: 1, padding: '10px 16px', borderRadius: '100px', border: '1px solid var(--border)', outline: 'none', fontSize: '0.9rem' }}
+                    />
+                    
+                    <button type="submit" className="btn btn-primary" style={{ width: '38px', height: '38px', borderRadius: '50%', padding: 0 }} disabled={!newMessage.trim() && !attachment}>
+                      <Send size={16} />
+                    </button>
+                  </form>
+                </>
+              ) : (
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--text-light)', padding: '24px' }}>
+                  <MessageSquare size={48} style={{ opacity: 0.5, marginBottom: '16px' }} />
+                  <h3>No chat selected</h3>
+                  <p style={{ fontSize: '0.85rem' }}>Select a student or teacher from the roster to start direct doubt clearing.</p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* CREATE BOARD POST MODAL */}
+      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Create Notice Note">
         <form onSubmit={handleCreatePost} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <div>
-            <textarea className="form-input" required rows="5" value={message} onChange={e => setMessage(e.target.value)} placeholder="What's on your mind? Ask a question or share a thought..." style={{ resize: 'none' }} />
+            <textarea 
+              className="form-input" 
+              required={!postAttachment} 
+              rows="5" 
+              value={message} 
+              onChange={e => setMessage(e.target.value)} 
+              placeholder="Type announcement description details here..." 
+              style={{ resize: 'none' }} 
+            />
+          </div>
+          {/* Image upload trigger */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', color: 'var(--primary)', width: 'fit-content' }}>
+              <Image size={18} />
+              <span>Attach Image (Optional)</span>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handlePostFileChange}
+                disabled={postAttachmentLoading}
+                style={{ display: 'none' }}
+              />
+            </label>
+            {postAttachmentLoading && <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Reading image file...</span>}
+            {postAttachment && (
+              <div style={{ position: 'relative', marginTop: '8px', border: '1px solid var(--border)', borderRadius: '12px', overflow: 'hidden', maxWidth: '100%', height: '140px' }}>
+                <img src={postAttachment.data} alt="Post Attachment Preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                <button
+                  type="button"
+                  onClick={() => setPostAttachment(null)}
+                  style={{
+                    position: 'absolute', top: '8px', right: '8px',
+                    background: 'rgba(239,83,80,0.9)', color: 'white',
+                    border: 'none', borderRadius: '50%', width: '24px', height: '24px',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    cursor: 'pointer', fontWeight: 800, fontSize: '0.8rem'
+                  }}
+                >
+                  ×
+                </button>
+              </div>
+            )}
           </div>
           <div style={{ display: 'flex', gap: '12px', marginTop: '8px' }}>
             <button type="button" onClick={() => setIsModalOpen(false)} className="btn btn-ghost" style={{ flex: 1 }}>Cancel</button>
-            <button type="submit" disabled={isSubmitting} className="btn btn-primary" style={{ flex: 1 }}>
-              {isSubmitting ? 'Posting...' : 'Post'}
+            <button type="submit" disabled={isSubmitting || postAttachmentLoading} className="btn btn-primary" style={{ flex: 1 }}>
+              {isSubmitting ? 'Posting Notice...' : 'Log Notice'}
             </button>
           </div>
         </form>
       </Modal>
 
-    </motion.div>
+      {/* Styling */}
+      <style>{`
+        .spinning { animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+      `}</style>
+
+    </div>
   );
 };
 

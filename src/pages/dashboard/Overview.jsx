@@ -1,16 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../../contexts/AuthContext';
-import { db } from '../../firebase';
-import { collection, onSnapshot, query, orderBy, limit, doc, updateDoc, addDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
+import { db, syncStudentFeeAggregates } from '../../firebase';
+import { collection, onSnapshot, query, orderBy, limit, doc, updateDoc, addDoc, deleteDoc, serverTimestamp, where, setDoc, increment } from 'firebase/firestore';
 import { useNavigate } from 'react-router-dom';
 import {
   Users, Send, Clock, UserMinus, ChevronDown, Share2,
   Sparkles, ShieldCheck, Download, ExternalLink, Calendar,
   ChevronRight, BookOpen, Clock3, CheckCircle, Info, Play, MessageSquare, ShieldAlert,
-  FileEdit, Trash2, Plus
+  FileEdit, Trash2, Plus, FileText
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import { format, startOfWeek, addDays, isSameDay, parseISO, startOfMonth, endOfMonth, eachDayOfInterval, addMonths, subMonths } from 'date-fns';
+import { calculateAttendancePercent, calculateAssignmentCompletion, calculatePerformanceScore, calculateGrade } from '../../utils/formulas';
 import AdminStudentGrid from '../../components/AdminStudentGrid';
 import AdminDashboard from '../../components/AdminDashboard';
 import Modal from '../../components/Modal';
@@ -114,243 +116,769 @@ const Toast = ({ message, onClose }) => {
 const StudentOverview = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
-  
+
+  // State Variables
   const [attendanceStats, setAttendanceStats] = useState({ present: 0, absent: 0, late: 0, doubts: 0 });
-  const [progressData, setProgressData] = useState([]);
-  const [completionPct, setCompletionPct] = useState(0);
-  const [overallGrade, setOverallGrade] = useState('N/A');
+  const [attendanceLogs, setAttendanceLogs] = useState([]);
+  const [calendarEventsRaw, setCalendarEventsRaw] = useState({ calendar: [], schedules: [] });
+  const [activeChatRooms, setActiveChatRooms] = useState([]);
+  const [allFaculty, setAllFaculty] = useState([]);
+  const [assignedFacultyList, setAssignedFacultyList] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [notes, setNotes] = useState([]);
-  
-  // Simulator State
-  const [simulatedPeriod, setSimulatedPeriod] = useState(() => {
-    const saved = localStorage.getItem('simulatedPeriod');
-    if (saved) return saved;
-    return 'new';
-  });
-
-  // Interactive Checklist State
-  const [checklist, setChecklist] = useState(() => {
-    const saved = localStorage.getItem(`onboarding_checklist_${user?.uid || 'temp'}`);
-    if (saved) return JSON.parse(saved);
-    return { profile: true, syllabus: false, whatsapp: false, orientation: false };
-  });
-
-  // Toast message
   const [toast, setToast] = useState(null);
 
-  // Notes Modal & Form States
-  const [isNoteModalOpen, setIsNoteModalOpen] = useState(false);
-  const [noteForm, setNoteForm] = useState({ id: '', title: '', subject: '', content: '' });
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  // Calendar State
+  const [calendarViewMode, setCalendarViewMode] = useState('agenda'); // 'agenda' | 'week' | 'month'
+  const [selectedCalendarDate, setSelectedCalendarDate] = useState(new Date());
 
-  const handleOpenAddNote = () => {
-    setNoteForm({ id: '', title: '', subject: '', content: '' });
-    setIsNoteModalOpen(true);
-  };
+  // Rescheduling Modal State
+  const [rescheduleModalOpen, setRescheduleModalOpen] = useState(false);
+  const [selectedEventToReschedule, setSelectedEventToReschedule] = useState(null);
+  const [proposedRescheduleDate, setProposedRescheduleDate] = useState('');
+  const [proposedRescheduleTime, setProposedRescheduleTime] = useState('');
+  const [rescheduleReason, setRescheduleReason] = useState('');
+  const [rescheduleFacultyId, setRescheduleFacultyId] = useState('');
+  const [rescheduleIsSubmitting, setRescheduleIsSubmitting] = useState(false);
 
-  const handleOpenEditNote = (note) => {
-    setNoteForm({ id: note.id, title: note.title, subject: note.subject, content: note.content });
-    setIsNoteModalOpen(true);
-  };
-
-  const handleSaveNote = async (e) => {
-    e.preventDefault();
-    if (!noteForm.title || !noteForm.subject || !noteForm.content) return;
-    setIsSubmitting(true);
-    try {
-      if (noteForm.id) {
-        // Update existing note
-        await updateDoc(doc(db, `users/${user.uid}/notes`, noteForm.id), {
-          title: noteForm.title,
-          subject: noteForm.subject,
-          content: noteForm.content,
-          updatedAt: serverTimestamp()
-        });
-        setToast('Note updated successfully!');
-      } else {
-        // Create new note
-        await addDoc(collection(db, `users/${user.uid}/notes`), {
-          title: noteForm.title,
-          subject: noteForm.subject,
-          content: noteForm.content,
-          createdAt: serverTimestamp()
-        });
-        setToast('Note created successfully!');
-      }
-      setIsNoteModalOpen(false);
-      setNoteForm({ id: '', title: '', subject: '', content: '' });
-    } catch (err) {
-      console.error("Error saving note:", err);
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleDeleteNote = async (e, noteId) => {
-    e.stopPropagation(); // Prevent opening edit modal
-    if (window.confirm("Are you sure you want to delete this note?")) {
-      try {
-        await deleteDoc(doc(db, `users/${user.uid}/notes`, noteId));
-        setToast('Note deleted successfully!');
-      } catch (err) {
-        console.error("Error deleting note:", err);
-      }
-    }
-  };
-
-  useEffect(() => {
-    if (user?.uid) {
-      localStorage.setItem(`onboarding_checklist_${user.uid}`, JSON.stringify(checklist));
-    }
-  }, [checklist, user]);
-
-  // Keep simulatedPeriod in sync with user progress / completionPct if no manual override is set
-  useEffect(() => {
-    const saved = localStorage.getItem('simulatedPeriod');
-    if (!saved) {
-      const progress = user?.courseProgress !== undefined ? user.courseProgress : completionPct;
-      setSimulatedPeriod(progress >= 80 ? 'established' : 'new');
-    }
-  }, [user?.courseProgress, completionPct]);
-
-  // Sync simulator state across tabs if they change it
-  useEffect(() => {
-    const handleSync = () => {
-      const saved = localStorage.getItem('simulatedPeriod');
-      if (saved) {
-        setSimulatedPeriod(saved);
-      } else {
-        const progress = user?.courseProgress !== undefined ? user.courseProgress : completionPct;
-        setSimulatedPeriod(progress >= 80 ? 'established' : 'new');
-      }
-    };
-    window.addEventListener('simulatedPeriodChanged', handleSync);
-    return () => window.removeEventListener('simulatedPeriodChanged', handleSync);
-  }, [user?.courseProgress, completionPct]);
-
+  // Load Realtime Data
   useEffect(() => {
     if (!user?.uid) return;
 
+    // 1. Fetch Attendance Logs and Stats
     const attRef = collection(db, `users/${user.uid}/attendance`);
     const unsubAtt = onSnapshot(attRef, (snap) => {
       let present = 0, absent = 0, late = 0;
+      const logs = [];
       snap.forEach(doc => {
         const data = doc.data();
+        logs.push({ id: doc.id, ...data });
         if (data.status === 'present') present++;
         else if (data.status === 'absent') absent++;
         else if (data.status === 'late') late++;
       });
-      setAttendanceStats(s => ({ ...s, present, absent, late }));
-    });
-
-    const progRef = query(collection(db, `users/${user.uid}/progress`), orderBy('createdAt', 'desc'), limit(6));
-    const unsubProg = onSnapshot(progRef, (snap) => {
-      const data = [];
-      let totalPct = 0;
-      let count = 0;
-      snap.forEach(doc => {
-        const d = doc.data();
-        data.unshift({ day: d.day || 'Day', studyHours: d.studyHours || 0 });
-        totalPct += (d.completionRate || 0);
-        count++;
-      });
-      
-      if (data.length === 0) {
-        setProgressData([
-          { day: 'Mon', studyHours: 2.0 }, { day: 'Tue', studyHours: 2.1 },
-          { day: 'Wed', studyHours: 2.5 }, { day: 'Thu', studyHours: 3.5 },
-          { day: 'Fri', studyHours: 2.9 }, { day: 'Sat', studyHours: 2.5 }
-        ]);
-        setCompletionPct(35);
-        setOverallGrade('A');
-      } else {
-        setProgressData(data);
-        setCompletionPct(count > 0 ? Math.round(totalPct / count) : 0);
-        setOverallGrade('A');
-      }
+      logs.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+      setAttendanceLogs(logs);
+      setAttendanceStats({ present, absent, late, doubts: 0 });
       setLoading(false);
     });
 
-    const notesRef = query(collection(db, `users/${user.uid}/notes`), orderBy('createdAt', 'desc'));
-    const unsubNotes = onSnapshot(notesRef, (snap) => {
+    // 2. Fetch Assigned Faculty List
+    const facAssRef = query(collection(db, 'assignedFaculty'), where('studentId', '==', user.uid));
+    const unsubAssignedFac = onSnapshot(facAssRef, (snap) => {
       const data = [];
       snap.forEach(doc => {
         data.push({ id: doc.id, ...doc.data() });
       });
-      setNotes(data);
+      setAssignedFacultyList(data);
     });
 
-    return () => { 
-      unsubAtt(); 
-      unsubProg(); 
-      unsubNotes();
+    // 3. Fetch All Users (to resolve details of Faculty members)
+    const usersRef = collection(db, 'users');
+    const unsubFaculty = onSnapshot(usersRef, (snap) => {
+      const facs = [];
+      snap.forEach(doc => {
+        const d = doc.data();
+        if (d.role === 'faculty') {
+          facs.push({ id: doc.id, ...d });
+        }
+      });
+      setAllFaculty(facs);
+    });
+
+    // 4. Fetch Calendar Events (studentCalendar)
+    const calendarRef = query(collection(db, 'studentCalendar'), where('studentId', '==', user.uid));
+    const unsubCalendar = onSnapshot(calendarRef, (snap) => {
+      const data = [];
+      snap.forEach(doc => {
+        const ev = doc.data();
+        data.push({
+          id: doc.id,
+          source: 'studentCalendar',
+          title: ev.title || 'Event',
+          date: ev.date || '',
+          time: ev.time || '',
+          type: ev.type || 'class',
+          faculty: ev.faculty || 'Faculty Mentor',
+          facultyId: ev.facultyId || '',
+          meetingLink: ev.meetingLink || ''
+        });
+      });
+      setCalendarEventsRaw(prev => ({ ...prev, calendar: data }));
+    });
+
+    // 5. Fetch Class Schedules (studentSchedules)
+    const schedulesRef = query(collection(db, 'studentSchedules'), where('studentId', '==', user.uid));
+    const unsubSchedules = onSnapshot(schedulesRef, (snap) => {
+      const data = [];
+      snap.forEach(doc => {
+        const ev = doc.data();
+        data.push({
+          id: doc.id,
+          source: 'studentSchedules',
+          title: ev.subject || 'Class Slot',
+          date: ev.date || '',
+          time: ev.time || '',
+          type: 'class',
+          faculty: ev.faculty || 'Faculty Mentor',
+          facultyId: ev.facultyId || '',
+          mode: ev.mode || 'online',
+          notes: ev.notes || ''
+        });
+      });
+      setCalendarEventsRaw(prev => ({ ...prev, schedules: data }));
+    });
+
+    // 6. Fetch Active Doubt Chat Rooms
+    const roomsQuery = query(
+      collection(db, 'chatRooms'),
+      where('participants', 'array-contains', user.uid)
+    );
+    const unsubRooms = onSnapshot(roomsQuery, (snap) => {
+      const roomList = [];
+      snap.forEach(doc => {
+        roomList.push({ id: doc.id, ...doc.data() });
+      });
+      roomList.sort((a, b) => (b.lastMessageTime?.seconds || 0) - (a.lastMessageTime?.seconds || 0));
+      setActiveChatRooms(roomList);
+    });
+
+    return () => {
+      unsubAtt();
+      unsubAssignedFac();
+      unsubFaculty();
+      unsubCalendar();
+      unsubSchedules();
+      unsubRooms();
     };
   }, [user]);
 
+  // Derived Values
   const displayName = user?.displayName || 'Student';
   const email = user?.email || 'student@compution.in';
-  const studentId = user?.studentId || 'COMP25007';
-  const course = user?.course || 'Python Mastery';
   const initials = displayName.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
 
-  const stats = [
-    { icon: <Users size={22} />, value: attendanceStats.present, label: 'Total Attendance', color: 'var(--primary)', bg: 'rgba(83,109,254,0.08)' },
-    { icon: <Send size={22} />, value: '200+', label: 'Doubts solved', color: 'var(--success)', bg: 'rgba(102,187,106,0.08)' },
-    { icon: <Clock size={22} />, value: attendanceStats.late, label: 'Late present', color: '#FFA726', bg: 'rgba(255,167,38,0.08)' },
-    { icon: <UserMinus size={22} />, value: attendanceStats.absent, label: 'Total Absent', color: 'var(--danger)', bg: 'rgba(239,83,80,0.08)' },
+  // Combine Faculty Roster
+  const enrichedFacultyList = assignedFacultyList.map(af => {
+    const profile = allFaculty.find(f => f.id === af.facultyId || f.email === af.facultyId);
+    return {
+      ...af,
+      displayName: profile?.displayName || af.studentName || 'Faculty Mentor',
+      photoURL: profile?.photoURL || '',
+      availability: profile?.availability || 'Available',
+      officeTimings: profile?.officeTimings || 'Flexible Hours',
+      email: profile?.email || '',
+      phone: profile?.phone || '',
+      role: af.role || profile?.role || 'Faculty Mentor',
+      subject: af.subject || profile?.subjects?.[0] || 'Python Mastery'
+    };
+  });
+  let facultyList = enrichedFacultyList;
+
+  // Fallback to match course if assignedFaculty is empty
+  if (facultyList.length === 0 && allFaculty.length > 0) {
+    const activeCourse = user?.course || 'Python Mastery';
+    let fallbackFac;
+    if (activeCourse.toLowerCase().includes('python') || activeCourse.toLowerCase().includes('basic computer') || activeCourse.toLowerCase().includes('class 11') || activeCourse.toLowerCase().includes('class 12') || activeCourse.toLowerCase().includes('tally') || activeCourse.toLowerCase().includes('excel')) {
+      fallbackFac = allFaculty.find(f => f.email === 'sharmisthaghosh855@gmail.com');
+    } else {
+      fallbackFac = allFaculty.find(f => f.email === 'tapadarhribhu350@gmail.com');
+    }
+    if (fallbackFac) {
+      facultyList = [{
+        id: 'fallback',
+        facultyId: fallbackFac.id,
+        displayName: fallbackFac.displayName,
+        photoURL: fallbackFac.photoURL,
+        subject: activeCourse,
+        role: fallbackFac.role || 'Faculty Mentor',
+        availability: fallbackFac.availability || 'Available',
+        officeTimings: fallbackFac.officeTimings || 'Flexible Hours',
+        email: fallbackFac.email,
+        phone: fallbackFac.phone
+      }];
+    }
+  }
+
+  // Unified Calendar Events
+  const calendarEvents = [...calendarEventsRaw.calendar, ...calendarEventsRaw.schedules];
+  calendarEvents.sort((a, b) => (a.date || '').localeCompare(b.date || '') || (a.time || '').localeCompare(b.time || ''));
+
+  // Doubt Chart Data
+  const doubtActivityData = [
+    { day: 'Mon', solved: 4, raised: 5 },
+    { day: 'Tue', solved: 6, raised: 6 },
+    { day: 'Wed', solved: 3, raised: 5 },
+    { day: 'Thu', solved: 8, raised: 8 },
+    { day: 'Fri', solved: 5, raised: 7 },
+    { day: 'Sat', solved: 7, raised: 7 },
+    { day: 'Sun', solved: 2, raised: 3 }
   ];
 
-  const handleDownloadSyllabus = () => {
-    setToast('Downloading syllabus outline... Let\'s get learning!');
-    
-    // Create text file blob to simulate syllabus download
-    const syllabusContent = `COMPUTION ACADEMY COURSE SYLLABUS\n\nCourse: ${course}\nDuration: 3-4 Months\nFormat: Online & Offline Live Classes\n\nModules:\n1. Intro & Environments\n2. Fundamentals & Core Logic\n3. Advanced Implementation\n4. Live Case Projects\n\nOfficial Compution Student Support Team.`;
-    const blob = new Blob([syllabusContent], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `${course.replace(/\s+/g, '_')}_Syllabus.txt`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  // Helper: Automated Chat Message Reschedule Alert
+  const sendAutomatedChatMessage = async (targetFacultyId, targetFacultyName, classTitle, proposedDate, proposedTime, reason) => {
+    if (!targetFacultyId || targetFacultyId === 'fallback') return;
+    const roomId = user.uid < targetFacultyId ? `${user.uid}_${targetFacultyId}` : `${targetFacultyId}_${user.uid}`;
+    const roomRef = doc(db, 'chatRooms', roomId);
+    try {
+      await setDoc(roomRef, {
+        id: roomId,
+        participants: [user.uid, targetFacultyId],
+        studentId: user.uid,
+        studentName: user.displayName || 'Student',
+        studentPhoto: user.photoURL || '',
+        facultyId: targetFacultyId,
+        facultyName: targetFacultyName,
+        lastMessage: `Requested rescheduling: ${classTitle}`,
+        lastMessageTime: serverTimestamp(),
+        lastMessageSenderId: user.uid,
+        studentUnreadCount: 0,
+        facultyUnreadCount: increment(1),
+        typing: { [user.uid]: false, [targetFacultyId]: false }
+      }, { merge: true });
 
-    setChecklist(prev => ({ ...prev, syllabus: true }));
+      await addDoc(collection(db, `chatRooms/${roomId}/messages`), {
+        senderId: user.uid,
+        senderName: user.displayName || 'Student',
+        text: `🚨 Rescheduling Request:\nClass: ${classTitle}\nProposed Date/Time: ${proposedDate} at ${proposedTime}\nReason: ${reason}`,
+        seen: false,
+        createdAt: serverTimestamp()
+      });
+    } catch (err) {
+      console.error("Error sending automated chat message:", err);
+    }
   };
 
-  const handleJoinWhatsApp = () => {
-    setToast('Opening Official WhatsApp Student Community Group...');
-    setChecklist(prev => ({ ...prev, whatsapp: true }));
-    
-    setTimeout(() => {
-      window.open('https://chat.whatsapp.com/DlMMGd2FEDEDaOhDCRzu7O', '_blank');
-    }, 1500);
+  // Helper: Mark Attendance
+  const todayStr = format(new Date(), 'yyyy-MM-dd');
+  const hasMarkedToday = attendanceLogs.some(log => log.date === todayStr);
+
+  const handleMarkAttendance = async () => {
+    if (hasMarkedToday) return;
+    try {
+      // 1. Top level
+      await addDoc(collection(db, 'attendance'), {
+        studentId: user.uid,
+        studentName: user.displayName || 'Student',
+        date: todayStr,
+        status: 'present',
+        timestamp: serverTimestamp()
+      });
+
+      // 2. Personal subcollection
+      const personalAttRef = doc(collection(db, `users/${user.uid}/attendance`));
+      await setDoc(personalAttRef, {
+        date: todayStr,
+        status: 'present',
+        timestamp: serverTimestamp()
+      });
+
+      setToast('Attendance marked successfully! 🎉');
+    } catch (err) {
+      console.error(err);
+      setToast('Failed to mark attendance. Please try again.');
+    }
   };
 
-  const handleScheduleOrientation = () => {
-    setToast('Opening WhatsApp to send confirmation reminder...');
-    setChecklist(prev => ({ ...prev, orientation: true }));
-    
-    setTimeout(() => {
-      const text = encodeURIComponent(`Hi! I'm ${displayName}, enrolled in "${course}". I would like to confirm my 1-on-1 orientation call.`);
-      window.open(`https://wa.me/916290935898?text=${text}`, '_blank');
-    }, 1500);
+  // 1. ATTENDANCE LOG WIDGET
+  const renderAttendanceWidget = () => {
+    const totalAttCount = attendanceStats.present + attendanceStats.absent + attendanceStats.late;
+    const attPct = totalAttCount > 0 ? Math.round(((attendanceStats.present + attendanceStats.late * 0.5) / totalAttCount) * 100) : 100;
+
+    return (
+      <motion.div variants={fadeItem} className="card card-p" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+        <div>
+          <h3 style={{ fontSize: '1.25rem', fontWeight: 800 }}>Attendance Log</h3>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Mark and view daily check-in logs</p>
+        </div>
+
+        {/* Stats Row */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px' }}>
+          <div style={{ padding: '12px', background: 'var(--bg)', borderRadius: '12px', textAlign: 'center' }}>
+            <div style={{ fontSize: '0.65rem', fontWeight: 800, color: 'var(--text-light)', letterSpacing: '0.05em' }}>RATE</div>
+            <div style={{ fontSize: '1.25rem', fontWeight: 900, color: 'var(--primary)', marginTop: '4px' }}>{attPct}%</div>
+          </div>
+          <div style={{ padding: '12px', background: 'rgba(102,187,106,0.06)', borderRadius: '12px', textAlign: 'center' }}>
+            <div style={{ fontSize: '0.65rem', fontWeight: 800, color: 'var(--success)', letterSpacing: '0.05em' }}>PRESENT</div>
+            <div style={{ fontSize: '1.25rem', fontWeight: 900, color: 'var(--success)', marginTop: '4px' }}>{attendanceStats.present}</div>
+          </div>
+          <div style={{ padding: '12px', background: 'rgba(255,167,38,0.06)', borderRadius: '12px', textAlign: 'center' }}>
+            <div style={{ fontSize: '0.65rem', fontWeight: 800, color: '#FFA726', letterSpacing: '0.05em' }}>LATE</div>
+            <div style={{ fontSize: '1.25rem', fontWeight: 900, color: '#FFA726', marginTop: '4px' }}>{attendanceStats.late}</div>
+          </div>
+          <div style={{ padding: '12px', background: 'rgba(239,83,80,0.06)', borderRadius: '12px', textAlign: 'center' }}>
+            <div style={{ fontSize: '0.65rem', fontWeight: 800, color: 'var(--danger)', letterSpacing: '0.05em' }}>ABSENT</div>
+            <div style={{ fontSize: '1.25rem', fontWeight: 900, color: 'var(--danger)', marginTop: '4px' }}>{attendanceStats.absent}</div>
+          </div>
+        </div>
+
+        {/* Action Button */}
+        <div>
+          {hasMarkedToday ? (
+            <button disabled style={{ width: '100%', padding: '14px', background: 'var(--surface)', color: 'var(--text-muted)', border: '1px solid var(--border)', borderRadius: '12px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', cursor: 'not-allowed' }}>
+              <CheckCircle size={18} style={{ color: 'var(--success)' }} /> Attendance Marked for Today
+            </button>
+          ) : (
+            <button onClick={handleMarkAttendance} className="btn btn-primary" style={{ width: '100%', padding: '14px', borderRadius: '12px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+              <CheckCircle size={18} /> Mark Attendance for Today
+            </button>
+          )}
+        </div>
+
+        {/* Recent logs */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          <h4 style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--dark)' }}>Recent Logs</h4>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '180px', overflowY: 'auto' }}>
+            {attendanceLogs.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '16px', color: 'var(--text-light)', fontStyle: 'italic', fontSize: '0.8rem' }}>No logs recorded yet.</div>
+            ) : (
+              attendanceLogs.slice(0, 5).map(log => (
+                <div key={log.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', background: 'var(--surface)', borderRadius: '10px', border: '1px solid var(--border)', fontSize: '0.82rem' }}>
+                  <span style={{ fontWeight: 600, color: 'var(--dark)' }}>{format(parseISO(log.date), 'PPPP')}</span>
+                  <span style={{
+                    padding: '3px 8px', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 800, textTransform: 'uppercase',
+                    background: log.status === 'present' ? 'rgba(102,187,106,0.1)' : log.status === 'late' ? 'rgba(255,167,38,0.1)' : 'rgba(239,83,80,0.1)',
+                    color: log.status === 'present' ? 'var(--success)' : log.status === 'late' ? '#FFA726' : 'var(--danger)'
+                  }}>{log.status}</span>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </motion.div>
+    );
   };
 
-  const checkedCount = Object.values(checklist).filter(Boolean).length;
-  const onboardingProgressPct = Math.round((checkedCount / 4) * 100);
+  // 2. DOUBT CHATS & CHARTS WIDGET
+  const renderDoubtChatsAndChartsWidget = () => {
+    return (
+      <motion.div variants={fadeItem} className="card card-p" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+        <div>
+          <h3 style={{ fontSize: '1.25rem', fontWeight: 800 }}>Doubt Chats & Charts</h3>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Resolve coding questions and track queries trend</p>
+        </div>
 
-  const savedOverride = localStorage.getItem('simulatedPeriod');
-  const activePeriod = savedOverride || (completionPct >= 80 ? 'established' : 'new');
+        {/* Chart representation */}
+        <div style={{ borderBottom: '1px solid var(--border)', paddingBottom: '20px' }}>
+          <h4 style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '10px' }}>Weekly Doubt Resolution Trend</h4>
+          <div style={{ height: '160px', width: '100%' }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={doubtActivityData} margin={{ top: 10, right: 0, left: -24, bottom: 0 }}>
+                <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: 'var(--text-light)', fontWeight: 500 }} />
+                <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: 'var(--text-light)', fontWeight: 500 }} />
+                <Tooltip cursor={{ fill: 'transparent' }} />
+                <Bar dataKey="raised" name="Doubts Asked" fill="rgba(83,109,254,0.15)" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="solved" name="Doubts Resolved" fill="var(--primary)" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* Chats list representation */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          <h4 style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--dark)' }}>Active Doubt Chats</h4>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '180px', overflowY: 'auto' }}>
+            {activeChatRooms.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '16px', color: 'var(--text-light)', border: '1.5px dashed var(--border)', borderRadius: '12px', fontSize: '0.8rem' }}>
+                No active doubt rooms. Go to Community to initiate chats!
+              </div>
+            ) : (
+              activeChatRooms.map(room => (
+                <div key={room.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px', background: 'var(--surface)', borderRadius: '12px', border: '1px solid var(--border)' }}>
+                  <img src={room.facultyPhoto || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=100'} alt={room.facultyName} style={{ width: 34, height: 34, borderRadius: '50%', objectFit: 'cover' }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 700, fontSize: '0.85rem', color: 'var(--dark)' }}>{room.facultyName}</div>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{room.lastMessage}</div>
+                  </div>
+                  <button
+                    onClick={() => navigate('/dashboard/community', { state: { startChatWith: room.facultyId } })}
+                    style={{
+                      padding: '6px 12px', background: 'white', border: '1.5px solid var(--border-strong)',
+                      borderRadius: '8px', color: 'var(--primary)', fontSize: '0.72rem', fontWeight: 700, cursor: 'pointer', transition: 'var(--transition)'
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.background = 'var(--primary)'; e.currentTarget.style.color = 'white'; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = 'white'; e.currentTarget.style.color = 'var(--primary)'; }}
+                  >
+                    Chat
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </motion.div>
+    );
+  };
+
+  // 3. CLASS SCHEDULE WIDGET
+  const renderInteractiveCalendarWidget = () => {
+    const monthStart = startOfMonth(selectedCalendarDate);
+    const monthEnd = endOfMonth(monthStart);
+    const monthDays = eachDayOfInterval({ start: monthStart, end: monthEnd });
+    
+    const weekStart = startOfWeek(selectedCalendarDate, { weekStartsOn: 1 });
+    const weekDays = [];
+    for (let i = 0; i < 7; i++) {
+      weekDays.push(addDays(weekStart, i));
+    }
+
+    const changeMonth = (amount) => {
+      setSelectedCalendarDate(prev => addMonths(prev, amount));
+    };
+
+    const handleSelectDay = (day) => {
+      setSelectedCalendarDate(day);
+    };
+
+    const filteredEventsForSelectedDate = calendarEvents.filter(ev => 
+      isSameDay(parseISO(ev.date), selectedCalendarDate)
+    );
+
+    const renderEventCardDetailed = (ev) => {
+      const isToday = isSameDay(new Date(), parseISO(ev.date));
+      const badgeColors = {
+        class: 'badge-primary',
+        assignment: 'badge-warning',
+        test: 'badge-danger',
+        meeting: 'badge-success'
+      };
+
+      return (
+        <div key={ev.id} style={{ display: 'flex', flexDirection: 'column', gap: '6px', padding: '12px', background: 'var(--bg)', borderRadius: '12px', border: isToday ? '1.5px solid var(--success)' : '1px solid var(--border)', fontSize: '0.8rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span className={`badge ${badgeColors[ev.type] || 'badge-primary'}`} style={{ textTransform: 'uppercase', fontSize: '0.65rem', padding: '2px 8px' }}>
+              {ev.type || 'class'}
+            </span>
+            {isToday && <span style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--success)' }}>TODAY</span>}
+          </div>
+          <h4 style={{ fontSize: '0.88rem', fontWeight: 800, margin: 0, color: 'var(--dark)' }}>{ev.title}</h4>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: '2px' }}>
+            <div>🕒 {ev.time} ({format(parseISO(ev.date), 'EEE, MMM d')})</div>
+            {ev.faculty && <div>👨‍🏫 Faculty: {ev.faculty}</div>}
+            {ev.mode && <div style={{ textTransform: 'capitalize' }}>📍 Mode: {ev.mode}</div>}
+            {ev.notes && <div style={{ fontStyle: 'italic', color: 'var(--text-light)', background: 'var(--surface)', padding: '6px', borderRadius: '6px', marginTop: '4px' }}>📝 Notes: {ev.notes}</div>}
+          </div>
+          <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+            {ev.meetingLink && (
+              <a
+                href={ev.meetingLink}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+                  padding: '6px 12px', background: 'var(--primary)', color: 'white', borderRadius: '6px',
+                  fontWeight: 700, fontSize: '0.75rem', textAlign: 'center'
+                }}
+              >
+                <Play size={10} /> Join Live Meet
+              </a>
+            )}
+            {ev.type === 'class' && (
+              <button
+                onClick={() => {
+                  setSelectedEventToReschedule(ev);
+                  setProposedRescheduleDate(ev.date);
+                  setProposedRescheduleTime(ev.time);
+                  setRescheduleFacultyId(ev.facultyId || facultyList[0]?.id || facultyList[0]?.facultyId || '');
+                  setRescheduleReason('');
+                  setRescheduleModalOpen(true);
+                }}
+                style={{
+                  flex: 1, padding: '6px 12px', background: 'white', border: '1.5px solid var(--border-strong)',
+                  color: 'var(--primary)', borderRadius: '6px', fontWeight: 700, fontSize: '0.75rem', cursor: 'pointer', transition: 'var(--transition)'
+                }}
+                onMouseEnter={e => { e.currentTarget.style.background = 'var(--primary)'; e.currentTarget.style.color = 'white'; }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'white'; e.currentTarget.style.color = 'var(--primary)'; }}
+              >
+                🔄 Request Reschedule
+              </button>
+            )}
+          </div>
+        </div>
+      );
+    };
+
+    return (
+      <div className="card card-p" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <h3 style={{ fontSize: '1.25rem', fontWeight: 800 }}>Class Schedule</h3>
+            <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Interactive schedule planner</p>
+          </div>
+          <div style={{ display: 'flex', background: 'var(--surface)', borderRadius: '100px', padding: '2px' }}>
+            {['agenda', 'week', 'month'].map(mode => (
+              <button
+                type="button"
+                key={mode}
+                onClick={() => setCalendarViewMode(mode)}
+                style={{
+                  padding: '4px 10px', borderRadius: '100px', fontSize: '0.72rem', fontWeight: 700,
+                  background: calendarViewMode === mode ? 'white' : 'transparent',
+                  color: calendarViewMode === mode ? 'var(--primary)' : 'var(--text-muted)',
+                  cursor: 'pointer'
+                }}
+              >
+                {mode.toUpperCase()}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {calendarViewMode === 'month' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.85rem', fontWeight: 700 }}>
+              <button type="button" onClick={() => changeMonth(-1)} style={{ padding: '4px 8px', color: 'var(--primary)' }}>&lt;</button>
+              <span>{format(selectedCalendarDate, 'MMMM yyyy')}</span>
+              <button type="button" onClick={() => changeMonth(1)} style={{ padding: '4px 8px', color: 'var(--primary)' }}>&gt;</button>
+            </div>
+            
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '4px', textAlign: 'center', fontSize: '0.75rem' }}>
+              {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((day, idx) => (
+                <div key={idx} style={{ fontWeight: 700, color: 'var(--text-light)', padding: '4px 0' }}>{day}</div>
+              ))}
+              {monthDays.map((day, idx) => {
+                const hasEvents = calendarEvents.some(ev => isSameDay(parseISO(ev.date), day));
+                const isSelected = isSameDay(day, selectedCalendarDate);
+                const isToday = isSameDay(day, new Date());
+                
+                return (
+                  <div
+                    key={idx}
+                    onClick={() => handleSelectDay(day)}
+                    style={{
+                      padding: '6px 0', borderRadius: '8px', cursor: 'pointer', position: 'relative',
+                      background: isSelected ? 'var(--primary)' : isToday ? 'var(--primary-light)' : 'transparent',
+                      color: isSelected ? 'white' : 'var(--dark)',
+                      fontWeight: isSelected || isToday ? 700 : 500
+                    }}
+                  >
+                    {format(day, 'd')}
+                    {hasEvents && (
+                      <span style={{
+                        position: 'absolute', bottom: '2px', left: '50%', transform: 'translateX(-50%)',
+                        width: '4px', height: '4px', borderRadius: '50%', background: isSelected ? 'white' : 'var(--success)'
+                      }} />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            <div style={{ borderTop: '1px solid var(--border)', paddingTop: '10px', marginTop: '4px' }}>
+              <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '8px' }}>
+                Events for {format(selectedCalendarDate, 'MMM d, yyyy')}
+              </div>
+              {filteredEventsForSelectedDate.length === 0 ? (
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-light)', fontStyle: 'italic', textAlign: 'center', padding: '10px 0' }}>
+                  No classes or events scheduled
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {filteredEventsForSelectedDate.map(ev => renderEventCardDetailed(ev))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {calendarViewMode === 'week' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.85rem', fontWeight: 700 }}>
+              <button type="button" onClick={() => setSelectedCalendarDate(prev => addDays(prev, -7))} style={{ padding: '4px 8px', color: 'var(--primary)' }}>&lt;</button>
+              <span>Week of {format(weekStart, 'MMM d, yyyy')}</span>
+              <button type="button" onClick={() => setSelectedCalendarDate(prev => addDays(prev, 7))} style={{ padding: '4px 8px', color: 'var(--primary)' }}>&gt;</button>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '4px', textAlign: 'center', fontSize: '0.75rem' }}>
+              {weekDays.map((day, idx) => {
+                const isSelected = isSameDay(day, selectedCalendarDate);
+                const hasEvents = calendarEvents.some(ev => isSameDay(parseISO(ev.date), day));
+                return (
+                  <div
+                    key={idx}
+                    onClick={() => handleSelectDay(day)}
+                    style={{
+                      padding: '8px 0', borderRadius: '8px', cursor: 'pointer',
+                      background: isSelected ? 'var(--primary-light)' : 'transparent',
+                      border: isSelected ? '1px solid var(--primary)' : '1px solid transparent'
+                    }}
+                  >
+                    <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>{format(day, 'eee')}</div>
+                    <div style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--dark)' }}>{format(day, 'd')}</div>
+                    {hasEvents && <div style={{ width: 4, height: 4, borderRadius: '50%', background: 'var(--success)', margin: '2px auto 0' }} />}
+                  </div>
+                );
+              })}
+            </div>
+
+            <div style={{ borderTop: '1px solid var(--border)', paddingTop: '10px' }}>
+              <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '8px' }}>
+                Events for {format(selectedCalendarDate, 'MMM d, yyyy')}
+              </div>
+              {filteredEventsForSelectedDate.length === 0 ? (
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-light)', fontStyle: 'italic', textAlign: 'center', padding: '10px 0' }}>
+                  No events on this day
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {filteredEventsForSelectedDate.map(ev => renderEventCardDetailed(ev))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {calendarViewMode === 'agenda' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '420px', overflowY: 'auto', paddingRight: '4px' }}>
+            {calendarEvents.length === 0 ? (
+              <div style={{ padding: '24px 0', textAlign: 'center', color: 'var(--text-light)', fontStyle: 'italic', fontSize: '0.8rem' }}>
+                No events in your agenda.
+              </div>
+            ) : (
+              calendarEvents.map(ev => renderEventCardDetailed(ev))
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // RESCHEDULE MODAL RENDERING
+  const renderRescheduleModal = () => {
+    return (
+      <Modal isOpen={rescheduleModalOpen} onClose={() => setRescheduleModalOpen(false)} title="Request Class Rescheduling">
+        <form onSubmit={handleRescheduleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <div>
+            <label className="form-label">Class Subject</label>
+            <input type="text" className="form-input" disabled value={selectedEventToReschedule?.title || 'Class'} />
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }} className="grid-2-col-mobile">
+            <div>
+              <label className="form-label">Current Date</label>
+              <input type="text" className="form-input" disabled value={selectedEventToReschedule?.date ? format(parseISO(selectedEventToReschedule.date), 'PPPP') : ''} />
+            </div>
+            <div>
+              <label className="form-label">Current Time</label>
+              <input type="text" className="form-input" disabled value={selectedEventToReschedule?.time || ''} />
+            </div>
+          </div>
+
+          <div style={{ borderTop: '1px solid var(--border)', margin: '8px 0', padding: '8px 0' }} />
+
+          <div>
+            <label className="form-label">Select Mentor</label>
+            <select
+              className="form-input"
+              required
+              value={rescheduleFacultyId}
+              onChange={e => setRescheduleFacultyId(e.target.value)}
+            >
+              <option value="" disabled>Choose a faculty mentor</option>
+              {facultyList.map(fac => (
+                <option key={fac.id || fac.facultyId} value={fac.id || fac.facultyId}>{fac.displayName} ({fac.subject})</option>
+              ))}
+            </select>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }} className="grid-2-col-mobile">
+            <div>
+              <label className="form-label">Proposed Date</label>
+              <input
+                type="date"
+                required
+                className="form-input"
+                value={proposedRescheduleDate}
+                onChange={e => setProposedRescheduleDate(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="form-label">Proposed Time</label>
+              <input
+                type="time"
+                required
+                className="form-input"
+                value={proposedRescheduleTime}
+                onChange={e => setProposedRescheduleTime(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="form-label">Reason for Rescheduling</label>
+            <textarea
+              className="form-input"
+              required
+              rows={4}
+              value={rescheduleReason}
+              onChange={e => setRescheduleReason(e.target.value)}
+              placeholder="Please provide the exact reason why you need this class slot rescheduled..."
+              style={{ resize: 'none' }}
+            />
+          </div>
+
+          <div style={{ display: 'flex', gap: '12px', marginTop: '12px' }}>
+            <button type="button" onClick={() => setRescheduleModalOpen(false)} className="btn btn-ghost" style={{ flex: 1 }}>Cancel</button>
+            <button type="submit" disabled={rescheduleIsSubmitting} className="btn btn-primary" style={{ flex: 1 }}>
+              {rescheduleIsSubmitting ? 'Submitting...' : 'Submit Request'}
+            </button>
+          </div>
+        </form>
+      </Modal>
+    );
+  };
+
+  const handleRescheduleSubmit = async (e) => {
+    e.preventDefault();
+    if (!rescheduleFacultyId || !proposedRescheduleDate || !proposedRescheduleTime || !rescheduleReason.trim()) {
+      setToast('Please fill out all fields.');
+      return;
+    }
+    setRescheduleIsSubmitting(true);
+    try {
+      const selectedFaculty = facultyList.find(f => (f.id === rescheduleFacultyId || f.facultyId === rescheduleFacultyId));
+      const facultyName = selectedFaculty ? selectedFaculty.displayName : 'Faculty Mentor';
+
+      // 1. Add reschedule request document
+      await addDoc(collection(db, 'rescheduleRequests'), {
+        studentId: user.uid,
+        studentName: user.displayName || 'Student',
+        facultyId: rescheduleFacultyId,
+        facultyName: facultyName,
+        classId: selectedEventToReschedule?.id || 'none',
+        classTitle: selectedEventToReschedule?.title || 'Class Slot',
+        originalDate: selectedEventToReschedule?.date || '',
+        originalTime: selectedEventToReschedule?.time || '',
+        requestedDate: proposedRescheduleDate,
+        requestedTime: proposedRescheduleTime,
+        reason: rescheduleReason.trim(),
+        status: 'pending',
+        createdAt: serverTimestamp()
+      });
+
+      // 2. Alert faculty via automated direct message
+      await sendAutomatedChatMessage(
+        rescheduleFacultyId,
+        facultyName,
+        selectedEventToReschedule?.title || 'Class Slot',
+        proposedRescheduleDate,
+        proposedRescheduleTime,
+        rescheduleReason.trim()
+      );
+
+      setToast('Rescheduling request submitted! Mentor notified via chat. 🔄');
+      setRescheduleModalOpen(false);
+    } catch (err) {
+      console.error("Error submitting reschedule request:", err);
+      setToast('Failed to submit reschedule request.');
+    } finally {
+      setRescheduleIsSubmitting(false);
+    }
+  };
 
   if (loading) {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', minHeight: '50vh' }}>
         <div className="spinning" style={{ width: '32px', height: '32px', border: '3px solid rgba(83,109,254,0.2)', borderTopColor: 'var(--primary)', borderRadius: '50%' }} />
-        <style>{`
-          @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-          .spinning { animation: spin 1s linear infinite; }
-        `}</style>
       </div>
     );
   }
@@ -358,528 +886,40 @@ const StudentOverview = () => {
   return (
     <motion.div variants={stagger} initial="hidden" animate="show" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       
+      {/* Header bar */}
+      <motion.div variants={fadeItem} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
+          <h1 style={{ fontSize: '1.75rem', fontWeight: 800, marginBottom: '6px' }}>Student Dashboard Overview</h1>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem' }}>Check attendance logs, class schedules, and mentor doubt clearings</p>
+        </div>
+      </motion.div>
 
+      {/* Main Grid: 2-columns (1.4fr and 1.6fr) */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1.6fr', gap: '24px' }} className="grid-2-col-mobile">
+        
+        {/* Left Column: Attendance Log & Doubt Chats/Charts */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+          
+          {/* 1. ATTENDANCE LOG WIDGET */}
+          {renderAttendanceWidget()}
 
-      {activePeriod === 'new' ? (
-        /* ── NEW STUDENT ONBOARDING DASHBOARD ──────────────── */
-        <>
-          <motion.div variants={fadeItem} className="card" style={{
-            background: 'linear-gradient(135deg, #4A00E0, #8E2DE2)',
-            color: 'white',
-            borderRadius: '24px',
-            overflow: 'hidden',
-            position: 'relative'
-          }}>
-            <div style={{
-              position: 'absolute', top: '-10%', right: '-10%', width: '300px', height: '300px',
-              borderRadius: '50%', background: 'rgba(255,255,255,0.06)', blur: '40px', pointerEvents: 'none'
-            }} />
-            <div className="card-p" style={{ display: 'flex', flexDirection: 'column', gap: '16px', zIndex: 1, position: 'relative' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{
-                  background: 'rgba(255, 255, 255, 0.2)', padding: '4px 12px', borderRadius: '100px',
-                  fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em'
-                }}>
-                  🎉 Setup Workspace
-                </span>
-                <span style={{ fontSize: '0.8rem', opacity: 0.8 }}>Joined Compution</span>
-              </div>
-              <h1 style={{ color: 'white', fontSize: '2rem', fontWeight: 800 }}>Welcome to your workspace, {displayName}!</h1>
-              <p style={{ color: 'rgba(255, 255, 255, 0.9)', maxWidth: '600px', fontSize: '0.95rem', lineHeight: 1.6 }}>
-                Let's set up your environment, resources, and live channels. Complete the checklist items below to get fully certified.
-              </p>
-              
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '8px' }}>
-                <span style={{ fontSize: '0.85rem', fontWeight: 600, opacity: 0.9 }}>Your course track:</span>
-                <span style={{
-                  background: 'white', color: '#4A00E0', padding: '4px 12px', borderRadius: '8px',
-                  fontWeight: 700, fontSize: '0.85rem', boxShadow: 'var(--shadow-sm)'
-                }}>
-                  {course}
-                </span>
-              </div>
-            </div>
-          </motion.div>
+          {/* 3. DOUBT CHATS & CHARTS WIDGET */}
+          {renderDoubtChatsAndChartsWidget()}
+          
+        </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr', gap: '24px' }} className="grid-2-col-mobile">
-            {/* Checklist Container */}
-            <motion.div variants={fadeItem} className="card card-p" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border)', paddingBottom: '16px' }}>
-                <div>
-                  <h3 style={{ fontSize: '1.2rem', fontWeight: 800 }}>Orientation Checklist</h3>
-                  <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Interactive setup steps for fresh learners</p>
-                </div>
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 900, fontSize: '1.5rem', color: 'var(--primary)' }}>{onboardingProgressPct}%</div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{checkedCount}/4 items ready</div>
-                </div>
-              </div>
+        {/* Right Column: Interactive Class Schedule Calendar */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+          
+          {/* 2. CLASS SCHEDULE WIDGET */}
+          {renderInteractiveCalendarWidget()}
 
-              {/* Progress Track */}
-              <div style={{ margin: '-4px 0 12px' }}>
-                <div className="progress-track" style={{ height: '8px', background: 'var(--surface)', borderRadius: '10px' }}>
-                  <motion.div className="progress-fill"
-                    initial={{ width: 0 }}
-                    animate={{ width: `${onboardingProgressPct}%` }}
-                    transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
-                    style={{ background: 'linear-gradient(90deg, var(--primary), var(--success))', height: '100%', borderRadius: '100px' }}
-                  />
-                </div>
-              </div>
+        </div>
 
-              {/* Items List */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                
-                {/* Profile Complete */}
-                <div style={{
-                  display: 'flex', alignItems: 'center', gap: '16px', padding: '16px', borderRadius: '16px',
-                  background: 'rgba(102,187,106,0.06)', border: '1.5px solid rgba(102,187,106,0.15)',
-                  transition: 'var(--transition)'
-                }}>
-                  <div style={{ color: 'var(--success)' }}><CheckCircle size={22} /></div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontWeight: 700, fontSize: '0.92rem', color: 'var(--dark)', textDecoration: 'line-through', opacity: 0.7 }}>1. Complete your onboarding profile details</div>
-                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Personal, school/college, and guardian contacts synchronized</div>
-                  </div>
-                  <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--success)', background: 'rgba(102,187,106,0.12)', padding: '2px 8px', borderRadius: '4px' }}>Done</span>
-                </div>
+      </div>
 
-                {/* Syllabus Download */}
-                <div style={{
-                  display: 'flex', alignItems: 'center', gap: '16px', padding: '16px', borderRadius: '16px',
-                  background: checklist.syllabus ? 'rgba(102,187,106,0.06)' : 'white',
-                  border: checklist.syllabus ? '1.5px solid rgba(102,187,106,0.15)' : '1.5px solid var(--border)',
-                  boxShadow: '0 2px 8px rgba(0,0,0,0.01)', transition: 'var(--transition)'
-                }}>
-                  <div style={{ color: checklist.syllabus ? 'var(--success)' : 'var(--text-light)', cursor: 'pointer' }} onClick={handleDownloadSyllabus}>
-                    {checklist.syllabus ? <CheckCircle size={22} /> : <div style={{ width: 22, height: 22, borderRadius: '50%', border: '2px solid var(--text-light)' }} />}
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontWeight: 700, fontSize: '0.92rem', color: 'var(--dark)', textDecoration: checklist.syllabus ? 'line-through' : 'none', opacity: checklist.syllabus ? 0.7 : 1 }}>2. Download course syllabus outline</div>
-                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Get the lesson plans, topics, and code compiler targets</div>
-                  </div>
-                  <button 
-                    disabled
-                    className="btn btn-ghost" 
-                    style={{ padding: '6px 12px', fontSize: '0.75rem', borderRadius: '8px', height: 'fit-content', opacity: 0.5, cursor: 'not-allowed' }}
-                  >
-                    {checklist.syllabus ? <><ShieldCheck size={12} /> Downloaded</> : <><Download size={12} /> Get Syllabus</>}
-                  </button>
-                </div>
-
-                {/* WhatsApp Group */}
-                <div style={{
-                  display: 'flex', alignItems: 'center', gap: '16px', padding: '16px', borderRadius: '16px',
-                  background: checklist.whatsapp ? 'rgba(102,187,106,0.06)' : 'white',
-                  border: checklist.whatsapp ? '1.5px solid rgba(102,187,106,0.15)' : '1.5px solid var(--border)',
-                  boxShadow: '0 2px 8px rgba(0,0,0,0.01)', transition: 'var(--transition)'
-                }}>
-                  <div style={{ color: checklist.whatsapp ? 'var(--success)' : 'var(--text-light)', cursor: 'pointer' }} onClick={handleJoinWhatsApp}>
-                    {checklist.whatsapp ? <CheckCircle size={22} /> : <div style={{ width: 22, height: 22, borderRadius: '50%', border: '2px solid var(--text-light)' }} />}
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontWeight: 700, fontSize: '0.92rem', color: 'var(--dark)', textDecoration: checklist.whatsapp ? 'line-through' : 'none', opacity: checklist.whatsapp ? 0.7 : 1 }}>3. Join WhatsApp student group</div>
-                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Join live chat and doubt solving channels with classmates</div>
-                  </div>
-                  <button 
-                    onClick={handleJoinWhatsApp}
-                    className={`btn ${checklist.whatsapp ? 'btn-ghost' : 'btn-primary'}`} 
-                    style={{ padding: '6px 12px', fontSize: '0.75rem', borderRadius: '8px', height: 'fit-content' }}
-                  >
-                    {checklist.whatsapp ? <><ShieldCheck size={12} /> Joined Group</> : <><ExternalLink size={12} /> Join WhatsApp</>}
-                  </button>
-                </div>
-
-                {/* Orientation Call */}
-                <div style={{
-                  display: 'flex', alignItems: 'center', gap: '16px', padding: '16px', borderRadius: '16px',
-                  background: checklist.orientation ? 'rgba(102,187,106,0.06)' : 'white',
-                  border: checklist.orientation ? '1.5px solid rgba(102,187,106,0.15)' : '1.5px solid var(--border)',
-                  boxShadow: '0 2px 8px rgba(0,0,0,0.01)', transition: 'var(--transition)'
-                }}>
-                  <div style={{ color: checklist.orientation ? 'var(--success)' : 'var(--text-light)', cursor: 'pointer' }} onClick={handleScheduleOrientation}>
-                    {checklist.orientation ? <CheckCircle size={22} /> : <div style={{ width: 22, height: 22, borderRadius: '50%', border: '2px solid var(--text-light)' }} />}
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontWeight: 700, fontSize: '0.92rem', color: 'var(--dark)', textDecoration: checklist.orientation ? 'line-through' : 'none', opacity: checklist.orientation ? 0.7 : 1 }}>4. Schedule 1-on-1 orientation call</div>
-                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Confirm syllabus, offline bench allocation, or portal questions</div>
-                  </div>
-                  <button 
-                    onClick={handleScheduleOrientation}
-                    className={`btn ${checklist.orientation ? 'btn-ghost' : 'btn-primary'}`} 
-                    style={{ padding: '6px 12px', fontSize: '0.75rem', borderRadius: '8px', height: 'fit-content' }}
-                  >
-                    {checklist.orientation ? <><ShieldCheck size={12} /> Scheduled</> : <><Calendar size={12} /> Book Slot</>}
-                  </button>
-                </div>
-
-              </div>
-
-              {/* Checklist Fully Complete Celebration */}
-              <AnimatePresence>
-                {checkedCount === 4 && (
-                  <motion.div
-                    initial={{ opacity: 0, scale: 0.9, y: 10 }}
-                    animate={{ opacity: 1, scale: 1, y: 0 }}
-                    exit={{ opacity: 0, scale: 0.9, y: 10 }}
-                    style={{
-                      background: 'linear-gradient(135deg, #11998e, #38ef7d)',
-                      color: 'white',
-                      padding: '20px',
-                      borderRadius: '16px',
-                      marginTop: '8px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '16px',
-                      boxShadow: '0 10px 24px rgba(56,239,125,0.2)'
-                    }}
-                  >
-                    <div style={{ fontSize: '2.2rem' }}>🏆</div>
-                    <div style={{ flex: 1 }}>
-                      <h4 style={{ color: 'white', fontWeight: 800, fontSize: '1rem', marginBottom: '4px' }}>All Tasks Completed!</h4>
-                      <p style={{ fontSize: '0.82rem', opacity: 0.9 }}>Your workspace is completely active. Let's start coding!</p>
-                    </div>
-                    <button 
-                      onClick={() => navigate('/dashboard/courses')}
-                      className="btn" 
-                      style={{ background: 'white', color: '#11998e', padding: '10px 18px', fontSize: '0.85rem', borderRadius: '10px' }}
-                    >
-                      Go to Courses <ChevronRight size={14} />
-                    </button>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </motion.div>
-
-            {/* Quick Resources / FAQ Guides */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-              
-              {/* Profile Card Summary */}
-              <motion.div variants={fadeItem} className="card card-p" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                <h3 style={{ fontSize: '1.1rem', fontWeight: 800 }}>Profile Sync</h3>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-                  {user?.photoURL ? (
-                    <img src={user.photoURL} alt="avatar" style={{ width: 48, height: 48, borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--primary)' }} />
-                  ) : (
-                    <div style={{
-                      width: 48, height: 48, borderRadius: '50%', background: 'linear-gradient(135deg, var(--primary), var(--accent))',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 800, fontSize: '1.1rem',
-                    }}>{initials}</div>
-                  )}
-                  <div>
-                    <div style={{ fontWeight: 700, fontSize: '1rem' }}>{displayName}</div>
-                    <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>ID: {studentId}</div>
-                  </div>
-                </div>
-                <div style={{ background: 'var(--surface)', borderRadius: '12px', padding: '12px', fontSize: '0.8rem', color: 'var(--text-muted)', lineHeight: 1.5 }}>
-                  <strong>Note:</strong> Profile photo upload and class adjustments can be edited dynamically in the profile section.
-                </div>
-              </motion.div>
-
-              {/* Guides */}
-              <motion.div variants={fadeItem} className="card card-p" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                <h3 style={{ fontSize: '1.1rem', fontWeight: 800 }}>Quick Guide</h3>
-                
-                <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
-                  <div style={{
-                    width: 32, height: 32, borderRadius: '8px', background: 'rgba(83,109,254,0.08)',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--primary)', flexShrink: 0
-                  }}>
-                    <Play size={16} />
-                  </div>
-                  <div>
-                    <h4 style={{ fontSize: '0.9rem', fontWeight: 700, marginBottom: '2px' }}>How to Join Classes?</h4>
-                    <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Go to "Course" page, find your active class and click "Continue" to launch the online classroom portal.</p>
-                  </div>
-                </div>
-
-                <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
-                  <div style={{
-                    width: 32, height: 32, borderRadius: '8px', background: 'rgba(102,187,106,0.08)',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--success)', flexShrink: 0
-                  }}>
-                    <MessageSquare size={16} />
-                  </div>
-                  <div>
-                    <h4 style={{ fontSize: '0.9rem', fontWeight: 700, marginBottom: '2px' }}>Ask Doubts 24/7</h4>
-                    <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Use the floating Chat Assistant in the bottom right corner to clear coding questions immediately.</p>
-                  </div>
-                </div>
-
-                <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
-                  <div style={{
-                    width: 32, height: 32, borderRadius: '8px', background: 'rgba(255,167,38,0.08)',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--warning)', flexShrink: 0
-                  }}>
-                    <Clock3 size={16} />
-                  </div>
-                  <div>
-                    <h4 style={{ fontSize: '0.9rem', fontWeight: 700, marginBottom: '2px' }}>Submit Assignments</h4>
-                    <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Head to "Assignments", view questions, complete coding homeworks and upload files before due dates.</p>
-                  </div>
-                </div>
-
-              </motion.div>
-
-            </div>
-          </div>
-        </>
-      ) : (
-        /* ── ESTABLISHED STUDENT METRICS DASHBOARD ────────── */
-        <>
-          <motion.div variants={fadeItem} className="card card-p">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-              <h2 style={{ fontSize: '1.5rem', fontWeight: 800 }}>My profile</h2>
-              <button style={{
-                display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 16px', borderRadius: '8px',
-                border: '1px solid var(--border-strong)', background: 'white', fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-muted)'
-              }}>
-                Jan <ChevronDown size={14} />
-              </button>
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '24px' }}>
-              {user?.photoURL ? (
-                <img src={user.photoURL} alt="avatar" style={{ width: 56, height: 56, borderRadius: '50%', objectFit: 'cover', border: '3px solid var(--surface)' }} />
-              ) : (
-                <div style={{
-                  width: 56, height: 56, borderRadius: '50%', background: 'linear-gradient(135deg, var(--primary), var(--accent))',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 800, fontSize: '1.2rem',
-                  border: '3px solid var(--surface)'
-                }}>{initials}</div>
-              )}
-              <div>
-                <div style={{ fontWeight: 700, fontSize: '1.15rem' }}>{displayName}</div>
-                <div style={{ fontSize: '0.85rem', color: 'var(--primary)', fontWeight: 500 }}>{email}</div>
-              </div>
-            </div>
-
-            <div className={`grid-profile-meta ${user?.role !== 'student' ? 'grid-profile-meta--4' : ''}`} style={{
-              padding: '16px 0', borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)', marginBottom: '24px'
-            }}>
-              <div>
-                <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 500, marginBottom: '4px' }}>ID</div>
-                <div style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--dark)' }}>{studentId}</div>
-              </div>
-              <div style={{ overflow: 'hidden' }}>
-                <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 500, marginBottom: '4px' }}>Contact</div>
-                <div style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--dark)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={user?.phone || email}>
-                  {user?.phone || email}
-                </div>
-              </div>
-              {user?.role !== 'student' && (
-                <div style={{ overflow: 'hidden' }}>
-                  <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 500, marginBottom: '4px' }}>Course</div>
-                  <div style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--dark)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={course}>
-                    {course}
-                  </div>
-                </div>
-              )}
-              <div>
-                <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 500, marginBottom: '4px' }}>Last fees</div>
-                <input 
-                  type="date" 
-                  value={user?.lastFeesDate || ''}
-                  onChange={async (e) => {
-                    const newDate = e.target.value;
-                    try {
-                      const { doc, updateDoc } = await import('firebase/firestore');
-                      await updateDoc(doc(db, 'users', user.uid), { lastFeesDate: newDate });
-                    } catch (err) {
-                      console.error('Error updating last fees:', err);
-                    }
-                  }}
-                  className="custom-date-picker"
-                />
-              </div>
-            </div>
-
-            <div className="grid-stats-4">
-              {stats.map((s, i) => (
-                <motion.div key={i} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.4, delay: 0.2 + i * 0.08 }}
-                  style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '18px 20px', borderRadius: '14px', border: '1px solid var(--border)', background: 'white' }}
-                >
-                  <div style={{ width: 42, height: 42, borderRadius: '50%', background: s.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', color: s.color }}>{s.icon}</div>
-                  <div>
-                    {loading ? <div style={{ height: 24, width: 40, background: 'var(--surface)', borderRadius: 4, marginBottom: 4 }} /> : 
-                    <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 900, fontSize: '1.5rem', lineHeight: 1, color: 'var(--dark)', marginBottom: '6px' }}>{s.value}</div>}
-                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 500, whiteSpace: 'nowrap' }}>{s.label}</div>
-                  </div>
-                </motion.div>
-              ))}
-            </div>
-          </motion.div>
-
-          <motion.div variants={fadeItem} className="card card-p">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-              <h2 style={{ fontSize: '1.5rem', fontWeight: 800 }}>My progress</h2>
-              <button style={{ width: 40, height: 40, borderRadius: '10px', border: '1px solid var(--border)', background: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', cursor: 'pointer' }}>
-                <Share2 size={18} />
-              </button>
-            </div>
-
-            <div className="grid-progress-row">
-              <div style={{ flex: 1 }}>
-                <div style={{ height: 200, width: '100%', marginTop: '20px' }}>
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={progressData} barSize={40} margin={{ top: 20, right: 0, left: -24, bottom: 0 }}>
-                      <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: 'var(--text-light)', fontWeight: 500 }} dy={10} />
-                      <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: 'var(--text-light)', fontWeight: 500 }} tickFormatter={val => `${val} hr`} />
-                      <Tooltip content={<CustomTooltip />} cursor={{ fill: 'transparent' }} />
-                      <Bar dataKey="studyHours" radius={[8, 8, 4, 4]}>
-                        {progressData.map((entry, index) => {
-                          const isMax = entry.studyHours === Math.max(...progressData.map(d => d.studyHours));
-                          return <Cell key={`cell-${index}`} fill={isMax ? '#66BB6A' : '#C8E6C9'} />;
-                        })}
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-
-                <div style={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
-                  margin: '16px 0 0', padding: '10px', borderRadius: '10px', background: 'rgba(83,109,254,0.04)',
-                }}>
-                  <span style={{ fontSize: '0.88rem', color: 'var(--text-muted)', fontWeight: 500 }}>Overall Progress:</span>
-                  <span style={{ fontWeight: 800, fontSize: '1rem', color: 'var(--success)', background: 'rgba(102,187,106,0.12)', padding: '2px 10px', borderRadius: '6px' }}>{overallGrade}</span>
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '24px', minWidth: '180px' }}>
-                <CircularProgress percentage={completionPct} size={150} stroke={14} />
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <div style={{ width: 16, height: 16, borderRadius: '4px', background: 'var(--success)' }} />
-                    <span style={{ fontSize: '0.88rem', fontWeight: 600, color: 'var(--dark)' }}>Completed</span>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <div style={{ width: 16, height: 16, borderRadius: '4px', background: '#E8EDF5', border: '1px solid #D1D9E6' }} />
-                    <span style={{ fontSize: '0.88rem', fontWeight: 600, color: 'var(--dark)' }}>Remaining</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </motion.div>
-
-          <motion.div variants={fadeItem} className="card card-p" style={{ marginTop: '24px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', flexWrap: 'wrap', gap: '12px' }}>
-              <div>
-                <h2 style={{ fontSize: '1.5rem', fontWeight: 800 }}>My Personal Notes</h2>
-                <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>Quick workspace notes and class reference sheets</p>
-              </div>
-              <button onClick={handleOpenAddNote} className="btn btn-primary" style={{ padding: '10px 18px', fontSize: '0.85rem', borderRadius: '10px' }}>
-                <Plus size={16} /> Add Note
-              </button>
-            </div>
-
-            {notes.length === 0 ? (
-              <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-light)', border: '1px dashed var(--border-strong)', borderRadius: '16px' }}>
-                <FileEdit size={36} style={{ margin: '0 auto 12px', opacity: 0.5 }} />
-                <h3 style={{ fontSize: '1.1rem', color: 'var(--dark)', marginBottom: '6px' }}>No notes saved yet</h3>
-                <p style={{ fontSize: '0.85rem' }}>Use notes to jot down snippets, tasks, or lesson summaries.</p>
-              </div>
-            ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '20px' }}>
-                {notes.map(n => (
-                  <motion.div
-                    key={n.id}
-                    onClick={() => handleOpenEditNote(n)}
-                    whileHover={{ translateY: -2 }}
-                    style={{
-                      padding: '20px', borderRadius: '16px', background: 'var(--surface)', border: '1px solid var(--border)',
-                      cursor: 'pointer', display: 'flex', flexDirection: 'column', position: 'relative', transition: 'var(--transition)'
-                    }}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
-                      <span className="badge badge-primary" style={{ background: 'var(--white)', color: 'var(--primary)', border: '1.5px solid var(--border-strong)', fontSize: '0.75rem' }}>
-                        {n.subject}
-                      </span>
-                      <button
-                        onClick={(e) => handleDeleteNote(e, n.id)}
-                        style={{
-                          background: 'none', border: 'none', color: 'var(--text-light)', cursor: 'pointer', padding: '4px',
-                          display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'color 0.2s'
-                        }}
-                        onMouseEnter={e => e.currentTarget.style.color = 'var(--danger)'}
-                        onMouseLeave={e => e.currentTarget.style.color = 'var(--text-light)'}
-                        title="Delete note"
-                      >
-                        <Trash2 size={15} />
-                      </button>
-                    </div>
-                    <h3 style={{ fontSize: '1.1rem', fontWeight: 800, marginBottom: '8px', color: 'var(--dark)' }}>{n.title}</h3>
-                    <p style={{
-                      color: 'var(--text-muted)', fontSize: '0.85rem', lineHeight: 1.5, flex: 1, whiteSpace: 'pre-wrap',
-                      display: '-webkit-box', WebkitLineClamp: 4, WebkitBoxOrient: 'vertical', overflow: 'hidden'
-                    }}>
-                      {n.content}
-                    </p>
-                  </motion.div>
-                ))}
-              </div>
-            )}
-          </motion.div>
-        </>
-      )}
-
-      {/* ADD / EDIT NOTE MODAL */}
-      <Modal isOpen={isNoteModalOpen} onClose={() => setIsNoteModalOpen(false)} title={noteForm.id ? "Edit Note" : "Add Note"}>
-        <form onSubmit={handleSaveNote} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          <div>
-            <label className="form-label">Title</label>
-            <input
-              type="text"
-              className="form-input"
-              required
-              value={noteForm.title}
-              onChange={e => setNoteForm({ ...noteForm, title: e.target.value })}
-              placeholder="Note title"
-            />
-          </div>
-          <div>
-            <label className="form-label">Subject</label>
-            <input
-              type="text"
-              className="form-input"
-              required
-              value={noteForm.subject}
-              onChange={e => setNoteForm({ ...noteForm, subject: e.target.value })}
-              placeholder="e.g. DSA"
-            />
-          </div>
-          <div>
-            <label className="form-label">Content</label>
-            <textarea
-              className="form-input"
-              required
-              rows={6}
-              value={noteForm.content}
-              onChange={e => setNoteForm({ ...noteForm, content: e.target.value })}
-              placeholder="Write your notes here..."
-              style={{ resize: 'vertical' }}
-            />
-          </div>
-          <div style={{ display: 'flex', gap: '12px', marginTop: '8px' }}>
-            <button type="button" onClick={() => setIsNoteModalOpen(false)} className="btn btn-ghost" style={{ flex: 1 }}>Cancel</button>
-            <button type="submit" disabled={isSubmitting} className="btn btn-primary" style={{ flex: 1 }}>
-              {isSubmitting ? 'Saving...' : 'Save Note'}
-            </button>
-          </div>
-        </form>
-      </Modal>
-
-      {user?.role === 'admin' && (
-        <AdminStudentGrid />
-      )}
-
-      {/* Global CSS styles for animations */}
-      <style>{`
-        @keyframes pulse {
-          0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(83, 109, 254, 0.4); }
-          70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(83, 109, 254, 0); }
-          100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(83, 109, 254, 0); }
-        }
-      `}</style>
+      {/* RESCHEDULE REQUEST MODAL */}
+      {renderRescheduleModal()}
 
       {/* Toast Notifications */}
       <AnimatePresence>
@@ -903,7 +943,7 @@ export default function Overview() {
     );
   }
   
-  if (user?.role === 'admin') return <AdminDashboard />;
+  if (user?.role === 'admin' || user?.role === 'faculty' || user?.role === 'member') return <AdminDashboard />;
   
   return <StudentOverview />;
 }

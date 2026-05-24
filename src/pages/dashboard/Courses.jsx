@@ -29,7 +29,10 @@ const COURSE_METADATA = {
   'Java Development': { subject: 'Java', color: '#ED8B00', emoji: '☕', nextLesson: 'Object Oriented Programming', totalLessons: 35, schedule: 'Tue, Thu · 7 PM' },
   'C & C++ Fundamentals': { subject: 'C/C++', color: '#00599C', emoji: '⚡', nextLesson: 'Pointers & References', totalLessons: 30, schedule: 'Wed, Sat · 6 PM' },
   'BCA': { subject: 'Coaching', color: '#009688', emoji: '💻', nextLesson: 'Discrete Mathematics Logic', totalLessons: 45, schedule: 'Mon–Sat · 6 PM' },
-  'B.Tech': { subject: 'Coaching', color: '#00796B', emoji: '⚙️', nextLesson: 'Advanced Algorithms', totalLessons: 50, schedule: 'Mon–Sat · 7 PM' }
+  'B.Tech': { subject: 'Coaching', color: '#00796B', emoji: '⚙️', nextLesson: 'Advanced Algorithms', totalLessons: 50, schedule: 'Mon–Sat · 7 PM' },
+  'Tally Prime': { subject: 'Accounting', color: '#1B5E20', emoji: '📊', nextLesson: 'Lesson 1: Intro to Tally', totalLessons: 16, schedule: 'Mon, Wed · 3 PM' },
+  'Advanced Excel': { subject: 'Data Analysis', color: '#01579B', emoji: '📈', nextLesson: 'Lesson 1: Pivot Tables & Formulas', totalLessons: 18, schedule: 'Tue, Thu · 4 PM' },
+  'Basic Computer': { subject: 'Fundamentals', color: '#E65100', emoji: '🖥️', nextLesson: 'Lesson 1: Windows & OS basics', totalLessons: 12, schedule: 'Fri, Sat · 2 PM' }
 };
 
 const Courses = () => {

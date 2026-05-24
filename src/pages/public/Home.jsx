@@ -38,7 +38,10 @@ const ADMISSION_SUBJECTS = [
   'Web Development (HTML/CSS/JS)',
   'Java Development',
   'C & C++ Fundamentals',
-  'BCA / B.Tech Computer Science Coaching'
+  'BCA / B.Tech Computer Science Coaching',
+  'Tally Prime',
+  'Advanced Excel',
+  'Basic Computer'
 ];
 
 /* ── ADMISSION POPUP ───────────────────────────────── */
@@ -223,6 +226,7 @@ const AdmissionApplicationModal = ({ isOpen, onClose, triggerToast }) => {
 const NAV_LINKS = [
   { label: 'Courses', href: '#courses' },
   { label: 'Faculty', href: '#about' },
+  { label: 'Meet Our Team', to: '/staff' },
   { label: 'Our Stories', href: '#stories' },
   { label: 'Contact', href: '#stories' },
 ];
@@ -265,15 +269,23 @@ const Navbar = ({ onOpenAdmission }) => {
           </a>
           <div className="hide-mobile" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
             {NAV_LINKS.map(item => (
-              <a key={item.label} href={item.href}
-                style={{ padding: '8px 16px', borderRadius: 'var(--radius-sm)', color: 'var(--text-muted)', fontWeight: 500, fontSize: '0.95rem', transition: 'var(--transition)' }}
-                onMouseEnter={e => e.target.style.color = 'var(--dark)'}
-                onMouseLeave={e => e.target.style.color = 'var(--text-muted)'}
-              >{item.label}</a>
+              item.to ? (
+                <Link key={item.label} to={item.to}
+                  style={{ padding: '8px 16px', borderRadius: 'var(--radius-sm)', color: 'var(--text-muted)', fontWeight: 500, fontSize: '0.95rem', transition: 'var(--transition)' }}
+                  onMouseEnter={e => e.target.style.color = 'var(--dark)'}
+                  onMouseLeave={e => e.target.style.color = 'var(--text-muted)'}
+                >{item.label}</Link>
+              ) : (
+                <a key={item.label} href={item.href}
+                  style={{ padding: '8px 16px', borderRadius: 'var(--radius-sm)', color: 'var(--text-muted)', fontWeight: 500, fontSize: '0.95rem', transition: 'var(--transition)' }}
+                  onMouseEnter={e => e.target.style.color = 'var(--dark)'}
+                  onMouseLeave={e => e.target.style.color = 'var(--text-muted)'}
+                >{item.label}</a>
+              )
             ))}
           </div>
           <div className="hide-mobile" style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-            <Link to="/login" className="btn btn-ghost" style={{ padding: '10px 20px' }}>Student Login</Link>
+            <Link to="/login" className="btn btn-ghost" style={{ padding: '10px 20px' }}>Login</Link>
             <button type="button" className="btn btn-primary" style={{ padding: '10px 20px' }} onClick={onOpenAdmission}>Enroll Now</button>
           </div>
           <button
@@ -302,10 +314,14 @@ const Navbar = ({ onOpenAdmission }) => {
               transition={{ type: 'spring', damping: 28, stiffness: 320 }}
             >
               {NAV_LINKS.map(item => (
-                <a key={item.label} href={item.href} onClick={closeMenu}>{item.label}</a>
+                item.to ? (
+                  <Link key={item.label} to={item.to} onClick={closeMenu}>{item.label}</Link>
+                ) : (
+                  <a key={item.label} href={item.href} onClick={closeMenu}>{item.label}</a>
+                )
               ))}
               <div className="divider" style={{ margin: '12px 0' }} />
-              <Link to="/login" className="btn btn-ghost" style={{ width: '100%' }} onClick={closeMenu}>Student Login</Link>
+              <Link to="/login" className="btn btn-ghost" style={{ width: '100%' }} onClick={closeMenu}>Login</Link>
               <button type="button" className="btn btn-primary" style={{ width: '100%' }} onClick={() => { closeMenu(); onOpenAdmission(); }}>Enroll Now</button>
             </motion.div>
           </>
@@ -341,7 +357,7 @@ const Hero = ({ onOpenAdmission }) => (
           <button type="button" className="btn btn-primary btn-lg" onClick={onOpenAdmission}>
             Enroll Now <ArrowRight size={20} />
           </button>
-          <Link to="/login" className="btn btn-secondary btn-lg">Student Login</Link>
+          <Link to="/login" className="btn btn-secondary btn-lg">Login</Link>
           <a href="#courses" className="btn btn-ghost btn-lg">Explore Courses</a>
         </motion.div>
         <motion.div variants={fadeUp} initial="hidden" animate="show" custom={4}
@@ -898,7 +914,7 @@ const OurStories = ({ onOpenAdmission }) => {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', minWidth: '220px' }}>
             <button type="button" className="btn btn-primary btn-lg" onClick={onOpenAdmission}>Apply for Admission</button>
             <Link to="/login" className="btn" style={{ background: 'rgba(255,255,255,0.1)', color: 'white', padding: '14px 28px', borderRadius: 'var(--radius-lg)', fontWeight: 700, textAlign: 'center' }}>
-              Student Portal Login
+              Login
             </Link>
           </div>
         </motion.div>
@@ -938,7 +954,7 @@ const Footer = ({ onOpenAdmission }) => (
             { label: 'About Us', href: '#about' },
             { label: 'Faculty', href: '#about' },
             { label: 'Admissions', action: onOpenAdmission },
-            { label: 'Student Login', href: '/login', isRoute: true },
+            { label: 'Login', href: '/login', isRoute: true },
             { label: 'Contact', href: '#admissions' },
           ].map(item => (
             item.action ? (
