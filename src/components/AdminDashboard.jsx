@@ -1895,7 +1895,7 @@ const AdminDashboard = () => {
         <form onSubmit={handleAddMemberSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <div>
             <label className="form-label">Full Name</label>
-            <input required value={newMember.displayName} onChange={e => setNewMember({...newMember, displayName: e.target.value})} className="form-input" placeholder="Piyali Maity" />
+            <input required value={newMember.displayName} onChange={e => setNewMember({...newMember, displayName: e.target.value})} className="form-input" placeholder="Piyali Das" />
           </div>
           <div>
             <label className="form-label">Email Address</label>

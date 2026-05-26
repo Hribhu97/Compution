@@ -3,8 +3,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { db } from '../../firebase';
-import { collection, onSnapshot, query, orderBy, addDoc, serverTimestamp, where, doc, setDoc, updateDoc, increment, getDocs } from 'firebase/firestore';
-import { MessageSquare, Plus, Clock, Search, Send, Image, FileText, Check, CheckCheck, Loader2, User, Phone, Smile, Paperclip } from 'lucide-react';
+import { collection, onSnapshot, query, orderBy, addDoc, serverTimestamp, where, doc, setDoc, updateDoc, increment, getDocs, deleteDoc } from 'firebase/firestore';
+import { MessageSquare, Plus, Clock, Search, Send, Image, FileText, Check, CheckCheck, Loader2, User, Phone, Smile, Paperclip, Pencil, Trash2 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import Modal from '../../components/Modal';
 
@@ -24,6 +24,7 @@ const Community = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [message, setMessage] = useState('');
+  const [editingPost, setEditingPost] = useState(null);
 
   // Private Chat state
   const [rooms, setRooms] = useState([]);
@@ -218,29 +219,61 @@ const Community = () => {
     }
   };
 
-  // ── CREATE POST ──
+  // ── CREATE/EDIT POST ──
   const handleCreatePost = async (e) => {
     e.preventDefault();
     if (!message.trim() && !postAttachment) return;
     setIsSubmitting(true);
     try {
-      const postObj = {
-        message: message.trim(),
-        author: user?.displayName || 'Student',
-        authorPhoto: user?.photoURL || '',
-        createdAt: serverTimestamp()
-      };
-      if (postAttachment) {
-        postObj.attachmentData = postAttachment.data;
-        postObj.attachmentType = postAttachment.type;
-        postObj.attachmentName = postAttachment.name;
+      if (editingPost) {
+        // Update existing notice
+        const postRef = doc(db, 'community', editingPost.id);
+        const updateObj = {
+          message: message.trim(),
+          attachmentData: postAttachment ? postAttachment.data : null,
+          attachmentType: postAttachment ? postAttachment.type : null,
+          attachmentName: postAttachment ? postAttachment.name : null,
+          updatedAt: serverTimestamp()
+        };
+        await updateDoc(postRef, updateObj);
+      } else {
+        // Create new notice
+        const postObj = {
+          message: message.trim(),
+          author: user?.displayName || 'Student',
+          authorId: user?.uid || '',
+          authorPhoto: user?.photoURL || '',
+          createdAt: serverTimestamp()
+        };
+        if (postAttachment) {
+          postObj.attachmentData = postAttachment.data;
+          postObj.attachmentType = postAttachment.type;
+          postObj.attachmentName = postAttachment.name;
+        }
+        await addDoc(collection(db, 'community'), postObj);
       }
-      await addDoc(collection(db, 'community'), postObj);
-      setIsModalOpen(false);
-      setMessage('');
-      setPostAttachment(null);
+      handleCloseModal();
     } catch(err) { console.error(err); }
     setIsSubmitting(false);
+  };
+
+  // ── DELETE POST ──
+  const handleDeletePost = async (postId) => {
+    if (window.confirm("Are you sure you want to delete this notice note?")) {
+      try {
+        await deleteDoc(doc(db, 'community', postId));
+      } catch (err) {
+        console.error("Error deleting post:", err);
+      }
+    }
+  };
+
+  // ── CLOSE/RESET MODAL ──
+  const handleCloseModal = () => {
+    setIsModalOpen(false);
+    setMessage('');
+    setPostAttachment(null);
+    setEditingPost(null);
   };
 
   // ── START CHAT ROOM ──
@@ -461,7 +494,7 @@ const Community = () => {
           <div style={{ height: '100%', display: 'flex', flexDirection: 'column', padding: '24px', overflowY: 'auto' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', borderBottom: '1px solid var(--border)', paddingBottom: '16px' }}>
               <h2 style={{ fontSize: '1.25rem', fontWeight: 800 }}>Student Announcement Board</h2>
-              <button onClick={() => setIsModalOpen(true)} className="btn btn-primary" style={{ padding: '10px 18px', fontSize: '0.85rem', borderRadius: '10px' }}>
+              <button onClick={() => { setEditingPost(null); setMessage(''); setPostAttachment(null); setIsModalOpen(true); }} className="btn btn-primary" style={{ padding: '10px 18px', fontSize: '0.85rem', borderRadius: '10px' }}>
                 <Plus size={16} /> Create Notice Note
               </button>
             </div>
@@ -480,20 +513,51 @@ const Community = () => {
               <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
                 {posts.map(post => (
                   <div key={post.id} className="card card-p" style={{ padding: '20px', border: '1px solid var(--border)' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
-                      {post.authorPhoto ? (
-                        <img src={post.authorPhoto} alt={post.author} style={{ width: 38, height: 38, borderRadius: '50%', objectFit: 'cover' }} />
-                      ) : (
-                        <div style={{ width: 38, height: 38, borderRadius: '50%', background: 'linear-gradient(135deg, var(--primary), var(--accent))', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 700, fontSize: '0.8rem' }}>
-                          {getInitials(post.author)}
-                        </div>
-                      )}
-                      <div>
-                        <div style={{ fontWeight: 700, fontSize: '0.92rem', color: 'var(--dark)' }}>{post.author}</div>
-                        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                          <Clock size={11} /> {post.createdAt ? formatDistanceToNow(post.createdAt.toDate(), { addSuffix: true }) : 'just now'}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        {post.authorPhoto ? (
+                          <img src={post.authorPhoto} alt={post.author} style={{ width: 38, height: 38, borderRadius: '50%', objectFit: 'cover' }} />
+                        ) : (
+                          <div style={{ width: 38, height: 38, borderRadius: '50%', background: 'linear-gradient(135deg, var(--primary), var(--accent))', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 700, fontSize: '0.8rem' }}>
+                            {getInitials(post.author)}
+                          </div>
+                        )}
+                        <div>
+                          <div style={{ fontWeight: 700, fontSize: '0.92rem', color: 'var(--dark)' }}>{post.author}</div>
+                          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <Clock size={11} /> {post.createdAt ? formatDistanceToNow(post.createdAt.toDate(), { addSuffix: true }) : 'just now'}
+                          </div>
                         </div>
                       </div>
+                      
+                      {/* Action buttons visible only to author and admin */}
+                      {(user?.uid === post.authorId || isAdmin) && (
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <button
+                            onClick={() => {
+                              setEditingPost(post);
+                              setMessage(post.message || '');
+                              setPostAttachment(post.attachmentData ? { data: post.attachmentData, type: post.attachmentType || 'image', name: post.attachmentName || '' } : null);
+                              setIsModalOpen(true);
+                            }}
+                            style={{ background: 'none', border: 'none', color: 'var(--text-light)', cursor: 'pointer', padding: '4px', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'color 0.2s' }}
+                            onMouseEnter={e => e.currentTarget.style.color = 'var(--primary)'}
+                            onMouseLeave={e => e.currentTarget.style.color = 'var(--text-light)'}
+                            title="Edit Notice"
+                          >
+                            <Pencil size={15} />
+                          </button>
+                          <button
+                            onClick={() => handleDeletePost(post.id)}
+                            style={{ background: 'none', border: 'none', color: 'var(--text-light)', cursor: 'pointer', padding: '4px', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'color 0.2s' }}
+                            onMouseEnter={e => e.currentTarget.style.color = 'var(--danger)'}
+                            onMouseLeave={e => e.currentTarget.style.color = 'var(--text-light)'}
+                            title="Delete Notice"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
+                      )}
                     </div>
                     <p style={{ color: 'var(--dark)', lineHeight: 1.5, fontSize: '0.9rem', whiteSpace: 'pre-wrap' }}>{post.message}</p>
                     {post.attachmentData && (
@@ -734,8 +798,8 @@ const Community = () => {
         )}
       </div>
 
-      {/* CREATE BOARD POST MODAL */}
-      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Create Notice Note">
+      {/* CREATE/EDIT BOARD POST MODAL */}
+      <Modal isOpen={isModalOpen} onClose={handleCloseModal} title={editingPost ? "Edit Notice Note" : "Create Notice Note"}>
         <form onSubmit={handleCreatePost} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <div>
             <textarea 
@@ -782,9 +846,9 @@ const Community = () => {
             )}
           </div>
           <div style={{ display: 'flex', gap: '12px', marginTop: '8px' }}>
-            <button type="button" onClick={() => setIsModalOpen(false)} className="btn btn-ghost" style={{ flex: 1 }}>Cancel</button>
+            <button type="button" onClick={handleCloseModal} className="btn btn-ghost" style={{ flex: 1 }}>Cancel</button>
             <button type="submit" disabled={isSubmitting || postAttachmentLoading} className="btn btn-primary" style={{ flex: 1 }}>
-              {isSubmitting ? 'Posting Notice...' : 'Log Notice'}
+              {isSubmitting ? (editingPost ? 'Saving Changes...' : 'Posting Notice...') : (editingPost ? 'Save Changes' : 'Log Notice')}
             </button>
           </div>
         </form>

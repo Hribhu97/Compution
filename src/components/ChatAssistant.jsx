@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
-import { db } from '../firebase';
+import { db, firebaseConfig } from '../firebase';
 import { collection, onSnapshot, query, orderBy, addDoc, serverTimestamp } from 'firebase/firestore';
 import { MessageCircle, X, Send } from 'lucide-react';
 import { format } from 'date-fns';
@@ -23,6 +23,52 @@ const matchFAQ = (input) => {
     }
   }
   return "I'm unable to find that information. Please contact administration.";
+};
+
+const fetchGeminiReply = async (userMessage, chatHistory = []) => {
+  try {
+    const apiKey = firebaseConfig.apiKey;
+    if (!apiKey) throw new Error("No API key configured");
+
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+
+    const contents = chatHistory.map(m => ({
+      role: m.sender === 'bot' ? 'model' : 'user',
+      parts: [{ text: m.message }]
+    }));
+
+    contents.push({
+      role: 'user',
+      parts: [{ text: userMessage }]
+    });
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        contents: contents,
+        systemInstruction: {
+          parts: [{
+            text: "You are Compution AI, a helpful virtual assistant for Compution, an educational CS institute located at 20, J.K. Mitra Road, Kolkata 700037. You assist students, parents, and visitors. Keep your answers concise, friendly, and relevant to Computer Science tuition, coding classes (XI, XII, B.Sc, B.Tech, Python, DSA, Java, C++, Web Dev, Excel, Tally), timing (8AM to 8PM), fees, and general scheduling. IMPORTANT: Answer in plain text only. Do not use Markdown, bold formatting (no asterisks **), lists with bullet characters, or special syntax. Keep it conversational."
+          }]
+        }
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    const data = await response.json();
+    const replyText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!replyText) throw new Error("No response text in candidate");
+    return replyText.trim();
+  } catch (error) {
+    console.error("Gemini API call failed:", error);
+    throw error;
+  }
 };
 
 const ChatAssistant = () => {
@@ -83,25 +129,31 @@ const ChatAssistant = () => {
 
     setIsTyping(true);
     
-    setTimeout(async () => {
-      const botReply = matchFAQ(userMsg);
-      if (user?.uid) {
-        await addDoc(collection(db, `users/${user.uid}/chatHistory`), {
-          message: botReply,
-          sender: 'bot',
-          createdAt: serverTimestamp()
-        });
-      } else {
-        const newBotMsg = {
-          id: 'temp-bot-' + Date.now(),
-          message: botReply,
-          sender: 'bot',
-          createdAt: { toDate: () => new Date() }
-        };
-        setMessages(prev => [...prev, newBotMsg]);
-      }
-      setIsTyping(false);
-    }, 1200);
+    let botReply = "";
+    try {
+      botReply = await fetchGeminiReply(userMsg, messages.slice(-10));
+    } catch (err) {
+      console.warn("Falling back to local FAQ matching.");
+      botReply = matchFAQ(userMsg);
+    }
+
+    if (user?.uid) {
+      await addDoc(collection(db, `users/${user.uid}/chatHistory`), {
+        message: botReply,
+        sender: 'bot',
+        createdAt: serverTimestamp()
+      });
+    } else {
+      const newBotMsg = {
+        id: 'temp-bot-' + Date.now(),
+        message: botReply,
+        sender: 'bot',
+        createdAt: { toDate: () => new Date() }
+      };
+      setMessages(prev => [...prev, newBotMsg]);
+    }
+    
+    setIsTyping(false);
   };
 
   const getInitials = (name) => name?.split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2) || 'ST';

@@ -95,8 +95,8 @@ service cloud.firestore {
     // Top-level 'community' (global notice board wall)
     match /community/{postId} {
       allow read: if isAuth();
-      allow create, update: if isAuth();
-      allow delete: if isStaff();
+      allow create: if isAuth() && request.resource.data.authorId == request.auth.uid;
+      allow update, delete: if isAuth() && (resource.data.authorId == request.auth.uid || isAdmin());
     }
 
     // Top-level 'studentSchedules' logs
