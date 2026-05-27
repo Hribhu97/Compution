@@ -48,10 +48,37 @@ const Community = () => {
   const typingTimeoutRef = useRef({});
   const messagesEndRef = useRef(null);
 
-  const isFaculty = user?.role === 'faculty';
-  const isStudent = user?.role === 'student';
-  const isAdmin = user?.role === 'admin';
-  const isMember = user?.role === 'member';
+  const isFaculty = user?.role?.toLowerCase() === 'faculty';
+  const isStudent = user?.role?.toLowerCase() === 'student';
+  const isAdmin = user?.role?.toLowerCase() === 'admin';
+  const isMember = user?.role?.toLowerCase() === 'member';
+
+  const renderRoleBadge = (role) => {
+    const normalizedRole = (role || 'student').toLowerCase();
+    const config = {
+      admin: { label: 'Admin', bg: 'rgba(239, 83, 80, 0.1)', color: '#EF5350' },
+      faculty: { label: 'Faculty', bg: 'rgba(102, 187, 106, 0.1)', color: '#66BB6A' },
+      member: { label: 'Member', bg: 'rgba(171, 71, 188, 0.1)', color: '#AB47BC' },
+      student: { label: 'Student', bg: 'rgba(83, 109, 254, 0.1)', color: '#536DFE' }
+    };
+    const theme = config[normalizedRole] || config.student;
+    return (
+      <span style={{
+        padding: '2px 8px',
+        borderRadius: '4px',
+        fontSize: '0.65rem',
+        fontWeight: 800,
+        textTransform: 'uppercase',
+        background: theme.bg,
+        color: theme.color,
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: '4px'
+      }}>
+        {theme.label}
+      </span>
+    );
+  };
 
   // 1. POST BOARD - FETCH NOTES
   useEffect(() => {
@@ -84,7 +111,7 @@ const Community = () => {
         // Students can only message assigned faculty
         const assigned = user.assignedFaculty || [];
         let matchingFaculty = allUsers.filter(u => 
-          u.role === 'faculty' && (assigned.includes(u.id) || assigned.includes(u.email))
+          u.role?.toLowerCase() === 'faculty' && (assigned.includes(u.id) || assigned.includes(u.email))
         );
 
         // Fallback matchmaking if not assigned
@@ -105,7 +132,7 @@ const Community = () => {
         const facultyId = user.uid;
 
         const matchingStudents = allUsers.filter(u => {
-          if (u.role !== 'student') return false;
+          if (u.role?.toLowerCase() !== 'student') return false;
           
           const assigned = u.assignedFaculty || [];
           if (assigned.includes(facultyId) || assigned.includes(facultyEmail)) return true;
@@ -242,6 +269,7 @@ const Community = () => {
           message: message.trim(),
           author: user?.displayName || 'Student',
           authorId: user?.uid || '',
+          authorRole: user?.role || 'student',
           authorPhoto: user?.photoURL || '',
           createdAt: serverTimestamp()
         };
@@ -253,7 +281,10 @@ const Community = () => {
         await addDoc(collection(db, 'community'), postObj);
       }
       handleCloseModal();
-    } catch(err) { console.error(err); }
+    } catch(err) {
+      console.error(err);
+      alert("Failed to save notice: " + (err.message || err));
+    }
     setIsSubmitting(false);
   };
 
@@ -264,6 +295,7 @@ const Community = () => {
         await deleteDoc(doc(db, 'community', postId));
       } catch (err) {
         console.error("Error deleting post:", err);
+        alert("Failed to delete notice: " + (err.message || err));
       }
     }
   };
@@ -345,6 +377,7 @@ const Community = () => {
       const msgObj = {
         senderId: user.uid,
         senderName: user.displayName,
+        senderRole: user?.role || 'student',
         text: currentText,
         seen: false,
         createdAt: serverTimestamp()
@@ -494,9 +527,11 @@ const Community = () => {
           <div style={{ height: '100%', display: 'flex', flexDirection: 'column', padding: '24px', overflowY: 'auto' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', borderBottom: '1px solid var(--border)', paddingBottom: '16px' }}>
               <h2 style={{ fontSize: '1.25rem', fontWeight: 800 }}>Student Announcement Board</h2>
-              <button onClick={() => { setEditingPost(null); setMessage(''); setPostAttachment(null); setIsModalOpen(true); }} className="btn btn-primary" style={{ padding: '10px 18px', fontSize: '0.85rem', borderRadius: '10px' }}>
-                <Plus size={16} /> Create Notice Note
-              </button>
+              {!isStudent && (
+                <button onClick={() => { setEditingPost(null); setMessage(''); setPostAttachment(null); setIsModalOpen(true); }} className="btn btn-primary" style={{ padding: '10px 18px', fontSize: '0.85rem', borderRadius: '10px' }}>
+                  <Plus size={16} /> Create Notice Note
+                </button>
+              )}
             </div>
 
             {postsLoading ? (
@@ -523,7 +558,10 @@ const Community = () => {
                           </div>
                         )}
                         <div>
-                          <div style={{ fontWeight: 700, fontSize: '0.92rem', color: 'var(--dark)' }}>{post.author}</div>
+                          <div style={{ fontWeight: 700, fontSize: '0.92rem', color: 'var(--dark)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            {post.author}
+                            {renderRoleBadge(post.authorRole)}
+                          </div>
                           <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
                             <Clock size={11} /> {post.createdAt ? formatDistanceToNow(post.createdAt.toDate(), { addSuffix: true }) : 'just now'}
                           </div>
@@ -629,7 +667,10 @@ const Community = () => {
                           </div>
                           <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-                              <h4 style={{ fontSize: '0.88rem', fontWeight: isUnread ? 800 : 700, color: 'var(--dark)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{itemUser.displayName}</h4>
+                              <h4 style={{ fontSize: '0.88rem', fontWeight: isUnread ? 800 : 700, color: 'var(--dark)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                {itemUser.displayName}
+                                {renderRoleBadge(itemUser.role)}
+                              </h4>
                               {isUnread && (
                                 <span style={{ background: 'var(--primary)', color: 'white', fontSize: '0.65rem', fontWeight: 800, minWidth: '16px', height: '16px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2px' }}>
                                   {unreadCount}
@@ -657,7 +698,10 @@ const Community = () => {
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                       <img src={activeRoom.photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=100'} alt={activeRoom.displayName} style={{ width: 42, height: 42, borderRadius: '50%', objectFit: 'cover' }} />
                       <div>
-                        <h4 style={{ fontWeight: 800, fontSize: '0.95rem', color: 'var(--dark)' }}>{activeRoom.displayName}</h4>
+                        <h4 style={{ fontWeight: 800, fontSize: '0.95rem', color: 'var(--dark)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          {activeRoom.displayName}
+                          {renderRoleBadge(activeRoom.role)}
+                        </h4>
                         <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
                           <span style={{ width: 6, height: 6, borderRadius: '50%', background: activeRoom.availability === 'Busy' ? 'var(--warning)' : 'var(--success)' }} />
                           {activeRoom.availability === 'Busy' ? `Busy (Office Hours: ${activeRoom.officeTimings || 'Flexible'})` : 'Available'}
@@ -683,6 +727,12 @@ const Community = () => {
                           return (
                             <div key={msg.id || index} style={{ display: 'flex', justifyContent: isMe ? 'flex-end' : 'flex-start', width: '100%' }}>
                               <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxWidth: '70%' }}>
+                                {!isMe && (
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '2px', paddingLeft: '4px' }}>
+                                    <span style={{ fontWeight: 600 }}>{msg.senderName}</span>
+                                    {renderRoleBadge(msg.senderRole)}
+                                  </div>
+                                )}
                                 <div style={{
                                   padding: '12px 16px', borderRadius: isMe ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
                                   background: isMe ? 'var(--primary)' : 'white',

@@ -867,14 +867,14 @@ const AdminDashboard = () => {
   };
 
   // Statistics summaries
-  const studentsList = allUsers.filter(u => u.role === 'student').filter(s => {
-    if (user?.role === 'faculty') {
+  const studentsList = allUsers.filter(u => u.role?.toLowerCase() === 'student').filter(s => {
+    if (user?.role?.toLowerCase() === 'faculty') {
       return s.assignedFaculty?.includes(user.uid) || s.assignedFaculty?.includes(user.email);
     }
     return true;
   });
-  const facultyList = allUsers.filter(u => u.role === 'faculty');
-  const membersList = allUsers.filter(u => u.role === 'member');
+  const facultyList = allUsers.filter(u => u.role?.toLowerCase() === 'faculty');
+  const membersList = allUsers.filter(u => u.role?.toLowerCase() === 'member');
 
   // Search filter matching
   const filteredStudents = studentsList.filter(s => s.displayName?.toLowerCase().includes(search.toLowerCase()) || s.email?.toLowerCase().includes(search.toLowerCase()) || s.course?.toLowerCase().includes(search.toLowerCase()));
@@ -1175,11 +1175,30 @@ const AdminDashboard = () => {
             
             {/* ==================== 1. TABS: STUDENTS ROSTER ==================== */}
             {activePanelTab === 'students' && (
-            <table style={{ width: '100%', minWidth: '700px', borderCollapse: 'collapse', textAlign: 'left' }}>
-              <thead>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                {user?.role?.toLowerCase() === 'faculty' && (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px', marginBottom: '8px' }}>
+                    <div style={{ padding: '20px', background: 'linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%)', borderRadius: '16px', color: 'white', boxShadow: 'var(--shadow-sm)' }}>
+                      <div style={{ fontSize: '0.8rem', opacity: 0.85, fontWeight: 600, marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>My Allotted Students</div>
+                      <div style={{ fontSize: '1.75rem', fontWeight: 800 }}>{studentsList.length} Students</div>
+                      <div style={{ fontSize: '0.72rem', opacity: 0.8, marginTop: '8px' }}>You are currently assigned as their primary mentor for doubt-solving & schedule tracking.</div>
+                    </div>
+                    <div style={{ padding: '20px', background: 'white', borderRadius: '16px', border: '1px solid var(--border)', boxShadow: 'var(--shadow-sm)' }}>
+                      <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600, marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Active Scheduled Classes</div>
+                      <div style={{ fontSize: '1.75rem', fontWeight: 800, color: 'var(--success)' }}>
+                        {schedulesList.filter(sch => sch.date === new Date().toISOString().split('T')[0] && (sch.facultyId === user.uid || sch.faculty === user.displayName)).length} Today
+                      </div>
+                      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '8px' }}>Classes scheduled for you today.</div>
+                    </div>
+                  </div>
+                )}
+                
+                <table style={{ width: '100%', minWidth: '700px', borderCollapse: 'collapse', textAlign: 'left' }}>
+                  <thead>
                 <tr style={{ borderBottom: '1px solid var(--border)', fontSize: '0.8rem', color: 'var(--text-light)' }}>
                   <th style={{ padding: '12px' }}>Student Profile</th>
                   <th style={{ padding: '12px' }}>Course / Program</th>
+                  <th style={{ padding: '12px' }}>Assigned Mentor</th>
                   <th style={{ padding: '12px' }}>Fees Target</th>
                   <th style={{ padding: '12px' }}>Fee status</th>
                   <th style={{ padding: '12px' }}>Action</th>
@@ -1197,7 +1216,36 @@ const AdminDashboard = () => {
                         <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{student.email}</div>
                       </td>
                       <td style={{ padding: '12px' }}>{student.course}</td>
-                      
+                      <td style={{ padding: '12px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                          {(() => {
+                            const assignedIds = student.assignedFaculty || [];
+                            if (assignedIds.length === 0) return <span style={{ color: 'var(--text-light)', fontStyle: 'italic', fontSize: '0.78rem' }}>Unassigned</span>;
+                            const mentorNames = assignedIds.map(fid => {
+                              const found = allUsers.find(u => u.id === fid || u.email === fid);
+                              return found ? found.displayName : fid;
+                            });
+                            return <div style={{ fontWeight: 600, fontSize: '0.82rem', color: 'var(--primary)' }}>{mentorNames.join(', ')}</div>;
+                          })()}
+                          {user?.role?.toLowerCase() === 'admin' && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedStudentDetails({ ...student, joined: 'Jan 2026', roll: 'Roll #COMP' });
+                              }}
+                              style={{
+                                padding: '2px 6px', background: 'var(--primary-light)', color: 'var(--primary)',
+                                border: '1px solid rgba(83,109,254,0.2)', borderRadius: '4px', fontSize: '0.72rem',
+                                fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s'
+                              }}
+                              onMouseEnter={e => { e.currentTarget.style.background = 'var(--primary)'; e.currentTarget.style.color = 'white'; }}
+                              onMouseLeave={e => { e.currentTarget.style.background = 'var(--primary-light)'; e.currentTarget.style.color = 'var(--primary)'; }}
+                            >
+                              Assign
+                            </button>
+                          )}
+                        </div>
+                      </td>
                       <td style={{ padding: '12px' }}>
                         {editingStudentId === student.id ? (
                           <div style={{ display: 'flex', gap: '4px' }}>
@@ -1308,6 +1356,7 @@ const AdminDashboard = () => {
                 })}
               </tbody>
             </table>
+              </div>
           )}
 
           {/* ==================== Payments & Billing Tab ==================== */}
@@ -1449,6 +1498,7 @@ const AdminDashboard = () => {
                   <th style={{ padding: '12px' }}>Qualification & Experience</th>
                   <th style={{ padding: '12px' }}>Subjects taught</th>
                   <th style={{ padding: '12px' }}>Availability Status</th>
+                  <th style={{ padding: '12px' }}>Allotted Students</th>
                   <th style={{ padding: '12px' }}>Action</th>
                 </tr>
               </thead>
@@ -1479,6 +1529,12 @@ const AdminDashboard = () => {
                         background: fac.availability === 'Busy' ? 'rgba(255,167,38,0.1)' : 'rgba(102,187,106,0.1)',
                         color: fac.availability === 'Busy' ? 'var(--warning)' : 'var(--success)'
                       }}>{fac.availability || 'Available'}</span>
+                    </td>
+                    <td style={{ padding: '12px' }}>
+                      {(() => {
+                        const count = allUsers.filter(u => u.role?.toLowerCase() === 'student' && (u.assignedFaculty?.includes(fac.id) || u.assignedFaculty?.includes(fac.email))).length;
+                        return <span style={{ fontWeight: 700, color: 'var(--primary)', fontSize: '0.85rem' }}>{count} Students</span>;
+                      })()}
                     </td>
                     <td style={{ padding: '12px' }}>
                       <button onClick={() => handleDeleteUser(fac.id, fac.displayName)} className="btn btn-ghost" style={{ padding: '6px', color: 'var(--danger)', borderRadius: '6px' }} title="Delete Roster"><Trash2 size={14} /></button>

@@ -66,7 +66,7 @@ const Assignments = () => {
 
     // Fetch personal assignments (for student)
     let unsubPersonal = () => {};
-    if (user.role !== 'admin') {
+    if (user.role?.toLowerCase() !== 'admin') {
       unsubPersonal = onSnapshot(collection(db, `users/${user.uid}/assignments`), (snap) => {
         const data = [];
         snap.forEach(doc => data.push({ id: doc.id, ...doc.data() }));
@@ -94,7 +94,7 @@ const Assignments = () => {
     if (!assignForm.title || !assignForm.subject || !assignForm.dueDate) return;
     setIsSubmitting(true);
     try {
-      if (user.role === 'admin') {
+      if (user.role?.toLowerCase() === 'admin') {
         // Save to global assignments
         await addDoc(collection(db, 'assignments'), {
           title: assignForm.title,
@@ -195,7 +195,7 @@ const Assignments = () => {
   };
 
   // ── ADMIN VIEW ───────────────────────────────────────
-  if (user?.role === 'admin') {
+  if (user?.role?.toLowerCase() === 'admin') {
     // Filter assignments by level filter tabs
     const filteredAssignments = globalAssignments.filter(a => 
       selectedLevelFilter === 'All' || a.level === selectedLevelFilter

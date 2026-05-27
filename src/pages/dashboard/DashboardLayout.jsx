@@ -39,7 +39,7 @@ const ADMISSION_SUBJECTS = [
 
 const isProfileIncomplete = (u) => {
   if (!u) return false;
-  if (u.role !== 'student') return false;
+  if (u.role?.toLowerCase() !== 'student') return false;
   return !u.phone || u.course === 'Not specified' || !u.schoolOrCollege || !u.grade || !u.guardianName || !u.guardianPhone;
 };
 
@@ -224,7 +224,8 @@ const DashboardLayout = () => {
 
         <nav style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '6px' }}>
           {NAV_MAIN.filter(item => {
-            if (item.to === '/dashboard/attendance' && user?.role !== 'admin' && user?.role !== 'student') {
+            const userRoleLower = user?.role?.toLowerCase();
+            if (item.to === '/dashboard/attendance' && userRoleLower !== 'admin' && userRoleLower !== 'student') {
               return false;
             }
             return true;
@@ -289,7 +290,7 @@ const DashboardLayout = () => {
         </AnimatePresence>
         <header className="dash-header-bar">
           <div className="dash-welcome" style={{ fontWeight: 600, color: 'var(--dark)', fontSize: '1.05rem', marginRight: '16px' }}>
-            Welcome back, {user?.role === 'admin' ? 'Admin' : (user?.displayName || 'Student').split(' ')[0]} 👋
+            Welcome back, {user?.role?.toLowerCase() === 'admin' ? 'Admin' : (user?.displayName || 'Student').split(' ')[0]} 👋
           </div>
 
           <div className="dash-search-wrap">

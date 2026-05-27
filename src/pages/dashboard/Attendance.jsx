@@ -35,7 +35,7 @@ const Attendance = () => {
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState('');
 
-  const canManage = user?.role === 'admin';
+  const canManage = user?.role?.toLowerCase() === 'admin';
 
   // 1. FETCH STUDENTS (for marking) AND GLOBAL ATTENDANCE (for dashboard)
   useEffect(() => {
@@ -48,7 +48,7 @@ const Attendance = () => {
 
     if (canManage) {
       // Load all students to mark attendance
-      const studentsQuery = query(collection(db, 'users'), where('role', '==', 'student'));
+      const studentsQuery = query(collection(db, 'users'), where('role', 'in', ['student', 'Student']));
       unsubStudents = onSnapshot(studentsQuery, (snap) => {
         const list = [];
         snap.forEach(doc => {
@@ -535,7 +535,7 @@ const Attendance = () => {
       )}
 
       {/* ==================== 2. STUDENT / PARENT VIEW ==================== */}
-      {user?.role === 'student' && (
+      {user?.role?.toLowerCase() === 'student' && (
         <>
           <motion.div variants={item}>
             <h1 style={{ fontSize: '1.75rem', fontWeight: 800, marginBottom: '6px' }}>My Attendance</h1>
@@ -725,7 +725,7 @@ const Attendance = () => {
       )}
 
       {/* ==================== 3. RESTRICTED VIEW FOR FACULTY/MEMBERS ==================== */}
-      {user?.role !== 'admin' && user?.role !== 'student' && (
+      {user?.role?.toLowerCase() !== 'admin' && user?.role?.toLowerCase() !== 'student' && (
         <motion.div variants={item} className="card card-p" style={{ padding: '48px', textAlign: 'center', background: 'white', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
           <AlertCircle size={48} style={{ color: 'var(--primary)' }} />
           <h2 style={{ fontSize: '1.25rem', fontWeight: 800 }}>Access Restricted</h2>

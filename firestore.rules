@@ -15,27 +15,31 @@ service cloud.firestore {
     // Helper to check user roles
     function hasRole(role) {
       return isAuth() && 
-        resource != null && 
         exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
-        getUserData().role == role;
+        (getUserData().get('role', 'student') == role || 
+         getUserData().get('role', 'student') == role.upper() || 
+         getUserData().get('role', 'student') == role.lower());
     }
 
     function isAdmin() {
       return isAuth() && 
         exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
-        getUserData().role == 'admin';
+        (getUserData().get('role', 'student') == 'admin' || 
+         getUserData().get('role', 'student') == 'Admin');
     }
 
     function isFaculty() {
       return isAuth() && 
         exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
-        getUserData().role == 'faculty';
+        (getUserData().get('role', 'student') == 'faculty' || 
+         getUserData().get('role', 'student') == 'Faculty');
     }
 
     function isMember() {
       return isAuth() && 
         exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
-        getUserData().role == 'member';
+        (getUserData().get('role', 'student') == 'member' || 
+         getUserData().get('role', 'student') == 'Member');
     }
 
     function isStaff() {
@@ -57,8 +61,12 @@ service cloud.firestore {
       
       allow delete: if isAdmin();
 
-      // Subcollections inside user profile (notes, progress, attendance, fees)
+      // Subcollections inside user profile (notes, progress, attendance, fees, assignments)
       match /notes/{noteId} {
+        allow read, write: if isAuth() && request.auth.uid == userId;
+      }
+      
+      match /assignments/{assignmentId} {
         allow read, write: if isAuth() && request.auth.uid == userId;
       }
       
@@ -95,8 +103,10 @@ service cloud.firestore {
     // Top-level 'community' (global notice board wall)
     match /community/{postId} {
       allow read: if isAuth();
-      allow create: if isAuth() && request.resource.data.authorId == request.auth.uid;
-      allow update, delete: if isAuth() && (resource.data.authorId == request.auth.uid || isAdmin());
+      allow create: if isStaff();
+      allow update, delete: if isAuth() && (
+        resource.data.authorId == request.auth.uid || isAdmin()
+      );
     }
 
     // Top-level 'studentSchedules' logs

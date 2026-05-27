@@ -53,9 +53,12 @@ export const AuthProvider = ({ children }) => {
           };
           await setDoc(userRef, newProfile);
         } else {
-          // If document exists, ensure roles are assigned correctly if they match our seeded emails
           const existingData = userSnap.data();
-          if (existingData.role !== targetRole) {
+          const isHardcodedStaff = ADMIN_EMAILS.includes(emailLower) || 
+                                   ['sharmisthaghosh855@gmail.com', 'tapadarhribhu350@gmail.com'].includes(emailLower) || 
+                                   ['piyali0903@gmail.com'].includes(emailLower);
+          
+          if (!existingData.role || (isHardcodedStaff && existingData.role !== targetRole)) {
             await updateDoc(userRef, { role: targetRole, permissions: permissions });
           }
         }
