@@ -13,6 +13,7 @@
     "@studio-freight/react-lenis": "^0.0.47",
     "date-fns": "^4.2.1",
     "firebase": "^12.13.0",
+    "firebase-admin": "^13.10.0",
     "framer-motion": "^12.39.0",
     "lucide-react": "^1.16.0",
     "react": "^18.3.1",

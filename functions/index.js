@@ -92,8 +92,8 @@ exports.sendAbsentAlert = functions.firestore
     return null;
   });
 
-exports.onScheduleChange = functions.firestore
-  .document('studentSchedules/{scheduleId}')
+exports.onCalendarEventChange = functions.firestore
+  .document('calendarEvents/{eventId}')
   .onWrite(async (change, context) => {
     const beforeData = change.before.exists ? change.before.data() : null;
     const afterData = change.after.exists ? change.after.data() : null;
@@ -104,7 +104,15 @@ exports.onScheduleChange = functions.firestore
       changeType = 'created';
       data = afterData;
     } else if (beforeData && afterData) {
-      if (beforeData.date !== afterData.date || beforeData.time !== afterData.time || beforeData.faculty !== afterData.faculty || beforeData.notes !== afterData.notes) {
+      // Check if dates, times, title, or assignments changed
+      const isChanged = beforeData.startDate !== afterData.startDate ||
+                        beforeData.startTime !== afterData.startTime ||
+                        beforeData.endDate !== afterData.endDate ||
+                        beforeData.endTime !== afterData.endTime ||
+                        beforeData.title !== afterData.title ||
+                        JSON.stringify(beforeData.assignedStudents) !== JSON.stringify(afterData.assignedStudents) ||
+                        JSON.stringify(beforeData.assignedGroups) !== JSON.stringify(afterData.assignedGroups);
+      if (isChanged) {
         changeType = 'updated';
         data = afterData;
       }
@@ -115,76 +123,96 @@ exports.onScheduleChange = functions.firestore
 
     if (!changeType) return null;
 
-    const studentId = data.studentId;
-    const studentName = data.studentName;
-    const subject = data.subject;
-    const dateStr = data.date;
-    const timeStr = data.time;
-    const faculty = data.faculty;
+    const title = data.title || 'Class';
+    const dateStr = data.startDate || data.date || '';
+    const timeStr = data.startTime || data.time || '';
+    const venue = data.venue || 'Compution Campus';
+    const faculty = data.assignedFacultyName || 'Faculty Mentor';
+    const meetLink = data.meetLink || '';
+    const eventType = data.eventType || 'Regular Class';
 
-    const studentDoc = await db.collection('users').doc(studentId).get();
-    let contactPhone = '';
-    let studentEmail = '';
-    if (studentDoc.exists) {
-      const studentData = studentDoc.data();
-      contactPhone = studentData.guardianPhone || studentData.phone || '';
-      studentEmail = studentData.email || '';
-    }
+    // Fetch all student users to match assignments in memory
+    const studentsSnap = await db.collection('users').where('role', '==', 'student').get();
+    const promises = [];
 
-    if (!contactPhone) {
-      console.log(`No phone contact found for student ID: ${studentId}`);
-      return null;
-    }
+    studentsSnap.forEach(docSnap => {
+      const student = docSnap.data();
+      const studentId = docSnap.id;
+      const studentGroup = student.studentGroup || '';
 
-    let alertMessage = '';
-    if (changeType === 'created') {
-      alertMessage = `Class Scheduled: Dear Parent, a new class has been scheduled for ${studentName} on ${dateStr} at ${timeStr} for ${subject} with ${faculty || 'Faculty'}.`;
-    } else if (changeType === 'updated') {
-      alertMessage = `Schedule Rescheduled: Dear Parent, class for ${studentName} on ${dateStr} has been rescheduled to ${timeStr} for ${subject} with ${faculty || 'Faculty'}.`;
-    } else if (changeType === 'deleted') {
-      alertMessage = `Class Cancelled: Dear Parent, class scheduled for ${studentName} on ${dateStr} at ${timeStr} for ${subject} has been cancelled.`;
-    }
+      const isDirectlyAssigned = data.assignedStudents && data.assignedStudents.includes(studentId);
+      const isGroupAssigned = data.assignedGroups && data.assignedGroups.includes(studentGroup);
 
-    const logId = `sched_${context.eventId}_${studentId}_${changeType}`;
-    const notificationRef = db.collection('notificationHistory').doc(logId);
-    
-    const logSnap = await notificationRef.get();
-    if (logSnap.exists) {
-      return null;
-    }
+      if (isDirectlyAssigned || isGroupAssigned) {
+        promises.push((async () => {
+          const contactPhone = student.guardianPhone || student.phone || '';
+          const studentEmail = student.email || '';
 
-    const notificationLog = {
-      studentId,
-      studentName,
-      phone: contactPhone,
-      email: studentEmail,
-      type: `schedule_${changeType}`,
-      message: alertMessage,
-      timestamp: admin.firestore.FieldValue.serverTimestamp(),
-      status: 'pending'
-    };
+          let alertMessage = '';
+          if (changeType === 'created') {
+            alertMessage = `Class Scheduled: Dear Parent, a new ${eventType} has been scheduled for ${student.name || 'your child'} on ${dateStr} at ${timeStr} for ${title} with ${faculty}. Venue: ${venue}.`;
+          } else if (changeType === 'updated') {
+            alertMessage = `Schedule Rescheduled: Dear Parent, ${eventType} for ${student.name || 'your child'} on ${dateStr} has been rescheduled to ${timeStr} for ${title} with ${faculty}. Venue: ${venue}.`;
+          } else if (changeType === 'deleted') {
+            alertMessage = `Class Cancelled: Dear Parent, the ${eventType} scheduled for ${student.name || 'your child'} on ${dateStr} at ${timeStr} for ${title} has been cancelled.`;
+          }
 
-    try {
-      if (twilioClient && twilioPhone) {
-        await twilioClient.messages.create({
-          body: alertMessage,
-          to: contactPhone.startsWith('+') ? contactPhone : `+91${contactPhone}`,
-          from: twilioPhone
-        });
-        notificationLog.status = 'sent_sms';
-        notificationLog.provider = 'twilio';
-      } else {
-        notificationLog.status = 'simulated';
-        notificationLog.provider = 'mock_api';
-        console.log(`Twilio config missing. Simulated alert logged: "${alertMessage}"`);
+          const logId = `sched_${context.eventId}_${studentId}_${changeType}`;
+          const notificationRef = db.collection('notificationHistory').doc(logId);
+
+          const logSnap = await notificationRef.get();
+          if (logSnap.exists) return;
+
+          const notificationLog = {
+            studentId,
+            studentName: student.name || 'Student',
+            phone: contactPhone,
+            email: studentEmail,
+            type: `schedule_${changeType}`,
+            message: alertMessage,
+            timestamp: admin.firestore.FieldValue.serverTimestamp(),
+            status: 'pending',
+            metadata: {
+              eventId: context.params.eventId,
+              classTitle: title,
+              timing: `${dateStr} ${timeStr}`,
+              facultyName: faculty,
+              meetLink,
+              venue,
+              eventType
+            }
+          };
+
+          if (contactPhone) {
+            try {
+              if (twilioClient && twilioPhone) {
+                await twilioClient.messages.create({
+                  body: alertMessage,
+                  to: contactPhone.startsWith('+') ? contactPhone : `+91${contactPhone}`,
+                  from: twilioPhone
+                });
+                notificationLog.status = 'sent_sms';
+                notificationLog.provider = 'twilio';
+              } else {
+                notificationLog.status = 'simulated';
+                notificationLog.provider = 'mock_api';
+                console.log(`Twilio config missing. Simulated alert logged: "${alertMessage}"`);
+              }
+            } catch (err) {
+              console.error(`Error sending alert:`, err);
+              notificationLog.status = 'failed';
+              notificationLog.error = err.message;
+            }
+          } else {
+            notificationLog.status = 'no_phone';
+          }
+
+          await notificationRef.set(notificationLog);
+        })());
       }
-    } catch (err) {
-      console.error(`Error sending alert:`, err);
-      notificationLog.status = 'failed';
-      notificationLog.error = err.message;
-    }
+    });
 
-    await notificationRef.set(notificationLog);
+    await Promise.all(promises);
     return null;
   });
 
@@ -196,84 +224,130 @@ exports.checkUpcomingClasses = functions.pubsub
     const istOffset = 5.5 * 60 * 60 * 1000;
     const nowIst = new Date(now.getTime() + istOffset);
     const todayStr = nowIst.toISOString().split('T')[0];
-    
-    const schedulesSnap = await db.collection('studentSchedules').where('date', '==', todayStr).get();
-    if (schedulesSnap.empty) return null;
+    const tomorrowIst = new Date(nowIst.getTime() + 24 * 60 * 60 * 1000);
+    const tomorrowStr = tomorrowIst.toISOString().split('T')[0];
 
-    const currentMinutes = nowIst.getUTCHours() * 60 + nowIst.getUTCMinutes();
+    // Query events for today and tomorrow to handle class times near transitions
+    const [todaySnap, tomorrowSnap] = await Promise.all([
+      db.collection('calendarEvents').where('startDate', '==', todayStr).get(),
+      db.collection('calendarEvents').where('startDate', '==', tomorrowStr).get()
+    ]);
+
+    const eventsMap = new Map();
+    todaySnap.forEach(doc => eventsMap.set(doc.id, doc.data()));
+    tomorrowSnap.forEach(doc => eventsMap.set(doc.id, doc.data()));
+
+    if (eventsMap.size === 0) return null;
+
+    const currentEpochMinutes = Math.floor(now.getTime() / (60 * 1000));
+    
+    // Fetch all student users to map assignments in memory
+    const studentsSnap = await db.collection('users').where('role', '==', 'student').get();
+    const allStudents = [];
+    studentsSnap.forEach(doc => allStudents.push({ id: doc.id, ...doc.data() }));
+
     const promises = [];
 
-    schedulesSnap.forEach(doc => {
-      const schedule = doc.data();
-      const timeStr = schedule.time;
-      if (!timeStr) return;
+    eventsMap.forEach((event, eventId) => {
+      if (!event.startDate || !event.startTime) return;
 
-      const [hours, minutes] = timeStr.split(':').map(Number);
-      const classMinutes = hours * 60 + minutes;
-      const diff = classMinutes - currentMinutes;
+      const [ey, em, ed] = event.startDate.split('-').map(Number);
+      const [eh, emin] = event.startTime.split(':').map(Number);
+      const eventDateUtc = Date.UTC(ey, em - 1, ed, eh, emin, 0);
+      const eventEpochMinutes = Math.floor((eventDateUtc - 5.5 * 60 * 60 * 1000) / (60 * 1000));
+      const diffMinutes = eventEpochMinutes - currentEpochMinutes;
 
       let alertType = '';
-      if (diff >= 27 && diff <= 33) {
-        alertType = '30m';
-      } else if (diff >= 3 && diff <= 7) {
-        alertType = '5m';
+      if (diffMinutes >= 1438 && diffMinutes <= 1442) {
+        alertType = '24h';
+      } else if (diffMinutes >= 58 && diffMinutes <= 62) {
+        alertType = '1h';
+      } else if (diffMinutes >= 8 && diffMinutes <= 12) {
+        alertType = '10m';
       }
 
       if (alertType) {
-        promises.push((async () => {
-          const studentId = schedule.studentId;
-          const studentName = schedule.studentName;
-          const subject = schedule.subject;
-          
-          const reminderId = `reminder_${doc.id}_${alertType}_${todayStr}`;
-          const reminderRef = db.collection('notificationHistory').doc(reminderId);
-          const reminderSnap = await reminderRef.get();
-          if (reminderSnap.exists) return;
+        // Filter students assigned to this event
+        const eventStudents = allStudents.filter(student => {
+          const studentGroup = student.studentGroup || '';
+          const isDirectlyAssigned = event.assignedStudents && event.assignedStudents.includes(student.id);
+          const isGroupAssigned = event.assignedGroups && event.assignedGroups.includes(studentGroup);
+          return isDirectlyAssigned || isGroupAssigned;
+        });
 
-          const studentDoc = await db.collection('users').doc(studentId).get();
-          let contactPhone = '';
-          if (studentDoc.exists) {
-            contactPhone = studentDoc.data().guardianPhone || studentDoc.data().phone || '';
-          }
+        eventStudents.forEach(student => {
+          promises.push((async () => {
+            const reminderId = `reminder_${eventId}_${student.id}_${alertType}`;
+            const reminderRef = db.collection('notificationHistory').doc(reminderId);
+            const reminderSnap = await reminderRef.get();
+            if (reminderSnap.exists) return;
 
-          if (!contactPhone) return;
+            const contactPhone = student.guardianPhone || student.phone || '';
+            const studentEmail = student.email || '';
+            const title = event.title || 'Class';
+            const timeStr = event.startTime || '';
+            const venue = event.venue || 'Compution Campus';
+            const faculty = event.assignedFacultyName || 'Faculty Mentor';
+            const meetLink = event.meetLink || '';
 
-          const alertMessage = alertType === '30m'
-            ? `Reminder: Class for ${studentName} on ${subject} starts in 30 minutes at ${timeStr}. Please prepare.`
-            : `Urgent Reminder: Class for ${studentName} on ${subject} starts in 5 minutes at ${timeStr}. Join live now.`;
-
-          const notificationLog = {
-            studentId,
-            studentName,
-            phone: contactPhone,
-            type: `reminder_${alertType}`,
-            message: alertMessage,
-            timestamp: admin.firestore.FieldValue.serverTimestamp(),
-            status: 'pending'
-          };
-
-          try {
-            if (twilioClient && twilioPhone) {
-              await twilioClient.messages.create({
-                body: alertMessage,
-                to: contactPhone.startsWith('+') ? contactPhone : `+91${contactPhone}`,
-                from: twilioPhone
-              });
-              notificationLog.status = 'sent_sms';
-              notificationLog.provider = 'twilio';
-            } else {
-              notificationLog.status = 'simulated';
-              notificationLog.provider = 'mock_api';
-              console.log(`Twilio config missing. Simulated reminder alert: "${alertMessage}"`);
+            let alertMessage = '';
+            if (alertType === '24h') {
+              alertMessage = `Upcoming Class Reminder: Dear Parent, class "${title}" is scheduled for ${student.name || 'your child'} tomorrow at ${timeStr}. Please make sure they are prepared.`;
+            } else if (alertType === '1h') {
+              alertMessage = `Class Reminder: Dear Parent, class "${title}" for ${student.name || 'your child'} starts in 1 hour at ${timeStr}. Venue: ${venue}.`;
+            } else if (alertType === '10m') {
+              alertMessage = `Urgent Class Reminder: Dear Parent, class "${title}" for ${student.name || 'your child'} starts in 10 minutes. Google Meet: ${meetLink || 'N/A'}. Join live now.`;
             }
-          } catch (err) {
-            console.error(`Error sending reminder:`, err);
-            notificationLog.status = 'failed';
-            notificationLog.error = err.message;
-          }
 
-          await reminderRef.set(notificationLog);
-        })());
+            const notificationLog = {
+              studentId: student.id,
+              studentName: student.name || 'Student',
+              phone: contactPhone,
+              email: studentEmail,
+              type: `reminder_${alertType}`,
+              message: alertMessage,
+              timestamp: admin.firestore.FieldValue.serverTimestamp(),
+              status: 'pending',
+              metadata: {
+                eventId,
+                classTitle: title,
+                timing: `${event.startDate} ${timeStr}`,
+                facultyName: faculty,
+                meetLink,
+                venue,
+                eventType: event.eventType || 'Regular Class',
+                alertType,
+                ctaButton: event.eventType === 'Google Meet Session' ? 'Join Google Meet' : 'View Schedule'
+              }
+            };
+
+            if (contactPhone) {
+              try {
+                if (twilioClient && twilioPhone) {
+                  await twilioClient.messages.create({
+                    body: alertMessage,
+                    to: contactPhone.startsWith('+') ? contactPhone : `+91${contactPhone}`,
+                    from: twilioPhone
+                  });
+                  notificationLog.status = 'sent_sms';
+                  notificationLog.provider = 'twilio';
+                } else {
+                  notificationLog.status = 'simulated';
+                  notificationLog.provider = 'mock_api';
+                  console.log(`Twilio config missing. Simulated reminder alert: "${alertMessage}"`);
+                }
+              } catch (err) {
+                console.error(`Error sending reminder:`, err);
+                notificationLog.status = 'failed';
+                notificationLog.error = err.message;
+              }
+            } else {
+              notificationLog.status = 'no_phone';
+            }
+
+            await reminderRef.set(notificationLog);
+          })());
+        });
       }
     });
 

@@ -3,7 +3,7 @@ import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { signOut } from 'firebase/auth';
 import { auth, db } from '../../firebase';
-import { collection, onSnapshot, query, orderBy, limit, doc, updateDoc } from 'firebase/firestore';
+import { collection, onSnapshot, query, orderBy, limit, doc, updateDoc, setDoc } from 'firebase/firestore';
 import { useAuth } from '../../contexts/AuthContext';
 import {
   LayoutDashboard, BookOpen, ClipboardList,
@@ -59,10 +59,22 @@ const DashboardLayout = () => {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [hasUnread, setHasUnread] = useState(false);
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
+  const [showOnlineBanner, setShowOnlineBanner] = useState(false);
 
   useEffect(() => {
-    const handleOnline = () => setIsOffline(false);
-    const handleOffline = () => setIsOffline(true);
+    let timer;
+    const handleOnline = () => {
+      setIsOffline(false);
+      setShowOnlineBanner(true);
+      timer = setTimeout(() => {
+        setShowOnlineBanner(false);
+      }, 4000);
+    };
+    const handleOffline = () => {
+      setIsOffline(true);
+      setShowOnlineBanner(false);
+      if (timer) clearTimeout(timer);
+    };
 
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
@@ -70,6 +82,7 @@ const DashboardLayout = () => {
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
+      if (timer) clearTimeout(timer);
     };
   }, []);
 
@@ -108,7 +121,7 @@ const DashboardLayout = () => {
       setHasUnread(!snap.empty);
     });
     return () => unsub();
-  }, [user]);
+  }, [user?.uid]);
 
   const handleLogout = async () => {
     await signOut(auth);
@@ -184,17 +197,80 @@ const DashboardLayout = () => {
 
     setSaving(true);
     try {
+      let classCategory = '';
+      let stream = '';
+      let autoGroup = '';
+      
+      const text = `${formData.grade || ''} ${formData.course || ''}`.toLowerCase();
+      if (text.includes('class 2') || text.includes('grade 2') || text.includes('class 3') || text.includes('grade 3') || text.includes('class 4') || text.includes('grade 4') || text.includes('class 5') || text.includes('grade 5')) {
+        const match = text.match(/class\s+(\d)|grade\s+(\d)/);
+        classCategory = match ? (match[1] || match[2]) : '2';
+      } else if (text.includes('class 6') || text.includes('grade 6') || text.includes('class 7') || text.includes('grade 7') || text.includes('class 8') || text.includes('grade 8')) {
+        const match = text.match(/class\s+(\d)|grade\s+(\d)/);
+        classCategory = match ? (match[1] || match[2]) : '6';
+      } else if (text.includes('class 9') || text.includes('grade 9') || text.includes('class 10') || text.includes('grade 10')) {
+        const match = text.match(/class\s+(\d+)|grade\s+(\d+)/);
+        classCategory = match ? (match[1] || match[2]) : '9';
+      } else if (text.includes('class 11') || text.includes('grade 11') || text.includes('11th')) {
+        classCategory = '11';
+        if (text.includes('science') || text.includes('cs')) stream = 'science';
+        else if (text.includes('app') || text.includes('application')) stream = 'application';
+      } else if (text.includes('class 12') || text.includes('grade 12') || text.includes('12th')) {
+        classCategory = '12';
+        if (text.includes('science') || text.includes('cs')) stream = 'science';
+        else if (text.includes('app') || text.includes('application')) stream = 'application';
+      } else {
+        const match = text.match(/\b(\d+)\b/);
+        if (match) {
+          const num = parseInt(match[1]);
+          if (num >= 2 && num <= 5) classCategory = String(num);
+          else if (num >= 6 && num <= 8) classCategory = String(num);
+          else if (num >= 9 && num <= 10) classCategory = String(num);
+          else if (num === 11 || num === 12) {
+            classCategory = String(num);
+            if (text.includes('science') || text.includes('cs')) stream = 'science';
+            else if (text.includes('app') || text.includes('application')) stream = 'application';
+          }
+        }
+      }
+      
+      const numCat = parseInt(classCategory) || 0;
+      if (numCat >= 2 && numCat <= 5) {
+        autoGroup = 'class_2_5';
+      } else if (numCat >= 6 && numCat <= 8) {
+        autoGroup = 'class_6_8';
+      } else if (numCat >= 9 && numCat <= 10) {
+        autoGroup = 'class_9_10';
+      } else if (numCat === 11 || numCat === 12) {
+        if (stream === 'science') {
+          autoGroup = 'class_11_12_science';
+        } else if (stream === 'application') {
+          autoGroup = 'class_11_12_application';
+        } else {
+          autoGroup = 'class_11_12_science';
+        }
+      }
+
+      const customGroupException = user?.customGroupException || '';
+      const studentGroup = customGroupException ? customGroupException : autoGroup;
+
       const userRef = doc(db, 'users', user.uid);
-      await updateDoc(userRef, {
+      await setDoc(userRef, {
         displayName: formData.displayName.trim(),
+        name: formData.displayName.trim(),
         phone: formData.phone.trim(),
         course: formData.course,
         schoolOrCollege: formData.schoolOrCollege.trim(),
         grade: formData.grade.trim(),
         guardianName: formData.guardianName.trim(),
         guardianPhone: formData.guardianPhone.trim(),
-        photoURL: formData.photoURL
-      });
+        photoURL: formData.photoURL,
+        classCategory: classCategory,
+        stream: stream,
+        autoGroup: autoGroup,
+        studentGroup: studentGroup, // preserves custom overrides
+        updatedAt: new Date().toISOString()
+      }, { merge: true });
     } catch (err) {
       console.error("Error updating profile:", err);
       setError('Failed to save profile details. Please try again.');
@@ -285,6 +361,30 @@ const DashboardLayout = () => {
                   100% { transform: scale(0.95); opacity: 0.5; }
                 }
               `}</style>
+            </motion.div>
+          )}
+          {showOnlineBanner && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              style={{
+                background: 'rgba(102,187,106,0.1)',
+                color: 'var(--success)',
+                borderBottom: '1px solid rgba(102,187,106,0.2)',
+                padding: '12px 24px',
+                fontSize: '0.88rem',
+                fontWeight: 700,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                width: '100%',
+                boxSizing: 'border-box',
+                backdropFilter: 'blur(8px)',
+              }}
+            >
+              <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--success)' }} />
+              <span>Reconnected Successfully. Your database is up to date!</span>
             </motion.div>
           )}
         </AnimatePresence>

@@ -4,13 +4,13 @@ import { getAuth, GoogleAuthProvider } from "firebase/auth";
 import { getFirestore, collection, doc, getDoc, setDoc, updateDoc, getDocs, enableIndexedDbPersistence } from "firebase/firestore";
 
 export const firebaseConfig = {
-  apiKey: "AIzaSyA_HF7oefhK3DEYO99jG7zVj4vWUCERo-4",
-  authDomain: "studio-7096192330-872dc.firebaseapp.com",
-  projectId: "studio-7096192330-872dc",
-  storageBucket: "studio-7096192330-872dc.firebasestorage.app",
-  messagingSenderId: "440539934571",
-  appId: "1:440539934571:web:a659b682d3f7f36262662e",
-  measurementId: "G-5HRE6MEKEC"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyA_HF7oefhK3DEYO99jG7zVj4vWUCERo-4",
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "studio-7096192330-872dc.firebaseapp.com",
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "studio-7096192330-872dc",
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "studio-7096192330-872dc.firebasestorage.app",
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "440539934571",
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || "1:440539934571:web:a659b682d3f7f36262662e",
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || "G-5HRE6MEKEC"
 };
 
 const app = initializeApp(firebaseConfig);

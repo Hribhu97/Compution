@@ -1,186 +1,290 @@
 rules_version = '2';
+
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    // Helper function to check if the user is authenticated
-    function isAuth() {
+
+    function signedIn() {
       return request.auth != null;
     }
-    
-    // Helper to get active user's document data
-    function getUserData() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+
+    function userDoc() {
+      return get(
+        /databases/$(database)/documents/users/$(request.auth.uid)
+      );
     }
-    
-    // Helper to check user roles
-    function hasRole(role) {
-      return isAuth() && 
-        exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
-        (getUserData().get('role', 'student') == role || 
-         getUserData().get('role', 'student') == role.upper() || 
-         getUserData().get('role', 'student') == role.lower());
+
+    function userExists() {
+      return signedIn() &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function role() {
+      return userDoc().data.role;
     }
 
     function isAdmin() {
-      return isAuth() && 
-        exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
-        (getUserData().get('role', 'student') == 'admin' || 
-         getUserData().get('role', 'student') == 'Admin');
+      return userExists() &&
+        (role() == "admin" || role() == "Admin");
     }
 
     function isFaculty() {
-      return isAuth() && 
-        exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
-        (getUserData().get('role', 'student') == 'faculty' || 
-         getUserData().get('role', 'student') == 'Faculty');
+      return userExists() &&
+        (role() == "faculty" || role() == "Faculty");
+    }
+
+    function isStudent() {
+      return userExists() &&
+        (role() == "student" || role() == "Student");
     }
 
     function isMember() {
-      return isAuth() && 
-        exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
-        (getUserData().get('role', 'student') == 'member' || 
-         getUserData().get('role', 'student') == 'Member');
+      return userExists() &&
+        (role() == "member" || role() == "Member");
     }
 
-    function isStaff() {
-      return isAdmin() || isFaculty() || isMember();
-    }
-
-    // Rules for 'users' collection
     match /users/{userId} {
-      allow create: if isAuth() && request.auth.uid == userId;
-      allow read: if isAuth() && (request.auth.uid == userId || isStaff());
-      
-      // Prevent editing sensitive role fields unless admin
-      allow update: if isAuth() && (
-        isAdmin() || (
-          request.auth.uid == userId && 
-          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'permissions', 'verified'])
-        )
-      );
-      
-      allow delete: if isAdmin();
+      allow read:
+        if signedIn();
 
-      // Subcollections inside user profile (notes, progress, attendance, fees, assignments)
-      match /notes/{noteId} {
-        allow read, write: if isAuth() && request.auth.uid == userId;
-      }
-      
-      match /assignments/{assignmentId} {
-        allow read, write: if isAuth() && request.auth.uid == userId;
-      }
-      
-      match /progress/{progressId} {
-        allow read: if isAuth() && (request.auth.uid == userId || isStaff());
-        allow write: if isAuth() && (request.auth.uid == userId || isStaff());
-      }
-      
-      match /attendance/{attId} {
-        allow read: if isAuth() && (request.auth.uid == userId || isAdmin());
-        allow write: if isAuth() && (request.auth.uid == userId || isAdmin());
-      }
-      
-      match /fees/{feeId} {
-        allow read: if isAuth() && (request.auth.uid == userId || isAdmin());
-        allow write: if isAdmin();
-      }
-    }
-
-    // Top-level 'attendance' logs
-    match /attendance/{attendanceId} {
-      allow read: if isAuth() && (resource == null || resource.data.studentId == request.auth.uid || isAdmin());
-      allow create: if isAuth() && (request.resource.data.studentId == request.auth.uid || isAdmin());
-      allow update, delete: if isAdmin();
-    }
-
-    // Top-level 'rescheduleRequests'
-    match /rescheduleRequests/{requestId} {
-      allow read: if isAuth() && (request.auth.uid == resource.data.studentId || isStaff());
-      allow create: if isAuth() && request.resource.data.studentId == request.auth.uid;
-      allow update, delete: if isStaff();
-    }
-
-    // Top-level 'community' (global notice board wall)
-    match /community/{postId} {
-      allow read: if isAuth();
-      allow create: if isStaff();
-      allow update, delete: if isAuth() && (
-        resource.data.authorId == request.auth.uid || isAdmin()
-      );
-    }
-
-    // Top-level 'studentSchedules' logs
-    match /studentSchedules/{scheduleId} {
-      allow read: if isAuth() && (request.auth.uid == resource.data.studentId || isStaff());
-      allow create: if isStaff();
-      allow update, delete: if isStaff();
-    }
-
-    // Top-level 'chatRooms'
-    match /chatRooms/{roomId} {
-      allow read, write: if isAuth() && (
-        request.auth.uid == resource.data.studentId || 
-        request.auth.uid == resource.data.facultyId || 
-        isStaff()
-      );
-      allow create: if isAuth();
-
-      // Chat subcollection messages
-      match /messages/{messageId} {
-        allow read, write: if isAuth() && (
-          get(/databases/$(database)/documents/chatRooms/{roomId}).data.studentId == request.auth.uid ||
-          get(/databases/$(database)/documents/chatRooms/{roomId}).data.facultyId == request.auth.uid ||
-          isStaff()
+      allow create:
+        if signedIn() &&
+        request.auth.uid == userId &&
+        (
+          !request.resource.data.keys().hasAll(['role']) ||
+          request.resource.data.role == 'student' ||
+          (request.resource.data.role == 'admin' && request.resource.data.email.lower() in ['tapadarhribhu@gmail.com', 'biswa.maity2011@gmail.com']) ||
+          (request.resource.data.role == 'faculty' && request.resource.data.email.lower() in ['sharmisthaghosh855@gmail.com', 'tapadarhribhu350@gmail.com']) ||
+          (request.resource.data.role == 'member' && request.resource.data.email.lower() in ['piyali0903@gmail.com'])
         );
+
+      allow update:
+        if signedIn() &&
+        (
+          isAdmin() ||
+          (
+            request.auth.uid == userId &&
+            !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'permissions']) &&
+            !request.resource.data.diff(resource.data).affectedKeys().hasAny(['assignedFacultyIds', 'assignedFaculty', 'feesAmount', 'paidAmount', 'pendingAmount', 'feeStatus']) &&
+            (
+              !resource.data.keys().hasAll(['studentGroup']) ||
+              resource.data.studentGroup == '' ||
+              resource.data.studentGroup == null ||
+              request.resource.data.studentGroup == resource.data.studentGroup
+            )
+          )
+        );
+
+      allow delete:
+        if isAdmin();
+
+      // Subcollections inside user document (notes, progress, attendance, fees, assignments, chatHistory, notifications)
+      match /{allSubcollections=**} {
+        allow read, write:
+          if signedIn() &&
+          (
+            request.auth.uid == userId
+            || isAdmin()
+            || isFaculty()
+          );
       }
     }
 
-    // Top-level 'paymentHistory'
+    match /facultyAssignments/{facultyId} {
+      allow read:
+        if signedIn();
+
+      allow write:
+        if isAdmin() || isFaculty();
+    }
+
+    match /studentFacultyMap/{studentId} {
+      allow read:
+        if signedIn() &&
+        (
+          request.auth.uid == studentId
+          || isAdmin()
+          || isFaculty()
+        );
+
+      allow write:
+        if isAdmin() || isFaculty();
+    }
+
+    match /calendarEvents/{eventId} {
+      allow read:
+        if signedIn();
+
+      allow create, update, delete:
+        if isAdmin() || isFaculty();
+    }
+
+    match /attendance/{attendanceId} {
+      allow read:
+        if signedIn();
+
+      allow write:
+        if isAdmin() || isFaculty();
+    }
+
+    match /community/{postId} {
+      allow read:
+        if signedIn();
+
+      allow create:
+        if isAdmin() || isFaculty();
+
+      allow update, delete:
+        if isAdmin()
+        || isFaculty()
+        || (signedIn() && request.auth.uid == resource.data.authorId);
+    }
+
+    // Support both communityPosts and community collection mappings
+    match /communityPosts/{postId} {
+      allow read:
+        if signedIn();
+
+      allow create:
+        if isAdmin() || isFaculty();
+
+      allow update, delete:
+        if isAdmin()
+        || isFaculty()
+        || (signedIn() && request.auth.uid == resource.data.authorId);
+    }
+
+    match /privateChats/{chatId} {
+      allow read, write:
+        if signedIn();
+    }
+
+    match /notices/{noticeId} {
+      allow read:
+        if signedIn();
+
+      allow create, update, delete:
+        if isAdmin() || isFaculty();
+    }
+
+    // Additional collections in use by Compution platform
+    match /communityThreads/{threadId} {
+      allow read, write:
+        if signedIn();
+
+      match /messages/{messageId} {
+        allow read, write:
+          if signedIn();
+      }
+    }
+
+    match /chatRooms/{roomId} {
+      allow read, write:
+        if signedIn();
+
+      match /messages/{messageId} {
+        allow read, write:
+          if signedIn();
+      }
+    }
+
+    match /courses/{courseId} {
+      allow read:
+        if signedIn();
+
+      allow write:
+        if isAdmin();
+    }
+
+    match /assignments/{assignmentId} {
+      allow read:
+        if signedIn();
+
+      allow write:
+        if isAdmin() || isFaculty();
+    }
+
+    match /tests/{testId} {
+      allow read:
+        if signedIn();
+
+      allow write:
+        if isAdmin() || isFaculty();
+    }
+
+    match /rescheduleRequests/{requestId} {
+      allow read:
+        if signedIn();
+
+      allow create:
+        if signedIn();
+
+      allow update, delete:
+        if isAdmin() || isFaculty();
+    }
+
     match /paymentHistory/{paymentId} {
-      allow read: if isAuth() && (request.auth.uid == resource.data.studentId || isAdmin());
-      allow write: if isAdmin();
+      allow read:
+        if signedIn() &&
+        (
+          request.auth.uid == resource.data.studentId
+          || isAdmin()
+        );
+
+      allow write:
+        if isAdmin();
     }
 
-    // Top-level 'attendanceNotifications'
-    match /attendanceNotifications/{notificationId} {
-      allow read: if isAdmin();
-      allow write: if isAdmin();
+    match /staff/{staffId} {
+      allow read:
+        if true; // Public page reads staff directory
+
+      allow write:
+        if isAdmin();
     }
 
-    // Top-level 'assignedFaculty'
     match /assignedFaculty/{id} {
-      allow read: if isAuth() && (request.auth.uid == resource.data.studentId || isStaff());
-      allow write: if isStaff();
+      allow read:
+        if signedIn();
+
+      allow write:
+        if isAdmin() || isFaculty();
     }
 
-    // Top-level 'facultyAssignments'
-    match /facultyAssignments/{id} {
-      allow read: if isAuth() && (request.auth.uid == resource.data.studentId || isStaff());
-      allow write: if isStaff();
-    }
-
-    // Top-level 'studentCalendar'
     match /studentCalendar/{id} {
-      allow read: if isAuth() && (request.auth.uid == resource.data.studentId || isStaff());
-      allow write: if isStaff();
+      allow read:
+        if signedIn();
+
+      allow write:
+        if isAdmin() || isFaculty();
     }
 
-    // Top-level 'progressReports'
-    match /progressReports/{id} {
-      allow read: if isAuth() && (request.auth.uid == resource.data.studentId || isStaff());
-      allow write: if isStaff();
+    match /studentSchedules/{id} {
+      allow read:
+        if signedIn();
+
+      allow write:
+        if isAdmin() || isFaculty();
     }
 
-    // Top-level 'meetSessions'
     match /meetSessions/{id} {
-      allow read: if isAuth();
-      allow write: if isMember() || isAdmin();
+      allow read:
+        if signedIn();
+
+      allow write:
+        if isMember() || isAdmin() || isFaculty();
     }
 
-    // Top-level 'notificationHistory'
     match /notificationHistory/{id} {
-      allow read: if isAuth() && (request.auth.uid == resource.data.studentId || isStaff());
-      allow write: if isStaff();
+      allow read:
+        if signedIn();
+
+      allow write:
+        if isAdmin() || isFaculty();
+    }
+
+    match /attendanceNotifications/{id} {
+      allow read, write:
+        if isAdmin() || isFaculty();
     }
   }
 }

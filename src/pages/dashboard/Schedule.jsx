@@ -18,45 +18,77 @@ const Schedule = () => {
   const [viewMode, setViewMode] = useState('card'); // 'calendar' | 'card'
   const [currentWeekStart, setCurrentWeekStart] = useState(() => startOfWeek(new Date(), { weekStartsOn: 1 }));
   
-  // Faculty management states
+  // Faculty management states for new engine
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [selectedStudentId, setSelectedStudentId] = useState('');
-  const [subject, setSubject] = useState('Python Mastery');
-  const [date, setDate] = useState(format(new Date(), 'yyyy-MM-dd'));
-  const [time, setTime] = useState('17:00');
-  const [mode, setMode] = useState('online'); // 'online' | 'offline'
-  const [notes, setNotes] = useState('');
+  const [eventTitle, setEventTitle] = useState('');
+  const [eventDesc, setEventDesc] = useState('');
+  const [eventType, setEventType] = useState('Regular Class');
+  const [startDate, setStartDate] = useState(format(new Date(), 'yyyy-MM-dd'));
+  const [endDate, setEndDate] = useState(format(new Date(), 'yyyy-MM-dd'));
+  const [startTime, setStartTime] = useState('17:00');
+  const [endTime, setEndTime] = useState('18:00');
+  const [assignedFacultyId, setAssignedFacultyId] = useState('');
+  const [assignedFacultyName, setAssignedFacultyName] = useState('');
+  const [selectedGroups, setSelectedGroups] = useState([]);
+  const [selectedStudents, setSelectedStudents] = useState([]);
+  const [meetLink, setMeetLink] = useState('');
+  const [venue, setVenue] = useState('Compution Campus');
+  const [isRecurring, setIsRecurring] = useState(false);
+  const [recurrenceType, setRecurrenceType] = useState('none');
   const [toast, setToast] = useState('');
+  const [facultyUsers, setFacultyUsers] = useState([]);
 
-  // Search/Filter for Faculty
+  // Search/Filter for Staff
   const [selectedStudentFilter, setSelectedStudentFilter] = useState('all');
 
   const canManage = user?.role === 'admin' || user?.role === 'faculty';
+
+  // Load active user details
+  useEffect(() => {
+    if (user) {
+      setAssignedFacultyId(user.uid || '');
+      setAssignedFacultyName(user.displayName || user.name || '');
+    }
+  }, [user]);
+
+  // Fetch all faculty for dropdown (admin only)
+  useEffect(() => {
+    if (canManage && user?.role === 'admin') {
+      const q = query(collection(db, 'users'), where('role', '==', 'faculty'));
+      getDocs(q).then(snap => {
+        const list = [];
+        snap.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
+        setFacultyUsers(list);
+      });
+    }
+  }, [user]);
 
   // Fetch Schedules & Students
   useEffect(() => {
     if (!user) return;
 
-    let schedQuery;
-    if (canManage) {
-      // Faculty and Admins can see all schedules
-      schedQuery = query(collection(db, 'studentSchedules'));
-    } else {
-      // Students see only their personal schedules
-      schedQuery = query(collection(db, 'studentSchedules'), where('studentId', '==', user.uid));
-    }
-
+    // Fetch calendarEvents for real-time calendar sync
+    const schedQuery = query(collection(db, 'calendarEvents'));
     const unsubSched = onSnapshot(schedQuery, (snap) => {
       const list = [];
       snap.forEach(doc => {
-        list.push({ id: doc.id, ...doc.data() });
+        const d = doc.data();
+        list.push({ 
+          id: doc.id, 
+          ...d,
+          date: d.startDate || d.date || '',
+          time: d.startTime || d.time || '',
+          subject: d.title || d.subject || '',
+          mode: d.eventType === 'Google Meet Session' ? 'online' : 'offline',
+          faculty: d.assignedFacultyName || d.faculty || 'Faculty Mentor'
+        });
       });
       // Sort by date and time
       list.sort((a, b) => {
-        const dateCompare = a.date.localeCompare(b.date);
+        const dateCompare = (a.date || '').localeCompare(b.date || '');
         if (dateCompare !== 0) return dateCompare;
-        return a.time.localeCompare(b.time);
+        return (a.time || '').localeCompare(b.time || '');
       });
       setSchedules(list);
       setLoading(false);
@@ -74,7 +106,9 @@ const Schedule = () => {
         snap.forEach(doc => {
           const data = doc.data();
           if (user?.role === 'faculty') {
-            if (data.assignedFaculty?.includes(user.uid) || data.assignedFaculty?.includes(user.email)) {
+            const hasAssignedIds = data.assignedFacultyIds?.includes(user.uid);
+            const hasAssignedLegacy = data.assignedFaculty?.includes(user.uid) || data.assignedFaculty?.includes(user.email);
+            if (hasAssignedIds || hasAssignedLegacy) {
               list.push({ id: doc.id, ...data });
             }
           } else {
@@ -89,7 +123,7 @@ const Schedule = () => {
       unsubSched();
       unsubStudents();
     };
-  }, [user]);
+  }, [user?.uid, canManage]);
 
   const triggerToast = (msg) => {
     setToast(msg);
@@ -98,48 +132,68 @@ const Schedule = () => {
 
   const handleAddSchedule = async (e) => {
     e.preventDefault();
-    if (!selectedStudentId) {
-      triggerToast('Please select a student');
+    if (!eventTitle.trim()) {
+      triggerToast('Please enter an event title');
+      return;
+    }
+    if (selectedGroups.length === 0 && selectedStudents.length === 0) {
+      triggerToast('Please assign to at least one student or group');
       return;
     }
     setIsSubmitting(true);
 
     try {
-      const student = students.find(s => s.id === selectedStudentId);
-      const studentName = student ? student.displayName : 'Student';
+      let facName = assignedFacultyName;
+      if (user?.role === 'admin' && assignedFacultyId) {
+        const matchedFac = facultyUsers.find(f => f.id === assignedFacultyId);
+        if (matchedFac) facName = matchedFac.displayName || matchedFac.name || '';
+      }
 
-      await addDoc(collection(db, 'studentSchedules'), {
-        studentId: selectedStudentId,
-        studentName: studentName,
-        subject,
-        faculty: user.displayName || 'Faculty Mentor',
-        facultyId: user.uid,
-        date,
-        time,
-        mode,
-        notes,
+      await addDoc(collection(db, 'calendarEvents'), {
+        title: eventTitle.trim(),
+        description: eventDesc.trim(),
+        eventType,
+        startDate,
+        endDate,
+        startTime,
+        endTime,
+        assignedFacultyId,
+        assignedFacultyName: facName || user.displayName || 'Faculty Mentor',
+        assignedGroups: selectedGroups,
+        assignedStudents: selectedStudents,
+        meetLink,
+        venue,
+        recurring: isRecurring,
+        recurrenceType: isRecurring ? recurrenceType : 'none',
+        createdBy: user.displayName || user.name || 'System',
         createdAt: serverTimestamp()
       });
 
-      triggerToast(`Schedule created for ${studentName}!`);
+      triggerToast('Class Scheduled successfully! 📅');
       setIsAddModalOpen(false);
-      setNotes('');
+      
+      // Reset form
+      setEventTitle('');
+      setEventDesc('');
+      setMeetLink('');
+      setSelectedGroups([]);
+      setSelectedStudents([]);
     } catch (err) {
       console.error("Error creating schedule:", err);
-      triggerToast('Failed to create schedule');
+      triggerToast('Failed to create class schedule');
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleDeleteSchedule = async (id, studentName) => {
-    if (window.confirm(`Are you sure you want to cancel this class slot for ${studentName}?`)) {
+  const handleDeleteSchedule = async (id, title) => {
+    if (window.confirm(`Are you sure you want to cancel this event: ${title}?`)) {
       try {
-        await deleteDoc(doc(db, 'studentSchedules', id));
-        triggerToast('Schedule deleted successfully');
+        await deleteDoc(doc(db, 'calendarEvents', id));
+        triggerToast('Event cancelled successfully');
       } catch (err) {
         console.error(err);
-        triggerToast('Failed to delete schedule');
+        triggerToast('Failed to cancel event');
       }
     }
   };
@@ -150,15 +204,24 @@ const Schedule = () => {
     weekDays.push(addDays(currentWeekStart, i));
   }
 
-  // Filtered schedules for Faculty UI filter
+  // Filtered schedules (Phase 5)
+  const userGroup = user?.studentGroup || '';
   const displayedSchedules = schedules.filter(item => {
-    if (user?.role === 'faculty') {
-      const isAssigned = students.some(s => s.id === item.studentId);
-      if (!(item.facultyId === user.uid || isAssigned)) return false;
+    if (user?.role?.toLowerCase() === 'student') {
+      const isInStudents = item.assignedStudents?.includes(user.uid);
+      const isInGroups = item.assignedGroups?.includes(userGroup);
+      return isInStudents || isInGroups;
     }
-    if (!canManage) return true;
+    
+    if (user?.role?.toLowerCase() === 'faculty') {
+      const isCreator = item.assignedFacultyId === user.uid;
+      const isStudentAssigned = item.assignedStudents?.some(sid => students.some(s => s.id === sid));
+      return isCreator || isStudentAssigned;
+    }
+    
+    // Admin and Member
     if (selectedStudentFilter === 'all') return true;
-    return item.studentId === selectedStudentFilter;
+    return item.assignedStudents?.includes(selectedStudentFilter);
   });
 
   return (
@@ -244,17 +307,20 @@ const Schedule = () => {
         <motion.div variants={stagger} className="grid-auto-cards-sm" style={{ gap: '20px' }}>
           {displayedSchedules.map((item, idx) => {
             const isToday = isSameDay(new Date(), parseISO(item.date));
+            const eventColor = getEventColor(item.eventType);
             return (
-              <motion.div key={item.id} variants={fadeItem} className="card card-p" style={{ background: 'white', display: 'flex', flexDirection: 'column', gap: '14px', border: isToday ? '1.5px solid var(--success)' : '1px solid var(--border)' }}>
+              <motion.div key={item.id} variants={fadeItem} className="card card-p" style={{ background: 'white', display: 'flex', flexDirection: 'column', gap: '14px', borderLeft: `5px solid ${eventColor}`, borderTop: isToday ? '1.5px solid var(--success)' : '1px solid var(--border)', borderRight: '1px solid var(--border)', borderBottom: '1px solid var(--border)' }}>
                 
                 {/* Top Header */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                   <div>
-                    <span className="badge badge-primary" style={{ marginBottom: '8px' }}>{item.subject}</span>
-                    <h3 style={{ fontSize: '1.05rem', fontWeight: 800 }}>{item.studentName}</h3>
+                    <span className="badge" style={{ marginBottom: '8px', background: `${eventColor}15`, color: eventColor, fontWeight: 800, fontSize: '0.75rem', padding: '2px 8px', borderRadius: '4px' }}>
+                      {item.eventType || 'Regular Class'}
+                    </span>
+                    <h3 style={{ fontSize: '1.05rem', fontWeight: 800, marginTop: '4px' }}>{item.title || item.subject}</h3>
                   </div>
                   {canManage && (
-                    <button onClick={() => handleDeleteSchedule(item.id, item.studentName)} style={{ color: 'var(--danger)', background: 'rgba(239,83,80,0.1)', padding: '6px', borderRadius: '6px', cursor: 'pointer' }} title="Cancel Class">
+                    <button onClick={() => handleDeleteSchedule(item.id, item.title || item.subject)} style={{ color: 'var(--danger)', background: 'rgba(239,83,80,0.1)', padding: '6px', borderRadius: '6px', cursor: 'pointer', border: 'none' }} title="Cancel Event">
                       <Trash2 size={15} />
                     </button>
                   )}
@@ -269,17 +335,34 @@ const Schedule = () => {
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <Clock size={14} style={{ color: 'var(--primary)' }} />
-                    <span>{item.time} ({item.mode})</span>
+                    <span>{item.startTime} - {item.endTime || 'End Time'}</span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <User size={14} style={{ color: 'var(--primary)' }} />
-                    <span>Faculty: {item.faculty}</span>
+                    <span>Faculty: {item.assignedFacultyName || 'Faculty Mentor'}</span>
                   </div>
-                  {item.notes && (
+                  {item.venue && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.8rem' }}>
+                      <MapPin size={14} style={{ color: 'var(--primary)' }} />
+                      <span>{item.venue}</span>
+                    </div>
+                  )}
+                  {item.description && (
                     <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', marginTop: '6px', padding: '10px', background: 'var(--surface)', borderRadius: '8px' }}>
                       <FileText size={14} style={{ color: 'var(--text-light)', marginTop: '2px', flexShrink: 0 }} />
-                      <span style={{ fontSize: '0.78rem', fontStyle: 'italic', lineHeight: 1.4 }}>{item.notes}</span>
+                      <span style={{ fontSize: '0.78rem', fontStyle: 'italic', lineHeight: 1.4 }}>{item.description}</span>
                     </div>
+                  )}
+                  {item.meetLink && (
+                    <a
+                      href={item.meetLink}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="btn btn-primary"
+                      style={{ padding: '8px 12px', fontSize: '0.75rem', borderRadius: '8px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '6px', marginTop: '4px' }}
+                    >
+                      Join Meeting Link
+                    </a>
                   )}
                 </div>
               </motion.div>
@@ -292,13 +375,13 @@ const Schedule = () => {
           
           {/* Week Changer header */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minWidth: '600px' }}>
-            <button onClick={() => setCurrentWeekStart(prev => addDays(prev, -7))} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600, fontSize: '0.85rem', color: 'var(--primary)' }}>
+            <button onClick={() => setCurrentWeekStart(prev => addDays(prev, -7))} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600, fontSize: '0.85rem', color: 'var(--primary)', background: 'none', border: 'none', cursor: 'pointer' }}>
               <ArrowLeft size={16} /> Previous Week
             </button>
             <h3 style={{ fontSize: '1.1rem', fontWeight: 800 }}>
               Week of {format(currentWeekStart, 'MMMM d, yyyy')}
             </h3>
-            <button onClick={() => setCurrentWeekStart(prev => addDays(prev, 7))} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600, fontSize: '0.85rem', color: 'var(--primary)' }}>
+            <button onClick={() => setCurrentWeekStart(prev => addDays(prev, 7))} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600, fontSize: '0.85rem', color: 'var(--primary)', background: 'none', border: 'none', cursor: 'pointer' }}>
               Next Week <ArrowRight size={16} />
             </button>
           </div>
@@ -320,21 +403,24 @@ const Schedule = () => {
 
                   {/* Day class list */}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1, overflowY: 'auto' }}>
-                    {daySchedules.map(item => (
-                      <div key={item.id} style={{ display: 'flex', flexDirection: 'column', gap: '4px', padding: '8px', background: 'var(--surface)', borderRadius: '8px', fontSize: '0.72rem', position: 'relative' }}>
-                        <div style={{ fontWeight: 800, color: 'var(--dark)', display: 'flex', justifyContent: 'space-between' }}>
-                          <span>{item.time}</span>
-                          <span style={{ fontSize: '0.62rem', color: 'var(--primary)', fontWeight: 700 }}>{item.mode.toUpperCase()}</span>
+                    {daySchedules.map(item => {
+                      const eventColor = getEventColor(item.eventType);
+                      return (
+                        <div key={item.id} style={{ display: 'flex', flexDirection: 'column', gap: '4px', padding: '8px', background: `${eventColor}08`, borderLeft: `3px solid ${eventColor}`, borderRadius: '8px', fontSize: '0.72rem', position: 'relative' }}>
+                          <div style={{ fontWeight: 800, color: 'var(--dark)', display: 'flex', justifyContent: 'space-between' }}>
+                            <span>{item.startTime}</span>
+                            <span style={{ fontSize: '0.62rem', color: eventColor, fontWeight: 700 }}>{item.eventType?.split(' ')[0] || 'Class'}</span>
+                          </div>
+                          <div style={{ fontWeight: 700, color: 'var(--dark)' }}>{item.title || item.subject}</div>
+                          <div style={{ color: 'var(--text-light)', fontWeight: 600 }}>{item.assignedFacultyName || 'Mentor'}</div>
+                          {canManage && (
+                            <button onClick={() => handleDeleteSchedule(item.id, item.title || item.subject)} style={{ position: 'absolute', top: 4, right: 4, background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', padding: 0 }} title="Cancel Class">
+                              ×
+                            </button>
+                          )}
                         </div>
-                        <div style={{ fontWeight: 600, color: 'var(--text-muted)' }}>{item.studentName}</div>
-                        <div style={{ color: 'var(--text-light)', fontWeight: 500 }}>{item.subject}</div>
-                        {canManage && (
-                          <button onClick={() => handleDeleteSchedule(item.id, item.studentName)} style={{ position: 'absolute', top: 4, right: 4, background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', padding: 0 }} title="Cancel Class">
-                            ×
-                          </button>
-                        )}
-                      </div>
-                    ))}
+                      );
+                    })}
                     {daySchedules.length === 0 && (
                       <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.7rem', color: 'var(--text-light)', fontStyle: 'italic', textAlign: 'center' }}>
                         Free day
@@ -348,100 +434,244 @@ const Schedule = () => {
         </motion.div>
       )}
 
-      {/* CREATE CLASS SLOT MODAL */}
-      <Modal isOpen={isAddModalOpen} onClose={() => setIsAddModalOpen(false)} title="Schedule Student Class Slot">
+      {/* CREATE CALENDAR EVENT MODAL (Phase 4) */}
+      <Modal isOpen={isAddModalOpen} onClose={() => setIsAddModalOpen(false)} title="Schedule Academic Class Event">
         <form onSubmit={handleAddSchedule} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <div>
-            <label className="form-label">Select Student</label>
-            <select
+            <label className="form-label">Event Title</label>
+            <input
               required
+              type="text"
               className="form-input"
-              value={selectedStudentId}
-              onChange={e => setSelectedStudentId(e.target.value)}
-            >
-              <option value="" disabled>Choose student profile</option>
-              {students.map(s => (
-                <option key={s.id} value={s.id}>{s.displayName} ({s.course})</option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="form-label">Subject Track</label>
-            <select
-              required
-              className="form-input"
-              value={subject}
-              onChange={e => setSubject(e.target.value)}
-            >
-              <option value="Python Mastery">Python Mastery</option>
-              <option value="Data Structures & Algorithms">Data Structures & Algorithms</option>
-              <option value="Class 11 CS">Class 11 CS</option>
-              <option value="Class 11 App">Class 11 App</option>
-              <option value="Class 12 CS">Class 12 CS</option>
-              <option value="Class 12 App">Class 12 App</option>
-              <option value="Web Development (HTML/CSS/JS)">Web Development (HTML/CSS/JS)</option>
-              <option value="Java Development">Java Development</option>
-              <option value="C & C++ Fundamentals">C & C++ Fundamentals</option>
-              <option value="Tally Prime">Tally Prime</option>
-              <option value="Advanced Excel">Advanced Excel</option>
-              <option value="Basic Computer">Basic Computer</option>
-              <option value="BCA">BCA</option>
-              <option value="B.Tech">B.Tech</option>
-            </select>
+              value={eventTitle}
+              onChange={e => setEventTitle(e.target.value)}
+              placeholder="e.g. Regular Class: Intro to Python loops"
+            />
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }} className="grid-2-col-mobile">
             <div>
-              <label className="form-label">Class Date</label>
+              <label className="form-label">Event Type</label>
+              <select
+                required
+                className="form-input"
+                value={eventType}
+                onChange={e => setEventType(e.target.value)}
+                style={{ background: 'white' }}
+              >
+                <option value="Regular Class">Regular Class</option>
+                <option value="Extra Class">Extra Class</option>
+                <option value="Practical Class">Practical Class</option>
+                <option value="Practice Session">Practice Session</option>
+                <option value="Google Meet Session">Google Meet Session</option>
+                <option value="Exam Revision Session">Exam Revision Session</option>
+              </select>
+            </div>
+            <div>
+              <label className="form-label">Faculty Leader</label>
+              {user?.role?.toLowerCase() === 'admin' ? (
+                <select
+                  required
+                  className="form-input"
+                  value={assignedFacultyId}
+                  onChange={e => setAssignedFacultyId(e.target.value)}
+                  style={{ background: 'white' }}
+                >
+                  <option value="" disabled>Choose Faculty</option>
+                  {facultyUsers.map(f => (
+                    <option key={f.id} value={f.id}>{f.displayName || f.name}</option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  disabled
+                  className="form-input"
+                  value={assignedFacultyName}
+                />
+              )}
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }} className="grid-2-col-mobile">
+            <div>
+              <label className="form-label">Start Date</label>
               <input
                 type="date"
                 required
                 className="form-input"
-                value={date}
-                onChange={e => setDate(e.target.value)}
+                value={startDate}
+                onChange={e => {
+                  setStartDate(e.target.value);
+                  setEndDate(e.target.value);
+                }}
               />
             </div>
             <div>
-              <label className="form-label">Class Time</label>
+              <label className="form-label">End Date</label>
+              <input
+                type="date"
+                required
+                className="form-input"
+                value={endDate}
+                onChange={e => setEndDate(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }} className="grid-2-col-mobile">
+            <div>
+              <label className="form-label">Start Time</label>
               <input
                 type="time"
                 required
                 className="form-input"
-                value={time}
-                onChange={e => setTime(e.target.value)}
+                value={startTime}
+                onChange={e => setStartTime(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="form-label">End Time</label>
+              <input
+                type="time"
+                required
+                className="form-input"
+                value={endTime}
+                onChange={e => setEndTime(e.target.value)}
               />
             </div>
           </div>
 
+          {/* Group assignment checkboxes */}
           <div>
-            <label className="form-label">Delivery Mode</label>
-            <div style={{ display: 'flex', gap: '12px' }}>
-              {['online', 'offline'].map(m => (
-                <button
-                  type="button"
-                  key={m}
-                  onClick={() => setMode(m)}
-                  style={{
-                    flex: 1, padding: '12px', borderRadius: '8px',
-                    border: mode === m ? '1.5px solid var(--primary)' : '1px solid var(--border)',
-                    background: mode === m ? 'var(--primary-light)' : 'white',
-                    color: mode === m ? 'var(--primary)' : 'var(--text-muted)',
-                    fontWeight: 700, fontSize: '0.85rem', textTransform: 'capitalize', cursor: 'pointer'
-                  }}
-                >
-                  {m}
-                </button>
-              ))}
+            <label className="form-label" style={{ fontWeight: 800 }}>Assign Academic Student Groups</label>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '6px' }}>
+              {[
+                { id: 'class_2_5', label: 'Class 2-5' },
+                { id: 'class_6_8', label: 'Class 6-8' },
+                { id: 'class_9_10', label: 'Class 9-10' },
+                { id: 'class_11_12_science', label: 'Class 11-12 Sci' },
+                { id: 'class_11_12_application', label: 'Class 11-12 App' }
+              ].map(grp => {
+                const isSelected = selectedGroups.includes(grp.id);
+                return (
+                  <button
+                    type="button"
+                    key={grp.id}
+                    onClick={() => {
+                      if (isSelected) {
+                        setSelectedGroups(selectedGroups.filter(g => g !== grp.id));
+                      } else {
+                        setSelectedGroups([...selectedGroups, grp.id]);
+                      }
+                    }}
+                    style={{
+                      padding: '6px 12px', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 700,
+                      background: isSelected ? 'var(--primary)' : 'var(--surface)',
+                      color: isSelected ? 'white' : 'var(--text-muted)',
+                      border: '1px solid ' + (isSelected ? 'var(--primary)' : 'var(--border)'),
+                      cursor: 'pointer', transition: 'all 0.2s'
+                    }}
+                  >
+                    {grp.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Student selection scrollbox */}
+          <div>
+            <label className="form-label" style={{ fontWeight: 800 }}>Assign Individual Students</label>
+            <div style={{
+              maxHeight: '140px', overflowY: 'auto', border: '1px solid var(--border)',
+              borderRadius: '8px', padding: '8px', display: 'flex', flexDirection: 'column', gap: '6px',
+              marginTop: '6px', background: '#F9FAFB'
+            }}>
+              {students.map(stud => {
+                const isSelected = selectedStudents.includes(stud.id);
+                return (
+                  <label key={stud.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.8rem', cursor: 'pointer', userSelect: 'none' }}>
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => {
+                        if (isSelected) {
+                          setSelectedStudents(selectedStudents.filter(id => id !== stud.id));
+                        } else {
+                          setSelectedStudents([...selectedStudents, stud.id]);
+                        }
+                      }}
+                      style={{ cursor: 'pointer' }}
+                    />
+                    <span>{stud.displayName} ({stud.course || 'No course'})</span>
+                  </label>
+                );
+              })}
+              {students.length === 0 && (
+                <div style={{ textAlign: 'center', fontSize: '0.75rem', color: 'var(--text-light)', fontStyle: 'italic', padding: '12px 0' }}>
+                  No students assigned to you yet
+                </div>
+              )}
             </div>
           </div>
 
           <div>
-            <label className="form-label">Lesson Notes / Target Topics (Optional)</label>
+            <label className="form-label">Google Meet Link (Optional)</label>
+            <input
+              type="url"
+              className="form-input"
+              value={meetLink}
+              onChange={e => setMeetLink(e.target.value)}
+              placeholder="https://meet.google.com/abc-defg-hij"
+            />
+          </div>
+
+          <div>
+            <label className="form-label">Venue / Location</label>
+            <input
+              type="text"
+              className="form-input"
+              value={venue}
+              onChange={e => setVenue(e.target.value)}
+              placeholder="e.g. Room 4B, Compution Campus"
+            />
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }} className="grid-2-col-mobile">
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <input
+                type="checkbox"
+                id="isRecurring"
+                checked={isRecurring}
+                onChange={e => setIsRecurring(e.target.checked)}
+                style={{ cursor: 'pointer' }}
+              />
+              <label htmlFor="isRecurring" style={{ fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer' }}>Recurring Event</label>
+            </div>
+            {isRecurring && (
+              <div>
+                <select
+                  required
+                  className="form-input"
+                  value={recurrenceType}
+                  onChange={e => setRecurrenceType(e.target.value)}
+                  style={{ background: 'white' }}
+                >
+                  <option value="none" disabled>Choose Type</option>
+                  <option value="daily">Daily</option>
+                  <option value="weekly">Weekly</option>
+                  <option value="monthly">Monthly</option>
+                </select>
+              </div>
+            )}
+          </div>
+
+          <div>
+            <label className="form-label">Description / Lesson Notes (Optional)</label>
             <textarea
               className="form-input"
-              value={notes}
-              onChange={e => setNotes(e.target.value)}
+              value={eventDesc}
+              onChange={e => setEventDesc(e.target.value)}
               placeholder="e.g. Bring Python File I/O homework, dry run of recursion loops"
               rows={3}
               style={{ resize: 'vertical' }}
@@ -451,7 +681,7 @@ const Schedule = () => {
           <div style={{ display: 'flex', gap: '12px', marginTop: '12px' }}>
             <button type="button" onClick={() => setIsAddModalOpen(false)} className="btn btn-ghost" style={{ flex: 1 }}>Cancel</button>
             <button type="submit" disabled={isSubmitting} className="btn btn-primary" style={{ flex: 1 }}>
-              {isSubmitting ? 'Scheduling...' : 'Schedule Class'}
+              {isSubmitting ? 'Scheduling...' : 'Schedule Event'}
             </button>
           </div>
         </form>
@@ -459,6 +689,19 @@ const Schedule = () => {
 
     </motion.div>
   );
+};
+
+// Color coding mapping
+const getEventColor = (type) => {
+  switch (type) {
+    case 'Regular Class': return '#3B82F6'; // Blue
+    case 'Extra Class': return '#8B5CF6'; // Purple
+    case 'Practical Class': return '#F97316'; // Orange
+    case 'Exam Revision Session': return '#EF4444'; // Red
+    case 'Practice Session': return '#10B981'; // Green
+    case 'Google Meet Session': return '#06B6D4'; // Cyan
+    default: return '#536DFE'; // Theme color
+  }
 };
 
 export default Schedule;

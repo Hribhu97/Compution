@@ -1,0 +1,37 @@
+9: import { Search, Download, Plus, MoreHorizontal, Eye, ArrowUpRight, Sparkles, ShieldCheck, Trash2, RefreshCw, CheckCircle, XCircle, AlertTriangle, Users, Bell, AlertCircle, Calendar, GraduationCap, ChevronDown, Mail, Send, Pencil, X, ShieldAlert, MessageSquare, Briefcase, UserCheck, Loader2, Check, CheckCheck } from 'lucide-react';
+51:   const [activePanelTab, setActivePanelTab] = useState('students'); // 'students' | 'faculty' | 'members' | 'attendance' | 'schedules' | 'chats' | 'notifications' | 'roles' | 'analytics'
+57:   const [schedulesList, setSchedulesList] = useState([]);
+93:   // Google Meet scheduler state variables
+145:     // 3. Schedules
+146:     const unsubSched = onSnapshot(collection(db, 'studentSchedules'), (snap) => {
+149:       setSchedulesList(list);
+574:         await addDoc(collection(db, 'studentCalendar'), {
+581:       triggerToast('Google Meet session scheduled!', 'success');
+587:       triggerToast('Failed to schedule Meet session', 'danger');
+607:       { key: 'schedules', roles: ['admin', 'faculty'] },
+638:         permissions = ['manage schedules', 'chat with assigned students', 'upload materials'];
+904:       permissions = ['manage schedules', 'chat with assigned students', 'upload materials'];
+927:     if (window.confirm(`Delete user "${userName}" permanently? This will cascade delete all their attendance records, class schedules, payments history, and chat logs.`)) {
+949:         // 4. Cascade studentSchedules (where studentId == userId)
+950:         const schedSnap = await getDocs(query(collection(db, 'studentSchedules'), where('studentId', '==', userId)));
+952:           deletePromises.push(deleteDoc(doc(db, 'studentSchedules', d.id)));
+1250:           { key: 'schedules', label: 'Class Schedules', roles: ['admin', 'faculty'] },
+1335:                 Manage online class schedules, initiate instant Google Meet sessions, and check recent notification reminders sent to parents.
+1343:                   <Calendar size={20} />
+1348:                     {schedulesList.filter(sch => sch.date === new Date().toISOString().split('T')[0]).length}
+1405:                         No Google Meets scheduled yet.
+1415:                     {schedulesList.filter(sch => sch.date === new Date().toISOString().split('T')[0]).map(sch => (
+1428:                     {schedulesList.filter(sch => sch.date === new Date().toISOString().split('T')[0]).length === 0 && (
+1430:                         No classes scheduled for today.
+1441:                 {/* Google Meet scheduler card */}
+1457:                     <Plus size={16} /> Schedule Google Meet
+1498:                       <div style={{ fontSize: '0.72rem', opacity: 0.8, marginTop: '8px' }}>You are currently assigned as their primary mentor for doubt-solving & schedule tracking.</div>
+1501:                       <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600, marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Active Scheduled Classes</div>
+1503:                         {schedulesList.filter(sch => sch.date === new Date().toISOString().split('T')[0] && (sch.facultyId === user.uid || sch.faculty === user.displayName)).length} Today
+1505:                       <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '8px' }}>Classes scheduled for you today.</div>
+1933:           {activePanelTab === 'schedules' && (
+1937:                   <th style={{ padding: '12px' }}>Scheduled Student</th>
+1945:                 {schedulesList.filter(sch => {
+1963:                       <button onClick={async () => { if (window.confirm("Cancel class slot?")) await deleteDoc(doc(db, 'studentSchedules', sch.id)); }} style={{ color: 'var(--danger)', background: 'none', border: 'none', cursor: 'pointer' }}><Trash2 size={15} /></button>
+2145:       <Modal isOpen={isMeetModalOpen} onClose={() => setIsMeetModalOpen(false)} title="Schedule Google Meet Session">
+2195:             <button type="submit" className="btn btn-primary" style={{ flex: 1 }}>Schedule Session</button>

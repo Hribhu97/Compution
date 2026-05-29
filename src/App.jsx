@@ -2,6 +2,7 @@ import React from 'react';
 import { ReactLenis } from '@studio-freight/react-lenis';
 import { BrowserRouter as Router, Routes, Route, Outlet, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { ToastProvider } from './contexts/ToastContext';
 import ChatAssistant from './components/ChatAssistant';
 
 import Home from './pages/public/Home';
@@ -25,9 +26,10 @@ const PublicLayout = () => (
 );
 
 const ProtectedRoute = ({ children }) => {
-  const { user, loading } = useAuth();
+  const { user, authReady, userProfileLoaded } = useAuth();
+  const isProfileLoading = !authReady || (authReady && user && !userProfileLoaded);
   
-  if (loading) {
+  if (isProfileLoading) {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', width: '100vw', background: '#F0F4FF' }}>
         <div style={{ width: '40px', height: '40px', borderRadius: '50%', border: '4px solid rgba(83,109,254,0.2)', borderTopColor: 'var(--primary)', animation: 'spin 1s linear infinite' }} />
@@ -46,27 +48,29 @@ const ProtectedRoute = ({ children }) => {
 function App() {
   return (
     <AuthProvider>
-      <Router>
-        <Routes>
-          <Route element={<PublicLayout />}>
-            <Route path="/" element={<Home />} />
-            <Route path="/staff" element={<Staff />} />
-          </Route>
-          <Route path="/login" element={<Login />} />
-          <Route path="/dashboard" element={<ProtectedRoute><DashboardLayout /></ProtectedRoute>}>
-            <Route index element={<Overview />} />
-            <Route path="courses" element={<Courses />} />
-            <Route path="attendance" element={<Attendance />} />
-            <Route path="schedule" element={<Schedule />} />
-            <Route path="assignments" element={<Assignments />} />
-            <Route path="tests" element={<MockTests />} />
-            <Route path="community" element={<Community />} />
-            <Route path="profile" element={<Profile />} />
-          </Route>
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-        <ChatAssistant />
-      </Router>
+      <ToastProvider>
+        <Router>
+          <Routes>
+            <Route element={<PublicLayout />}>
+              <Route path="/" element={<Home />} />
+              <Route path="/staff" element={<Staff />} />
+            </Route>
+            <Route path="/login" element={<Login />} />
+            <Route path="/dashboard" element={<ProtectedRoute><DashboardLayout /></ProtectedRoute>}>
+              <Route index element={<Overview />} />
+              <Route path="courses" element={<Courses />} />
+              <Route path="attendance" element={<Attendance />} />
+              <Route path="schedule" element={<Schedule />} />
+              <Route path="assignments" element={<Assignments />} />
+              <Route path="tests" element={<MockTests />} />
+              <Route path="community" element={<Community />} />
+              <Route path="profile" element={<Profile />} />
+            </Route>
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+          <ChatAssistant />
+        </Router>
+      </ToastProvider>
     </AuthProvider>
   );
 }

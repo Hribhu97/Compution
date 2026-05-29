@@ -86,7 +86,7 @@ const Assignments = () => {
       unsubPersonal(); 
       unsubNote(); 
     };
-  }, [user]);
+  }, [user?.uid, user?.role]);
 
   // Handle Admin creating a global assignment
   const handleCreateAssignment = async (e) => {

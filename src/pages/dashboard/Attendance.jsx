@@ -141,11 +141,107 @@ const Attendance = () => {
       unsubTodaySched();
       unsubTodayCal();
     };
-  }, [user, attendanceDate, selectedSubject]);
+  }, [user?.uid, canManage, attendanceDate, selectedSubject]);
 
   const triggerToast = (msg) => {
     setToast(msg);
     setTimeout(() => setToast(''), 3000);
+  };
+
+  const triggerAbsentNotification = async (studentId, studentName, dateStr, subjectName) => {
+    const docId = `${studentId}_${dateStr.replace(/\s+/g, '_')}_${subjectName.replace(/\s+/g, '_')}`;
+    const notifRef = doc(db, 'attendanceNotifications', docId);
+
+    try {
+      const notifSnap = await getDocs(query(
+        collection(db, 'attendanceNotifications'),
+        where('studentId', '==', studentId),
+        where('date', '==', dateStr),
+        where('subject', '==', subjectName)
+      ));
+
+      if (!notifSnap.empty) {
+        console.log(`Alert already logged for ${studentName} today`);
+        return;
+      }
+
+      let parentPhone = '';
+      let parentName = '';
+      let parentEmail = '';
+      let absentAlertPref = true;
+
+      // Query parentContacts first
+      const parentContactsQuery = query(collection(db, 'parentContacts'), where('studentId', '==', studentId));
+      const parentSnap = await getDocs(parentContactsQuery);
+
+      if (!parentSnap.empty) {
+        const pDoc = parentSnap.docs[0];
+        const pData = pDoc.data();
+        parentPhone = pData.parentPhone || '';
+        parentName = pData.parentName || 'Parent';
+        parentEmail = pData.parentEmail || '';
+        absentAlertPref = pData.notificationPreferences?.absentAlert !== false;
+      } else {
+        // Fallback: Fetch parent info from user profile
+        const userRef = doc(db, 'users', studentId);
+        const userSnap = await getDoc(userRef);
+        if (userSnap.exists()) {
+          const sData = userSnap.data();
+          parentPhone = sData.guardianPhone || sData.phone || '';
+          parentName = sData.guardianName || 'Parent';
+          parentEmail = sData.guardianEmail || '';
+
+          // Sync parent contacts
+          await setDoc(doc(db, 'parentContacts', `parent_${studentId}`), {
+            studentId,
+            parentName,
+            parentPhone,
+            parentEmail,
+            notificationPreferences: {
+              absentAlert: true,
+              feeDueReminder: true,
+              classCancellation: true
+            },
+            createdAt: serverTimestamp()
+          });
+        }
+      }
+
+      if (!absentAlertPref) {
+        console.log(`Parent for ${studentName} disabled absent alerts.`);
+        return;
+      }
+
+      const notifData = {
+        studentId,
+        studentName,
+        parentName,
+        parentPhone,
+        date: dateStr,
+        subject: subjectName,
+        status: 'pending',
+        message: `Dear Parent, your child ${studentName} was marked absent today at Compution for ${subjectName}. Please contact the institute if needed.`,
+        timestamp: serverTimestamp()
+      };
+
+      await setDoc(notifRef, notifData);
+
+      // Simulate sending SMS transition: pending -> sent_sms after 2 seconds
+      setTimeout(async () => {
+        try {
+          await updateDoc(notifRef, {
+            status: 'sent_sms',
+            sentTimestamp: serverTimestamp()
+          });
+          console.log(`Simulated SMS sent for student ${studentName}`);
+        } catch (e) {
+          console.error("Failed to update SMS delivery status:", e);
+        }
+      }, 2500);
+
+    } catch (err) {
+      console.error("Error triggering absent notification:", err);
+    }
   };
 
   // ── FACULTY: MARK ATTENDANCE FOR INDIVIDUAL STUDENT ──
@@ -169,39 +265,9 @@ const Attendance = () => {
       setAttendanceStatusMap(prev => ({ ...prev, [studentId]: status }));
       triggerToast(`Marked ${studentName} as ${status}`);
 
-      // 2. Client-side fallback trigger: Create absent notification if status is absent and not already logged
+      // 2. Client-side fallback trigger: Create absent notification if status is absent
       if (status === 'absent') {
-        const notifDocId = docId; // Use same deterministic ID to prevent duplicates
-        const notifRef = doc(db, 'attendanceNotifications', notifDocId);
-        const notifSnap = await getDocs(query(collection(db, 'attendanceNotifications'), where('studentId', '==', studentId), where('date', '==', dateStr), where('subject', '==', selectedSubject)));
-
-        if (notifSnap.empty) {
-          // Fetch parent phone
-          let parentPhone = '';
-          let parentName = '';
-          const usersSnap = await getDocs(query(collection(db, 'users')));
-          usersSnap.forEach(docSnap => {
-            if (docSnap.id === studentId) {
-              const sData = docSnap.data();
-              parentPhone = sData.guardianPhone || sData.phone || '';
-              parentName = sData.guardianName || 'Parent';
-            }
-          });
-
-          await setDoc(notifRef, {
-            studentId,
-            studentName,
-            parentName,
-            parentPhone,
-            date: dateStr,
-            subject: selectedSubject,
-            status: 'pending',
-            message: `Dear Parent, your child ${studentName} was marked absent today at Compution for ${selectedSubject}. Please contact the institute if needed.`,
-            timestamp: serverTimestamp()
-          });
-        } else {
-          console.log(`Alert already logged for ${studentName} today`);
-        }
+        triggerAbsentNotification(studentId, studentName, dateStr, selectedSubject);
       }
     } catch (err) {
       console.error("Error logging attendance:", err);
@@ -234,26 +300,7 @@ const Attendance = () => {
 
         // Handle absent notifications for bulk absents
         if (status === 'absent') {
-          const notifDocId = docId;
-          const notifRef = doc(db, 'attendanceNotifications', notifDocId);
-          
-          let parentPhone = student.guardianPhone || student.phone || '';
-          let parentName = student.guardianName || 'Parent';
-
-          const notifSnap = await getDocs(query(collection(db, 'attendanceNotifications'), where('studentId', '==', student.id), where('date', '==', dateStr), where('subject', '==', selectedSubject)));
-          if (notifSnap.empty) {
-            await setDoc(notifRef, {
-              studentId: student.id,
-              studentName: student.displayName,
-              parentName,
-              parentPhone,
-              date: dateStr,
-              subject: selectedSubject,
-              status: 'pending',
-              message: `Dear Parent, your child ${student.displayName} was marked absent today at Compution for ${selectedSubject}. Please contact the institute if needed.`,
-              timestamp: serverTimestamp()
-            });
-          }
+          triggerAbsentNotification(student.id, student.displayName, dateStr, selectedSubject);
         }
       });
 

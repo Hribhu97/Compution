@@ -2,10 +2,11 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
+import { useToast } from '../../contexts/ToastContext';
 import { db } from '../../firebase';
 import { collection, onSnapshot, query, orderBy, addDoc, serverTimestamp, where, doc, setDoc, updateDoc, increment, getDocs, deleteDoc } from 'firebase/firestore';
 import { MessageSquare, Plus, Clock, Search, Send, Image, FileText, Check, CheckCheck, Loader2, User, Phone, Smile, Paperclip, Pencil, Trash2 } from 'lucide-react';
-import { formatDistanceToNow } from 'date-fns';
+import { format, formatDistanceToNow } from 'date-fns';
 import Modal from '../../components/Modal';
 
 const stagger = { show: { transition: { staggerChildren: 0.08 } } };
@@ -14,6 +15,7 @@ const item = { hidden: { opacity: 0, y: 14 }, show: { opacity: 1, y: 0, transiti
 const Community = () => {
   const { user } = useAuth();
   const location = useLocation();
+  const { showToast } = useToast();
   const [activeTab, setActiveTab] = useState('board'); // 'board' | 'chat'
 
   // Post Board state
@@ -46,6 +48,7 @@ const Community = () => {
   // Typing & Presence
   const [typingUsers, setTypingUsers] = useState({});
   const typingTimeoutRef = useRef({});
+  const [lastMessageSentTime, setLastMessageSentTime] = useState(0);
   const messagesEndRef = useRef(null);
 
   const isFaculty = user?.role?.toLowerCase() === 'faculty';
@@ -156,7 +159,7 @@ const Community = () => {
 
     // Fetch active chat rooms
     const roomsQuery = query(
-      collection(db, 'chatRooms'),
+      collection(db, 'communityThreads'),
       where('participants', 'array-contains', user.uid)
     );
 
@@ -184,8 +187,8 @@ const Community = () => {
     setMessagesLoading(true);
 
     const msgQuery = query(
-      collection(db, `chatRooms/${activeRoom.id}/messages`),
-      orderBy('createdAt', 'asc')
+      collection(db, `communityThreads/${activeRoom.id}/messages`),
+      orderBy('timestamp', 'asc')
     );
 
     const unsubMsg = onSnapshot(msgQuery, (snap) => {
@@ -204,7 +207,7 @@ const Community = () => {
     });
 
     // Listen to typing status
-    const unsubRoom = onSnapshot(doc(db, 'chatRooms', activeRoom.id), (docSnap) => {
+    const unsubRoom = onSnapshot(doc(db, 'communityThreads', activeRoom.id), (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
         setTypingUsers(data.typing || {});
@@ -223,23 +226,28 @@ const Community = () => {
 
   const markMessagesAsRead = async (roomId) => {
     try {
-      const roomRef = doc(db, 'chatRooms', roomId);
+      const roomRef = doc(db, 'communityThreads', roomId);
       if (isFaculty || isAdmin || isMember) {
-        await updateDoc(roomRef, { facultyUnreadCount: 0 });
+        await setDoc(roomRef, { facultyUnreadCount: 0 }, { merge: true });
       } else {
-        await updateDoc(roomRef, { studentUnreadCount: 0 });
+        await setDoc(roomRef, { studentUnreadCount: 0 }, { merge: true });
       }
       
-      // Also update messages subcollection query for unread seen statuses
+      // Update messages where senderId != user.uid and readStatus is not true
       const unreadSnap = await getDocs(
         query(
-          collection(db, `chatRooms/${roomId}/messages`), 
-          where('senderId', '!=', user.uid),
-          where('seen', '==', false)
+          collection(db, `communityThreads/${roomId}/messages`), 
+          where('senderId', '!=', user.uid)
         )
       );
       unreadSnap.forEach(async (messageDoc) => {
-        await updateDoc(doc(db, `chatRooms/${roomId}/messages`, messageDoc.id), { seen: true });
+        const data = messageDoc.data();
+        if (data.readStatus === false || data.seen === false) {
+          await setDoc(doc(db, `communityThreads/${roomId}/messages`, messageDoc.id), { 
+            readStatus: true, 
+            seen: true 
+          }, { merge: true });
+        }
       });
     } catch (err) {
       console.error(err);
@@ -262,7 +270,7 @@ const Community = () => {
           attachmentName: postAttachment ? postAttachment.name : null,
           updatedAt: serverTimestamp()
         };
-        await updateDoc(postRef, updateObj);
+        await setDoc(postRef, updateObj, { merge: true });
       } else {
         // Create new notice
         const postObj = {
@@ -281,9 +289,10 @@ const Community = () => {
         await addDoc(collection(db, 'community'), postObj);
       }
       handleCloseModal();
+      showToast("Notice saved successfully! 📢", "success");
     } catch(err) {
       console.error(err);
-      alert("Failed to save notice: " + (err.message || err));
+      showToast("Failed to save notice: " + (err.message || err), "error");
     }
     setIsSubmitting(false);
   };
@@ -293,9 +302,10 @@ const Community = () => {
     if (window.confirm("Are you sure you want to delete this notice note?")) {
       try {
         await deleteDoc(doc(db, 'community', postId));
+        showToast("Notice deleted successfully", "info");
       } catch (err) {
         console.error("Error deleting post:", err);
-        alert("Failed to delete notice: " + (err.message || err));
+        showToast("Failed to delete notice: " + (err.message || err), "error");
       }
     }
   };
@@ -313,7 +323,7 @@ const Community = () => {
     const roomId = user.uid < targetUser.id ? `${user.uid}_${targetUser.id}` : `${targetUser.id}_${user.uid}`;
     
     // Check if room exists
-    const roomRef = doc(db, 'chatRooms', roomId);
+    const roomRef = doc(db, 'communityThreads', roomId);
     try {
       await setDoc(roomRef, {
         id: roomId,
@@ -358,10 +368,16 @@ const Community = () => {
     }
   }, [location.state, chatUsers]);
 
-  // ── SEND MESSAGE ──
   const handleSendMessage = async (e) => {
     if (e) e.preventDefault();
     if (!newMessage.trim() && !attachment) return;
+
+    const now = Date.now();
+    if (now - lastMessageSentTime < 3000) {
+      showToast("Slow down! Please wait a few seconds between messages.", "warning");
+      return;
+    }
+    setLastMessageSentTime(now);
 
     const currentText = newMessage.trim();
     const currentAttachment = attachment;
@@ -371,26 +387,27 @@ const Community = () => {
 
     const roomDocId = activeRoom.id;
     const isRoomFacultyMsg = isFaculty || isAdmin || isMember;
+    const receiverId = activeRoom.id.split('_').find(id => id !== user.uid) || '';
 
     try {
-      // Create message object
+      // Create message object matching new schema
       const msgObj = {
         senderId: user.uid,
         senderName: user.displayName,
         senderRole: user?.role || 'student',
-        text: currentText,
-        seen: false,
-        createdAt: serverTimestamp()
+        receiverId: receiverId,
+        message: currentText,
+        text: currentText, // Legacy compatibility
+        readStatus: false,
+        seen: false, // Legacy compatibility
+        timestamp: serverTimestamp(),
+        createdAt: serverTimestamp(), // Legacy compatibility
+        attachments: currentAttachment ? [currentAttachment] : [],
+        messageType: currentAttachment ? currentAttachment.type : 'text'
       };
 
-      if (currentAttachment) {
-        msgObj.attachmentType = currentAttachment.type;
-        msgObj.attachmentData = currentAttachment.data;
-        msgObj.attachmentName = currentAttachment.name;
-      }
-
       // 1. Add to messages subcollection
-      await addDoc(collection(db, `chatRooms/${roomDocId}/messages`), msgObj);
+      await addDoc(collection(db, `communityThreads/${roomDocId}/messages`), msgObj);
 
       // 2. Update room document metadata
       const updateObj = {
@@ -406,7 +423,33 @@ const Community = () => {
         updateObj.facultyUnreadCount = increment(1);
       }
 
-      await updateDoc(doc(db, 'chatRooms', roomDocId), updateObj);
+      await setDoc(doc(db, 'communityThreads', roomDocId), updateObj, { merge: true });
+
+      // 3. Email Copy / Notification system if sender is faculty
+      if (isFaculty) {
+        try {
+          const studentEmail = activeRoom.email || '';
+          const studentName = activeRoom.displayName || 'Student';
+          const studentPhone = activeRoom.phone || 'N/A';
+          
+          const emailHeader = `From: Compution Academy <notifications@compution.in>\nTo: ${studentEmail}\nSubject: New doubt reply from your mentor ${user.displayName}`;
+          const mockEmailBody = `Hi ${studentName},\n\nYour assigned mentor ${user.displayName} has posted a new reply to your doubt thread:\n\n"${currentText}"\n\nLog in to your dashboard to view the full discussion and reply.\n\nBest Regards,\nCompution Support Team`;
+          
+          await addDoc(collection(db, 'notificationHistory'), {
+            studentId: receiverId,
+            studentName: studentName,
+            parentName: `${studentName} Parent`,
+            parentPhone: studentPhone,
+            message: `${emailHeader}\n\n${mockEmailBody}`,
+            status: 'sent_email',
+            type: 'email',
+            subject: `New Doubt Reply from ${user.displayName}`,
+            timestamp: serverTimestamp()
+          });
+        } catch (err) {
+          console.error("Error writing mock email notification log:", err);
+        }
+      }
 
     } catch (err) {
       console.error("Error sending message:", err);
@@ -419,7 +462,7 @@ const Community = () => {
     if (!file) return;
 
     if (file.size > 1 * 1024 * 1024) {
-      alert("File is too large. Keep it under 1MB for Firestore upload.");
+      showToast("File is too large. Keep it under 1MB for Firestore upload.", "warning");
       return;
     }
 
@@ -435,7 +478,7 @@ const Community = () => {
       setUploadingAttachment(false);
     };
     reader.onerror = () => {
-      alert("Failed to read file");
+      showToast("Failed to read file", "error");
       setUploadingAttachment(false);
     };
     reader.readAsDataURL(file);
@@ -447,7 +490,7 @@ const Community = () => {
     if (!file) return;
 
     if (file.size > 1 * 1024 * 1024) {
-      alert("File is too large. Keep it under 1MB for Firestore upload.");
+      showToast("File is too large. Keep it under 1MB for Firestore upload.", "warning");
       return;
     }
 
@@ -462,7 +505,7 @@ const Community = () => {
       setPostAttachmentLoading(false);
     };
     reader.onerror = () => {
-      alert("Failed to read file");
+      showToast("Failed to read file", "error");
       setPostAttachmentLoading(false);
     };
     reader.readAsDataURL(file);
@@ -474,9 +517,9 @@ const Community = () => {
 
     // Send typing: true
     if (!typingUsers[user.uid]) {
-      await updateDoc(doc(db, 'chatRooms', activeRoom.id), {
+      await setDoc(doc(db, 'communityThreads', activeRoom.id), {
         [`typing.${user.uid}`]: true
-      });
+      }, { merge: true });
     }
 
     // Reset typing status after 3 seconds of inactivity
@@ -485,9 +528,9 @@ const Community = () => {
     }
 
     typingTimeoutRef.current[activeRoom.id] = setTimeout(async () => {
-      await updateDoc(doc(db, 'chatRooms', activeRoom.id), {
+      await setDoc(doc(db, 'communityThreads', activeRoom.id), {
         [`typing.${user.uid}`]: false
-      });
+      }, { merge: true });
     }, 3000);
   };
 
@@ -527,7 +570,7 @@ const Community = () => {
           <div style={{ height: '100%', display: 'flex', flexDirection: 'column', padding: '24px', overflowY: 'auto' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', borderBottom: '1px solid var(--border)', paddingBottom: '16px' }}>
               <h2 style={{ fontSize: '1.25rem', fontWeight: 800 }}>Student Announcement Board</h2>
-              {!isStudent && (
+              {(isAdmin || isFaculty) && (
                 <button onClick={() => { setEditingPost(null); setMessage(''); setPostAttachment(null); setIsModalOpen(true); }} className="btn btn-primary" style={{ padding: '10px 18px', fontSize: '0.85rem', borderRadius: '10px' }}>
                   <Plus size={16} /> Create Notice Note
                 </button>
@@ -568,8 +611,8 @@ const Community = () => {
                         </div>
                       </div>
                       
-                      {/* Action buttons visible only to author and admin */}
-                      {(user?.uid === post.authorId || isAdmin) && (
+                      {/* Action buttons visible only to author (if Faculty) and admin */}
+                      {((isFaculty && user?.uid === post.authorId) || isAdmin) && (
                         <div style={{ display: 'flex', gap: '8px' }}>
                           <button
                             onClick={() => {
@@ -742,31 +785,34 @@ const Community = () => {
                                 }}>
                                   
                                   {/* Attachment block if exists */}
-                                  {msg.attachmentData && (
-                                    <div style={{ marginBottom: '8px', borderRadius: '8px', overflow: 'hidden' }}>
-                                      {msg.attachmentType === 'image' ? (
-                                        <img src={msg.attachmentData} alt={msg.attachmentName || 'attachment'} style={{ maxWidth: '100%', maxHeight: '200px', objectFit: 'cover' }} />
-                                      ) : (
-                                        <a href={msg.attachmentData} download={msg.attachmentName} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px', background: isMe ? 'rgba(255,255,255,0.15)' : 'var(--surface)', borderRadius: '6px', color: isMe ? 'white' : 'var(--primary)', fontWeight: 600, fontSize: '0.8rem' }}>
-                                          <FileText size={16} />
-                                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '140px' }}>{msg.attachmentName}</span>
-                                        </a>
-                                      )}
-                                    </div>
-                                  )}
+                                  {(msg.attachments?.[0] || msg.attachmentData) && (() => {
+                                    const att = msg.attachments?.[0] || { data: msg.attachmentData, type: msg.attachmentType, name: msg.attachmentName };
+                                    return (
+                                      <div style={{ marginBottom: '8px', borderRadius: '8px', overflow: 'hidden' }}>
+                                        {att.type === 'image' ? (
+                                          <img src={att.data} alt={att.name || 'attachment'} style={{ maxWidth: '100%', maxHeight: '200px', objectFit: 'cover' }} />
+                                        ) : (
+                                          <a href={att.data} download={att.name} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px', background: isMe ? 'rgba(255,255,255,0.15)' : 'var(--surface)', borderRadius: '6px', color: isMe ? 'white' : 'var(--primary)', fontWeight: 600, fontSize: '0.8rem' }}>
+                                            <FileText size={16} />
+                                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '140px' }}>{att.name}</span>
+                                          </a>
+                                        )}
+                                      </div>
+                                    );
+                                  })()}
 
                                   {/* Text message */}
-                                  {msg.text && <p style={{ fontSize: '0.88rem', wordBreak: 'break-word', lineHeight: 1.4 }}>{msg.text}</p>}
+                                  {(msg.message || msg.text) && <p style={{ fontSize: '0.88rem', wordBreak: 'break-word', lineHeight: 1.4 }}>{msg.message || msg.text}</p>}
                                 </div>
                                 
                                 {/* Timestamp and seen ticks */}
                                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px', fontSize: '0.68rem', color: 'var(--text-light)', padding: '0 4px' }}>
                                   <span>
-                                    {msg.createdAt ? format(msg.createdAt.toDate(), 'h:mm a') : 'sending...'}
+                                    {msg.timestamp ? (msg.timestamp.toDate ? format(msg.timestamp.toDate(), 'h:mm a') : format(new Date(msg.timestamp), 'h:mm a')) : msg.createdAt ? (msg.createdAt.toDate ? format(msg.createdAt.toDate(), 'h:mm a') : format(new Date(msg.createdAt), 'h:mm a')) : 'sending...'}
                                   </span>
                                   {isMe && (
                                     <span>
-                                      {msg.seen ? <CheckCheck size={12} style={{ color: 'var(--success)' }} /> : <Check size={12} />}
+                                      {(msg.readStatus === true || msg.seen === true) ? <CheckCheck size={12} style={{ color: 'var(--success)' }} /> : <Check size={12} />}
                                     </span>
                                   )}
                                 </div>

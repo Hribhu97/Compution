@@ -1,18 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../../contexts/AuthContext';
+import { useToast } from '../../contexts/ToastContext';
 import { db } from '../../firebase';
-import { collection, onSnapshot, query, doc, updateDoc, addDoc, serverTimestamp, where, setDoc, increment } from 'firebase/firestore';
+import { collection, query, doc, updateDoc, addDoc, serverTimestamp, where, setDoc, increment } from 'firebase/firestore';
 import { useNavigate } from 'react-router-dom';
 import {
   Users, Send, Clock, UserMinus, ChevronDown, Share2,
   Sparkles, ShieldCheck, Download, ExternalLink, Calendar,
   ChevronRight, BookOpen, Clock3, CheckCircle, Info, Play, MessageSquare, ShieldAlert,
-  FileEdit, Trash2, Pencil, Plus, FileText, GraduationCap, Globe, Megaphone, ClipboardList, UserCheck, ArrowUpRight
+  FileEdit, Trash2, Pencil, Plus, FileText, GraduationCap, Globe, Megaphone, ClipboardList, UserCheck, ArrowUpRight, Phone
 } from 'lucide-react';
 import { format, startOfWeek, addDays, isSameDay, parseISO, startOfMonth, endOfMonth, eachDayOfInterval, addMonths } from 'date-fns';
 import AdminDashboard from '../../components/AdminDashboard';
 import Modal from '../../components/Modal';
+import { queryManager } from '../../utils/FirestoreQueryManager';
 
 const stagger = { show: { transition: { staggerChildren: 0.06 } } };
 const fadeItem = {
@@ -73,6 +75,7 @@ const Toast = ({ message, onClose }) => {
 const StudentOverview = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const { showToast } = useToast();
 
   const [attendanceStats, setAttendanceStats] = useState({ present: 0, absent: 0, late: 0 });
   const [attendanceLogs, setAttendanceLogs] = useState([]);
@@ -82,7 +85,8 @@ const StudentOverview = () => {
   const [assignedFacultyList, setAssignedFacultyList] = useState([]);
   const [globalCourses, setGlobalCourses] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [toast, setToast] = useState(null);
+  
+  const setToast = (msg) => showToast(msg);
 
   const [isAddCourseModalOpen, setIsAddCourseModalOpen] = useState(false);
   const [editingCourseName, setEditingCourseName] = useState(null);
@@ -99,16 +103,27 @@ const StudentOverview = () => {
   const [rescheduleFacultyId, setRescheduleFacultyId] = useState('');
   const [rescheduleIsSubmitting, setRescheduleIsSubmitting] = useState(false);
 
+  const [countdownText, setCountdownText] = useState('');
+  const [nextEventObj, setNextEventObj] = useState(null);
+
+  const getEventColor = (type) => {
+    switch (type) {
+      case 'Regular Class': return '#3B82F6';
+      case 'Extra Class': return '#8B5CF6';
+      case 'Practical Class': return '#F97316';
+      case 'Exam Revision Session': return '#EF4444';
+      case 'Practice Session': return '#10B981';
+      case 'Google Meet Session': return '#06B6D4';
+      default: return '#536DFE';
+    }
+  };
+
   useEffect(() => {
     if (!user?.uid) return;
 
-    const attRef = collection(db, `users/${user.uid}/attendance`);
-    const unsubAtt = onSnapshot(attRef, (snap) => {
+    const unsubAtt = queryManager.subscribeToQuery(collection(db, `users/${user.uid}/attendance`), (logs) => {
       let present = 0, absent = 0, late = 0;
-      const logs = [];
-      snap.forEach(doc => {
-        const data = doc.data();
-        logs.push({ id: doc.id, ...data });
+      logs.forEach(data => {
         if (data.status === 'present') present++;
         else if (data.status === 'absent') absent++;
         else if (data.status === 'late') late++;
@@ -118,61 +133,75 @@ const StudentOverview = () => {
       setLoading(false);
     });
 
-    const facAssRef = query(collection(db, 'assignedFaculty'), where('studentId', '==', user.uid));
-    const unsubAssignedFac = onSnapshot(facAssRef, (snap) => {
-      const data = [];
-      snap.forEach(doc => data.push({ id: doc.id, ...doc.data() }));
-      setAssignedFacultyList(data);
+    const studMapRef = doc(db, 'studentFacultyMap', user.uid);
+    const unsubAssignedFac = queryManager.subscribeToQuery(studMapRef, (docData) => {
+      if (docData) {
+        const assignedFac = docData.assignedFaculty || [];
+        setAssignedFacultyList(assignedFac.map(f => ({
+          facultyId: f.facultyId,
+          subject: f.subject || 'Python Mastery',
+          assignedAt: f.assignedAt || '',
+          facultyName: f.facultyName || 'Faculty Mentor',
+          facultyPhoto: f.facultyPhoto || ''
+        })));
+      } else {
+        setAssignedFacultyList([]);
+      }
     });
 
     const usersRef = collection(db, 'users');
-    const unsubFaculty = onSnapshot(usersRef, (snap) => {
-      const facs = [];
-      snap.forEach(doc => {
-        const d = doc.data();
-        if (d.role?.toLowerCase() === 'faculty') facs.push({ id: doc.id, ...d });
-      });
+    const unsubFaculty = queryManager.subscribeToQuery(usersRef, (allUsersList) => {
+      const facs = allUsersList.filter(u => u.role?.toLowerCase() === 'faculty');
       setAllFaculty(facs);
     });
 
-    const calendarRef = query(collection(db, 'studentCalendar'), where('studentId', '==', user.uid));
-    const unsubCalendar = onSnapshot(calendarRef, (snap) => {
+    const calendarRef = query(collection(db, 'calendarEvents'));
+    const userGroup = user?.studentGroup || '';
+    const unsubCalendar = queryManager.subscribeToQuery(calendarRef, (eventsList) => {
       const data = [];
-      snap.forEach(doc => {
-        const ev = doc.data();
-        data.push({ id: doc.id, source: 'studentCalendar', title: ev.title || 'Event', date: ev.date || '', time: ev.time || '', type: ev.type || 'class', facultyId: ev.facultyId || '', meetingLink: ev.meetingLink || '' });
+      eventsList.forEach(ev => {
+        const isInStudents = ev.assignedStudents?.includes(user.uid);
+        const isInGroups = ev.assignedGroups?.includes(userGroup);
+        if (isInStudents || isInGroups) {
+          data.push({
+            id: ev.id,
+            title: ev.title || 'Academic Class',
+            description: ev.description || '',
+            eventType: ev.eventType || 'Regular Class',
+            startDate: ev.startDate || '',
+            endDate: ev.endDate || '',
+            startTime: ev.startTime || '',
+            endTime: ev.endTime || '',
+            meetLink: ev.meetLink || '',
+            venue: ev.venue || '',
+            facultyId: ev.assignedFacultyId || '',
+            facultyName: ev.assignedFacultyName || 'Faculty Mentor',
+            date: ev.startDate || '',
+            time: ev.startTime || '',
+            type: ev.eventType || 'Regular Class',
+            meetingLink: ev.meetLink || ''
+          });
+        }
       });
-      setCalendarEventsRaw(prev => ({ ...prev, calendar: data }));
+      setCalendarEventsRaw({ calendar: data, schedules: [] });
     });
 
-    const schedulesRef = query(collection(db, 'studentSchedules'), where('studentId', '==', user.uid));
-    const unsubSchedules = onSnapshot(schedulesRef, (snap) => {
-      const data = [];
-      snap.forEach(doc => {
-        const ev = doc.data();
-        data.push({ id: doc.id, source: 'studentSchedules', title: ev.subject || 'Class Slot', date: ev.date || '', time: ev.time || '', type: 'class', facultyId: ev.facultyId || '' });
-      });
-      setCalendarEventsRaw(prev => ({ ...prev, schedules: data }));
+    const unsubSchedules = () => {};
+
+    const roomsQuery = query(collection(db, 'communityThreads'), where('participants', 'array-contains', user.uid));
+    const unsubRooms = queryManager.subscribeToQuery(roomsQuery, (roomList) => {
+      const sorted = [...roomList].sort((a, b) => (b.lastMessageTime?.seconds || 0) - (a.lastMessageTime?.seconds || 0));
+      setActiveChatRooms(sorted);
     });
 
-    const roomsQuery = query(collection(db, 'chatRooms'), where('participants', 'array-contains', user.uid));
-    const unsubRooms = onSnapshot(roomsQuery, (snap) => {
-      const roomList = [];
-      snap.forEach(doc => roomList.push({ id: doc.id, ...doc.data() }));
-      roomList.sort((a, b) => (b.lastMessageTime?.seconds || 0) - (a.lastMessageTime?.seconds || 0));
-      setActiveChatRooms(roomList);
-    });
-
-    const unsubCourses = onSnapshot(collection(db, 'courses'), (snap) => {
-      const list = [];
-      snap.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
+    const unsubCourses = queryManager.subscribeToQuery(collection(db, 'courses'), (list) => {
       setGlobalCourses(list);
     });
 
     return () => {
       unsubAtt(); unsubAssignedFac(); unsubFaculty(); unsubCalendar(); unsubSchedules(); unsubRooms(); unsubCourses();
     };
-  }, [user]);
+  }, [user?.uid, user?.studentGroup]);
 
   const displayName = user?.displayName || 'Student';
   const studentCourses = user?.enrolledCourses || (user?.course && user.course !== 'Not specified' ? [user.course] : ['Python Mastery']);
@@ -181,40 +210,146 @@ const StudentOverview = () => {
   const attPct = totalAttCount > 0 ? Math.round(((attendanceStats.present + attendanceStats.late * 0.5) / totalAttCount) * 100) : 85;
   const studentStats = { percentage: attPct };
 
-  const enrichedFacultyList = assignedFacultyList.map(af => {
-    const profile = allFaculty.find(f => f.id === af.facultyId || f.email === af.facultyId);
+  const calendarEvents = [...calendarEventsRaw.calendar, ...calendarEventsRaw.schedules];
+  calendarEvents.sort((a, b) => (a.date || '').localeCompare(b.date || '') || (a.time || '').localeCompare(b.time || ''));
+
+  useEffect(() => {
+    const updateTimer = () => {
+      const now = new Date();
+      const upcoming = calendarEvents.filter(ev => {
+        if (!ev.date) return false;
+        try {
+          const classDate = new Date(`${ev.date}T${ev.time || '00:00'}`);
+          return classDate >= now;
+        } catch {
+          return false;
+        }
+      });
+
+      if (upcoming.length === 0) {
+        setCountdownText('');
+        setNextEventObj(null);
+        return;
+      }
+
+      const nextEvent = upcoming[0];
+      const eventTime = new Date(`${nextEvent.date}T${nextEvent.time || '00:00'}`);
+      const diffMs = eventTime - now;
+      
+      const hrs = Math.floor(diffMs / (1000 * 60 * 60));
+      const mins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+      const secs = Math.floor((diffMs % (1000 * 60)) / 1000);
+      
+      setCountdownText(`${hrs}h ${mins}m ${secs}s remaining`);
+      setNextEventObj(nextEvent);
+    };
+
+    updateTimer();
+    const interval = setInterval(updateTimer, 1000);
+    return () => clearInterval(interval);
+  }, [calendarEvents]);
+
+  const getNextClass = (facId) => {
+    const mentorEvents = calendarEvents.filter(ev => {
+      return ev.facultyId === facId && ev.date;
+    });
+    
+    if (mentorEvents.length === 0) return 'No upcoming class scheduled';
+    
+    const now = new Date();
+    const upcoming = mentorEvents.filter(ev => {
+      try {
+        const classDate = new Date(`${ev.date}T${ev.time || '00:00'}`);
+        return classDate >= now;
+      } catch {
+        return false;
+      }
+    });
+
+    if (upcoming.length === 0) return 'No upcoming class scheduled';
+    return `${upcoming[0].date} at ${upcoming[0].time}`;
+  };
+
+  const resolvedMentors = [];
+  
+  // 1. Process from real-time assignedFaculty query list
+  assignedFacultyList.forEach(af => {
+    if (af.facultyId && !resolvedMentors.some(m => m.facultyId === af.facultyId)) {
+      resolvedMentors.push({
+        facultyId: af.facultyId,
+        subject: af.subject || 'Python Mastery',
+        assignedDate: af.assignedAt || ''
+      });
+    }
+  });
+
+  // 2. Process from user profile's assignedFaculty array
+  const profileAssignments = user?.assignedFaculty || [];
+  profileAssignments.forEach(item => {
+    let facultyId = '';
+    let subject = '';
+    let date = '';
+    if (typeof item === 'string') {
+      facultyId = item;
+    } else if (item && typeof item === 'object') {
+      facultyId = item.facultyId;
+      subject = item.subject || '';
+      date = item.assignedDate || '';
+    }
+    
+    if (facultyId && !resolvedMentors.some(m => m.facultyId === facultyId)) {
+      resolvedMentors.push({
+        facultyId,
+        subject: subject || 'Python Mastery',
+        assignedDate: date
+      });
+    }
+  });
+
+  const enrichedFacultyList = resolvedMentors.map(m => {
+    const profile = allFaculty.find(f => f.id === m.facultyId || f.email === m.facultyId);
     return {
-      ...af,
-      displayName: profile?.displayName || af.studentName || 'Faculty Mentor',
+      facultyId: m.facultyId,
+      displayName: profile?.displayName || 'Faculty Mentor',
       photoURL: profile?.photoURL || '',
+      email: profile?.email || '',
+      phone: profile?.phone || '',
       availability: profile?.availability || 'Available',
-      subject: af.subject || profile?.subjects?.[0] || 'Python Mastery'
+      officeTimings: profile?.officeTimings || 'Flexible Hours',
+      subject: m.subject || profile?.subjects?.[0] || 'Python Mastery',
+      assignedDate: m.assignedDate
     };
   });
+
   let mentorList = enrichedFacultyList;
 
   if (mentorList.length === 0 && allFaculty.length > 0) {
     const activeCourse = user?.course || 'Python Mastery';
     const fallbackFac = allFaculty.find(f => f.email === (activeCourse.toLowerCase().includes('python') ? 'sharmisthaghosh855@gmail.com' : 'tapadarhribhu350@gmail.com'));
     if (fallbackFac) {
-      mentorList = [{ id: 'fallback', facultyId: fallbackFac.id, displayName: fallbackFac.displayName, photoURL: fallbackFac.photoURL, subject: activeCourse, availability: fallbackFac.availability || 'Available' }];
+      mentorList = [{ id: 'fallback', facultyId: fallbackFac.id, displayName: fallbackFac.displayName, photoURL: fallbackFac.photoURL, subject: activeCourse, availability: fallbackFac.availability || 'Available', officeTimings: fallbackFac.officeTimings || 'Flexible Hours' }];
     }
   }
-
-  const calendarEvents = [...calendarEventsRaw.calendar, ...calendarEventsRaw.schedules];
-  calendarEvents.sort((a, b) => (a.date || '').localeCompare(b.date || '') || (a.time || '').localeCompare(b.time || ''));
 
   const sendAutomatedChatMessage = async (targetFacultyId, targetFacultyName, classTitle, proposedDate, proposedTime, reason) => {
     if (!targetFacultyId || targetFacultyId === 'fallback') return;
     const roomId = user.uid < targetFacultyId ? `${user.uid}_${targetFacultyId}` : `${targetFacultyId}_${user.uid}`;
-    const roomRef = doc(db, 'chatRooms', roomId);
+    const roomRef = doc(db, 'communityThreads', roomId);
     await setDoc(roomRef, {
       id: roomId, participants: [user.uid, targetFacultyId], lastMessage: `Rescheduling: ${classTitle}`, lastMessageTime: serverTimestamp(),
       studentUnreadCount: 0, facultyUnreadCount: increment(1)
     }, { merge: true });
-    await addDoc(collection(db, `chatRooms/${roomId}/messages`), {
-      senderId: user.uid, text: `🚨 Rescheduling Request:\nClass: ${classTitle}\nProposed: ${proposedDate} at ${proposedTime}\nReason: ${reason}`,
-      createdAt: serverTimestamp()
+    await addDoc(collection(db, `communityThreads/${roomId}/messages`), {
+      senderId: user.uid,
+      receiverId: targetFacultyId,
+      message: `🚨 Rescheduling Request:\nClass: ${classTitle}\nProposed: ${proposedDate} at ${proposedTime}\nReason: ${reason}`,
+      text: `🚨 Rescheduling Request:\nClass: ${classTitle}\nProposed: ${proposedDate} at ${proposedTime}\nReason: ${reason}`, // Legacy compatibility
+      readStatus: false,
+      seen: false, // Legacy compatibility
+      timestamp: serverTimestamp(),
+      createdAt: serverTimestamp(), // Legacy compatibility
+      attachments: [],
+      messageType: 'text'
     });
   };
 
@@ -237,7 +372,7 @@ const StudentOverview = () => {
       const userRef = doc(db, 'users', user.uid);
       const currentEnrolled = user?.enrolledCourses || (user?.course && user.course !== 'Not specified' ? [user.course] : ['Python Mastery']);
       if (!currentEnrolled.includes(courseTitle)) {
-        await updateDoc(userRef, { enrolledCourses: [...currentEnrolled, courseTitle] });
+        await setDoc(userRef, { enrolledCourses: [...currentEnrolled, courseTitle] }, { merge: true });
         setToast(`Enrolled in ${courseTitle}! 📚`);
       }
     } catch (err) { setToast("Failed to enroll."); }
@@ -253,10 +388,10 @@ const StudentOverview = () => {
         const updatedOverrides = { ...(user?.courseOverrides || {}) };
         delete updatedOverrides[courseTitle];
 
-        await updateDoc(userRef, { 
+        await setDoc(userRef, { 
           enrolledCourses: updatedEnrolled,
           courseOverrides: updatedOverrides
-        });
+        }, { merge: true });
         setToast(`Removed ${courseTitle}.`);
       } catch (err) {
         console.error(err);
@@ -274,7 +409,7 @@ const StudentOverview = () => {
         ...(user?.courseOverrides || {}),
         [editingCourseName]: { attended: customAttended, total: customTotal }
       };
-      await updateDoc(userRef, { courseOverrides: updatedOverrides });
+      await setDoc(userRef, { courseOverrides: updatedOverrides }, { merge: true });
       setToast(`Updated attendance details for ${editingCourseName}!`);
       setIsEditCourseModalOpen(false);
       setEditingCourseName(null);
@@ -369,22 +504,25 @@ const StudentOverview = () => {
               No classes scheduled.
             </div>
           ) : (
-            filteredEvents.map(ev => (
-              <div key={ev.id} style={{ display: 'flex', flexDirection: 'column', gap: '4px', padding: '12px', background: 'var(--bg)', borderRadius: '12px', border: '1px solid var(--border)', fontSize: '0.8rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <strong style={{ color: 'var(--dark)' }}>{ev.title}</strong>
-                  <span style={{ fontSize: '0.7rem', padding: '2px 6px', borderRadius: '4px', background: 'var(--primary-light)', color: 'var(--primary)', fontWeight: 700 }}>
-                    {ev.type || 'class'}
-                  </span>
+            filteredEvents.map(ev => {
+              const eventColor = getEventColor(ev.eventType);
+              return (
+                <div key={ev.id} style={{ display: 'flex', flexDirection: 'column', gap: '4px', padding: '12px', background: `${eventColor}08`, borderRadius: '12px', borderLeft: `4px solid ${eventColor}`, borderTop: '1px solid var(--border)', borderRight: '1px solid var(--border)', borderBottom: '1px solid var(--border)', fontSize: '0.8rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <strong style={{ color: 'var(--dark)' }}>{ev.title}</strong>
+                    <span style={{ fontSize: '0.68rem', padding: '2px 6px', borderRadius: '4px', background: `${eventColor}15`, color: eventColor, fontWeight: 800 }}>
+                      {ev.eventType || 'Regular Class'}
+                    </span>
+                  </div>
+                  <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>🕒 {ev.startTime} - {ev.endTime || 'End'}</div>
+                  {ev.meetLink && (
+                    <a href={ev.meetLink} target="_blank" rel="noopener noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', marginTop: '6px', color: eventColor, fontWeight: 700, fontSize: '0.75rem' }}>
+                      Join Google Meet <ArrowUpRight size={12} />
+                    </a>
+                  )}
                 </div>
-                <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>🕒 {ev.time}</div>
-                {ev.meetingLink && (
-                  <a href={ev.meetingLink} target="_blank" rel="noopener noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', marginTop: '6px', color: 'var(--primary)', fontWeight: 700, fontSize: '0.75rem' }}>
-                    Join Meeting <ArrowUpRight size={12} />
-                  </a>
-                )}
-              </div>
-            ))
+              );
+            })
           )}
         </div>
       </div>
@@ -612,10 +750,16 @@ const StudentOverview = () => {
             </div>
           </div>
 
-          {/* Mentors Panel (Replacing Achievements) */}
+          {/* Mentors Panel */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            <h3 style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--dark)' }}>My Mentors</h3>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '20px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--dark)' }}>Your Assigned Mentor</h3>
+              <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-light)' }}>
+                {mentorList.length} Active Mentor{mentorList.length !== 1 ? 's' : ''}
+              </span>
+            </div>
+            
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '20px' }}>
               {mentorList.map((mentor, index) => {
                 const borderColors = ['#FFA726', '#AB47BC', '#536DFE'];
                 const bColor = borderColors[index % borderColors.length];
@@ -624,65 +768,115 @@ const StudentOverview = () => {
                 const buttonColors = ['#FFA726', '#AB47BC', 'var(--primary)'];
                 const btnColor = buttonColors[index % buttonColors.length];
 
+                const nextClassText = getNextClass(mentor.facultyId);
+
                 return (
                   <div
-                    key={mentor.id}
+                    key={mentor.facultyId}
                     style={{
                       padding: '24px',
-                      background: bgColor,
+                      background: 'white',
                       borderRadius: '24px',
-                      border: `2px solid ${bColor}`,
+                      border: `1.5px solid var(--border)`,
+                      boxShadow: 'var(--shadow-sm)',
                       display: 'flex',
-                      alignItems: 'center',
+                      flexDirection: 'column',
                       gap: '16px',
                       position: 'relative',
                       transition: 'all 0.25s ease-in-out'
                     }}
+                    onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = 'var(--shadow-md)'; }}
+                    onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = 'var(--shadow-sm)'; }}
                   >
-                    <img
-                      src={mentor.photoURL || 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&q=80&w=150'}
-                      alt={mentor.displayName}
-                      style={{ width: '56px', height: '56px', borderRadius: '16px', objectFit: 'cover', border: `2px solid ${bColor}` }}
-                    />
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <h4 style={{ margin: '0 0 2px 0', fontSize: '0.95rem', fontWeight: 800, color: 'var(--dark)' }}>{mentor.displayName}</h4>
-                      <p style={{ margin: '0 0 8px 0', fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>{mentor.subject || 'Faculty Mentor'}</p>
-                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                        <span style={{
-                          padding: '2px 8px',
-                          borderRadius: '6px',
-                          fontSize: '0.68rem',
-                          fontWeight: 800,
-                          background: mentor.availability === 'Busy' ? 'rgba(239,83,80,0.1)' : 'rgba(102,187,106,0.1)',
-                          color: mentor.availability === 'Busy' ? 'var(--danger)' : 'var(--success)'
-                        }}>
-                          {mentor.availability || 'Available'}
-                        </span>
-                        <button
-                          onClick={() => navigate('/dashboard/community', { state: { startChatWith: mentor.facultyId } })}
-                          style={{
-                            padding: '4px 12px',
-                            borderRadius: '8px',
-                            background: btnColor,
-                            color: 'white',
-                            fontSize: '0.72rem',
-                            fontWeight: 700,
-                            cursor: 'pointer',
-                            transition: 'opacity 0.2s'
-                          }}
-                          onMouseEnter={e => e.currentTarget.style.opacity = '0.9'}
-                          onMouseLeave={e => e.currentTarget.style.opacity = '1'}
-                        >
-                          Chat
-                        </button>
+                    <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
+                      <img
+                        src={mentor.photoURL || 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&q=80&w=150'}
+                        alt={mentor.displayName}
+                        style={{ width: '64px', height: '64px', borderRadius: '18px', objectFit: 'cover', border: `2.5px solid ${bColor}` }}
+                      />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <h4 style={{ margin: '0 0 2px 0', fontSize: '1rem', fontWeight: 800, color: 'var(--dark)' }}>{mentor.displayName}</h4>
+                        <p style={{ margin: '0 0 8px 0', fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>{mentor.subject || 'Faculty Mentor'}</p>
+                        
+                        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                          <span style={{
+                            padding: '3px 8px',
+                            borderRadius: '100px',
+                            fontSize: '0.68rem',
+                            fontWeight: 800,
+                            background: mentor.availability === 'Busy' ? 'rgba(239,83,80,0.1)' : 'rgba(102,187,106,0.1)',
+                            color: mentor.availability === 'Busy' ? 'var(--danger)' : 'var(--success)'
+                          }}>
+                            {mentor.availability || 'Available'}
+                          </span>
+                          <span style={{ fontSize: '0.7rem', color: 'var(--text-light)' }}>
+                            {mentor.officeTimings || 'Flexible Hours'}
+                          </span>
+                        </div>
                       </div>
+                    </div>
+
+                    <div style={{ borderTop: '1px solid var(--border)', paddingTop: '12px', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                      <div>📅 <strong>Next Scheduled Class:</strong></div>
+                      <div style={{ color: 'var(--primary)', fontWeight: 700, marginTop: '4px', fontSize: '0.82rem' }}>
+                        {nextClassText}
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '10px', marginTop: '4px' }}>
+                      <button
+                        onClick={() => navigate('/dashboard/community', { state: { startChatWith: mentor.facultyId } })}
+                        style={{
+                          flex: 1,
+                          padding: '10px 16px',
+                          borderRadius: '12px',
+                          background: btnColor,
+                          color: 'white',
+                          border: 'none',
+                          fontSize: '0.8rem',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '6px',
+                          transition: 'opacity 0.2s'
+                        }}
+                        onMouseEnter={e => e.currentTarget.style.opacity = '0.9'}
+                        onMouseLeave={e => e.currentTarget.style.opacity = '1'}
+                      >
+                        <MessageSquare size={14} /> Message
+                      </button>
+                      
+                      {mentor.phone && (
+                        <a
+                          href={`tel:${mentor.phone}`}
+                          style={{
+                            padding: '10px 12px',
+                            borderRadius: '12px',
+                            background: 'var(--surface)',
+                            color: 'var(--primary)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            border: '1px solid var(--border)',
+                            transition: 'background-color 0.2s'
+                          }}
+                          onMouseEnter={e => e.currentTarget.style.backgroundColor = 'var(--primary-light)'}
+                          onMouseLeave={e => e.currentTarget.style.backgroundColor = 'var(--surface)'}
+                        >
+                          <Phone size={14} />
+                        </a>
+                      )}
                     </div>
                   </div>
                 );
               })}
               {mentorList.length === 0 && (
-                <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)', gridColumn: '1 / -1', border: '1px dashed var(--border)', borderRadius: '24px' }}>
-                  No mentors assigned yet.
+                <div style={{ padding: '32px', textAlign: 'center', color: 'var(--text-muted)', gridColumn: '1 / -1', border: '1.5px dashed var(--border)', borderRadius: '24px', background: 'rgba(0,0,0,0.01)' }}>
+                  <Users size={32} style={{ opacity: 0.4, marginBottom: '8px' }} />
+                  <p style={{ fontWeight: 600, fontSize: '0.88rem', margin: 0 }}>No mentors assigned yet.</p>
+                  <p style={{ fontSize: '0.78rem', color: 'var(--text-light)', margin: '4px 0 0 0' }}>Your course mentor will appear here once alloted by the faculty/admin.</p>
                 </div>
               )}
             </div>
@@ -693,6 +887,61 @@ const StudentOverview = () => {
         {/* Right Column */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '32px' }}>
           
+          {/* Class Countdown & Google Meet CTA (Phase 5) */}
+          {nextEventObj && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <h3 style={{ fontSize: '1.15rem', fontWeight: 800, color: 'var(--dark)' }}>Next Class Countdown</h3>
+              <div style={{
+                background: 'linear-gradient(135deg, #10B981, #059669)',
+                color: 'white',
+                padding: '24px',
+                borderRadius: '24px',
+                boxShadow: 'var(--shadow-md)',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '14px',
+                position: 'relative',
+                overflow: 'hidden'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: '0.7rem', padding: '3px 8px', borderRadius: '100px', background: 'rgba(255,255,255,0.2)', fontWeight: 800 }}>
+                    {nextEventObj.eventType || 'Class'}
+                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#FFF', animation: 'pulse 1.2s infinite' }} />
+                    <span style={{ fontSize: '0.72rem', fontWeight: 700 }}>LIVE SYNC</span>
+                  </div>
+                </div>
+                <div>
+                  <h4 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800, color: 'white' }}>{nextEventObj.title}</h4>
+                  <p style={{ margin: '4px 0 0 0', fontSize: '0.8rem', opacity: 0.9 }}>Faculty: {nextEventObj.facultyName}</p>
+                </div>
+                <div style={{ fontSize: '1.5rem', fontWeight: 900, fontFamily: 'var(--font-heading)' }}>
+                  {countdownText}
+                </div>
+                <div style={{ fontSize: '0.75rem', opacity: 0.85 }}>
+                  Scheduled: {nextEventObj.startDate} @ {nextEventObj.startTime}
+                </div>
+                {nextEventObj.meetLink && (
+                  <a
+                    href={nextEventObj.meetLink}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="btn"
+                    style={{
+                      background: 'white', color: '#059669', fontWeight: 800, fontSize: '0.82rem',
+                      padding: '10px', borderRadius: '12px', display: 'flex', alignItems: 'center',
+                      justifyContent: 'center', gap: '6px', cursor: 'pointer', border: 'none',
+                      boxShadow: '0 4px 12px rgba(0,0,0,0.08)'
+                    }}
+                  >
+                    <Play size={14} fill="#059669" /> Join Google Meet Session
+                  </a>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Calendar Widget */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             <h3 style={{ fontSize: '1.15rem', fontWeight: 800, color: 'var(--dark)' }}>My Schedule</h3>

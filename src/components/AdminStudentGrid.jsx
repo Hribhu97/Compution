@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { db } from '../firebase';
-import { collection, onSnapshot, query, where, addDoc, serverTimestamp, getDocs, doc, updateDoc } from 'firebase/firestore';
+import { collection, onSnapshot, query, where, addDoc, serverTimestamp, getDocs, doc, updateDoc, setDoc } from 'firebase/firestore';
 import { CheckCircle2, XCircle, Search, Mail, Phone, BookOpen } from 'lucide-react';
 import Modal from './Modal';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
@@ -87,9 +87,9 @@ const AdminStudentGrid = () => {
     setUpdatingProgress(true);
     try {
       const userRef = doc(db, 'users', selectedStudent.id);
-      await updateDoc(userRef, {
+      await setDoc(userRef, {
         courseProgress: tempProgress
-      });
+      }, { merge: true });
       setSelectedStudent(prev => ({ ...prev, courseProgress: tempProgress }));
     } catch (err) {
       console.error("Error updating progress:", err);
