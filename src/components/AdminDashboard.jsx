@@ -6,7 +6,7 @@ import { useToast } from '../contexts/ToastContext';
 import { initializeApp } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
 import { collection, collectionGroup, doc, getDoc, updateDoc, deleteDoc, getDocs, addDoc, setDoc, serverTimestamp, onSnapshot, query, where, orderBy, runTransaction, writeBatch } from 'firebase/firestore';
-import { Search, Download, Plus, MoreHorizontal, Eye, ArrowUpRight, Sparkles, ShieldCheck, Trash2, RefreshCw, CheckCircle, XCircle, AlertTriangle, Users, Bell, AlertCircle, Calendar, GraduationCap, ChevronDown, Mail, Send, Pencil, X, ShieldAlert, MessageSquare, Briefcase, UserCheck, Loader2, Check, CheckCheck, Info } from 'lucide-react';
+import { Search, Download, Plus, MoreHorizontal, Eye, ArrowUpRight, Sparkles, ShieldCheck, Trash2, RefreshCw, CheckCircle, XCircle, AlertTriangle, Users, Bell, AlertCircle, Calendar, GraduationCap, ChevronDown, Mail, Send, Pencil, X, ShieldAlert, MessageSquare, Briefcase, UserCheck, Loader2, Check, CheckCheck, Info, Activity, CreditCard, FileText, BarChart2, PieChart as PieChartIcon } from 'lucide-react';
 import Modal from './Modal';
 import SystemHealthPanel from './SystemHealthPanel';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, PieChart, Pie } from 'recharts';
@@ -50,6 +50,7 @@ const AdminDashboard = () => {
   const { showToast } = useToast();
   // Navigation Tabs
   const [activePanelTab, setActivePanelTab] = useState('students'); 
+  const [activePanelGroup, setActivePanelGroup] = useState('People Management');
   const [pendingRoleChanges, setPendingRoleChanges] = useState({});
   const [auditLogs, setAuditLogs] = useState([]);
   const [doctorRunning, setDoctorRunning] = useState(false);
@@ -1977,6 +1978,10 @@ const AdminDashboard = () => {
     return acc + (s.pendingAmount !== undefined ? s.pendingAmount : (s.feeStatus !== 'Paid' ? (s.feesAmount || 2400) : 0));
   }, 0);
 
+  const totalMonthlyFees = studentsList.reduce((acc, s) => {
+    return acc + (s.feesAmount || 2400);
+  }, 0);
+
   const courseDensityData = () => {
     const densities = {};
     studentsList.forEach(s => {
@@ -2531,6 +2536,7 @@ const AdminDashboard = () => {
           { label: 'Total Students', value: totalStudents, bg: 'var(--surface)', color: 'var(--primary)' },
           { label: 'Faculty Staff', value: totalFaculty, bg: 'var(--surface)', color: 'var(--success)' },
           { label: 'Management Members', value: totalMembers, bg: 'var(--surface)', color: '#D500F9' },
+          { label: 'Total Monthly Fees', value: `₹${totalMonthlyFees.toLocaleString('en-IN')}`, bg: 'var(--surface)', color: 'var(--success)' },
           { label: 'Pending Tuition fees', value: `₹${pendingFeesTotal.toLocaleString('en-IN')}`, bg: 'var(--surface)', color: 'var(--danger)' }
         ].map((item, i) => (
           <div key={i} className="card" style={{ padding: '16px 20px', background: item.bg }}>
@@ -2540,35 +2546,164 @@ const AdminDashboard = () => {
         ))}
       </div>
 
-      {/* Inner Navigation Tabs */}
-      <div style={{ display: 'flex', gap: '8px', borderBottom: '1px solid var(--border)', paddingBottom: '12px', flexWrap: 'wrap', flexShrink: 0 }}>
-        {[
-          { key: 'overview', label: user?.role === 'admin' ? 'Admin Overview' : user?.role === 'faculty' ? 'Faculty Overview' : 'Member Overview', roles: ['admin', 'faculty', 'member'] },
-          { key: 'students', label: 'Students Roster', roles: ['admin', 'faculty', 'member'] },
-          { key: 'billing', label: 'Payments & Billing', roles: ['admin'] },
-          { key: 'faculty', label: 'Faculty Staff', roles: ['admin'] },
-          { key: 'members', label: 'Management Members', roles: ['admin'] },
-          { key: 'attendance', label: 'Attendance logs', roles: ['admin'] },
-          { key: 'schedules', label: 'Class Schedules', roles: ['admin', 'faculty'] },
-          { key: 'chats', label: 'Doubt Chats', roles: ['admin', 'faculty', 'member'] },
-          { key: 'notifications', label: 'Alert logs', roles: ['admin', 'member'] },
-          { key: 'roles', label: 'Roles Panel', roles: ['admin'] },
-          { key: 'analytics', label: 'Analytics', roles: ['admin'] },
-          { key: 'audit_logs', label: 'System Audits', roles: ['admin'] },
-          { key: 'system_health', label: 'System Health', roles: ['admin'] }
-        ].filter(tab => tab.roles.includes(user?.role || 'student')).map(tab => (
-          <button
-            key={tab.key}
-            onClick={() => { setActivePanelTab(tab.key); setSearch(''); }}
-            style={{
-              padding: '8px 16px', borderRadius: '8px', fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer', transition: 'all 0.2s',
-              background: activePanelTab === tab.key ? 'var(--primary)' : 'var(--surface)',
-              color: activePanelTab === tab.key ? 'white' : 'var(--text-muted)'
-            }}
-          >
-            {tab.label}
-          </button>
-        ))}
+      {/* Inner Navigation Tabs - Framer-like UI */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', borderBottom: '1px solid var(--border)', paddingBottom: '16px', flexShrink: 0 }}>
+        {(() => {
+          const adminTabGroups = [
+            {
+              group: 'Core & Overview',
+              tabs: [
+                { key: 'overview', label: user?.role === 'admin' ? 'Admin Overview' : user?.role === 'faculty' ? 'Faculty Overview' : 'Member Overview', roles: ['admin', 'faculty', 'member'], icon: <PieChartIcon size={16} /> },
+                { key: 'analytics', label: 'Analytics', roles: ['admin'], icon: <BarChart2 size={16} /> },
+              ]
+            },
+            {
+              group: 'Academics',
+              tabs: [
+                { key: 'schedules', label: 'Class Schedules', roles: ['admin', 'faculty'], icon: <Calendar size={16} /> },
+                { key: 'attendance', label: 'Attendance logs', roles: ['admin'], icon: <CheckCircle size={16} /> },
+                { key: 'chats', label: 'Doubt Chats', roles: ['admin', 'faculty', 'member'], icon: <MessageSquare size={16} /> },
+              ]
+            },
+            {
+              group: 'People Management',
+              tabs: [
+                { key: 'students', label: 'Students Roster', roles: ['admin', 'faculty', 'member'], icon: <Users size={16} /> },
+                { key: 'faculty', label: 'Faculty Staff', roles: ['admin'], icon: <GraduationCap size={16} /> },
+                { key: 'members', label: 'Management Members', roles: ['admin'], icon: <Briefcase size={16} /> },
+                { key: 'roles', label: 'Roles Panel', roles: ['admin'], icon: <ShieldAlert size={16} /> },
+              ]
+            },
+            {
+              group: 'Operations & System',
+              tabs: [
+                { key: 'billing', label: 'Payments & Billing', roles: ['admin'], icon: <CreditCard size={16} /> },
+                { key: 'notifications', label: 'Alert logs', roles: ['admin', 'member'], icon: <Bell size={16} /> },
+                { key: 'audit_logs', label: 'System Audits', roles: ['admin'], icon: <FileText size={16} /> },
+                { key: 'system_health', label: 'System Health', roles: ['admin'], icon: <Activity size={16} /> }
+              ]
+            }
+          ];
+
+          return (
+            <>
+              {/* Group Selector */}
+              <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '4px' }} className="hide-scrollbar">
+                {adminTabGroups.map(grp => {
+                  const hasVisibleTabs = grp.tabs.some(t => t.roles.includes(user?.role || 'student'));
+                  if (!hasVisibleTabs) return null;
+                  const isActiveGroup = activePanelGroup === grp.group;
+                  return (
+                    <button
+                      key={grp.group}
+                      onClick={() => {
+                        setActivePanelGroup(grp.group);
+                        const firstTab = grp.tabs.find(t => t.roles.includes(user?.role || 'student'));
+                        if (firstTab) setActivePanelTab(firstTab.key);
+                      }}
+                      style={{
+                        padding: '10px 18px',
+                        borderRadius: '100px',
+                        fontWeight: 800,
+                        fontSize: '0.88rem',
+                        cursor: 'pointer',
+                        background: isActiveGroup ? 'var(--dark)' : 'transparent',
+                        color: isActiveGroup ? 'white' : 'var(--text-muted)',
+                        border: 'none',
+                        transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                        whiteSpace: 'nowrap',
+                        position: 'relative'
+                      }}
+                    >
+                      {grp.group}
+                      {isActiveGroup && (
+                        <motion.div
+                          layoutId="activeGroupIndicator"
+                          style={{
+                            position: 'absolute',
+                            bottom: -4,
+                            left: '50%',
+                            transform: 'translateX(-50%)',
+                            width: 6,
+                            height: 6,
+                            borderRadius: '50%',
+                            background: 'var(--primary)'
+                          }}
+                        />
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Sub-tabs for the active group */}
+              <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginTop: '4px' }}>
+                <AnimatePresence mode="popLayout">
+                  {adminTabGroups.find(g => g.group === activePanelGroup)?.tabs
+                    .filter(tab => tab.roles.includes(user?.role || 'student'))
+                    .map(tab => {
+                      const isActive = activePanelTab === tab.key;
+                      return (
+                        <motion.button
+                          layout
+                          initial={{ opacity: 0, scale: 0.9 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          exit={{ opacity: 0, scale: 0.9 }}
+                          transition={{ duration: 0.2 }}
+                          key={tab.key}
+                          onClick={() => { setActivePanelTab(tab.key); setSearch(''); }}
+                          style={{
+                            padding: '8px 16px',
+                            borderRadius: '12px',
+                            fontWeight: 700,
+                            fontSize: '0.85rem',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            background: isActive ? 'rgba(83, 109, 254, 0.1)' : 'var(--surface)',
+                            color: isActive ? 'var(--primary)' : 'var(--text-muted)',
+                            border: isActive ? '1px solid rgba(83, 109, 254, 0.2)' : '1px solid var(--border)',
+                            transition: 'all 0.2s',
+                            position: 'relative'
+                          }}
+                          onMouseEnter={(e) => {
+                            if (!isActive) {
+                              e.currentTarget.style.borderColor = 'var(--primary)';
+                              e.currentTarget.style.color = 'var(--primary)';
+                            }
+                          }}
+                          onMouseLeave={(e) => {
+                            if (!isActive) {
+                              e.currentTarget.style.borderColor = 'var(--border)';
+                              e.currentTarget.style.color = 'var(--text-muted)';
+                            }
+                          }}
+                        >
+                          {tab.icon}
+                          {tab.label}
+                          {isActive && (
+                            <motion.div
+                              layoutId="activeSubTabIndicator"
+                              style={{
+                                position: 'absolute',
+                                bottom: -1,
+                                left: 16,
+                                right: 16,
+                                height: 2,
+                                background: 'var(--primary)',
+                                borderRadius: '2px 2px 0 0'
+                              }}
+                            />
+                          )}
+                        </motion.button>
+                      );
+                    })}
+                </AnimatePresence>
+              </div>
+            </>
+          );
+        })()}
       </div>
 
       {/* Main Container Area */}
