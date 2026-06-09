@@ -6,7 +6,7 @@ import { useToast } from '../contexts/ToastContext';
 import { initializeApp } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
 import { collection, collectionGroup, doc, getDoc, updateDoc, deleteDoc, getDocs, addDoc, setDoc, serverTimestamp, onSnapshot, query, where, orderBy, runTransaction, writeBatch } from 'firebase/firestore';
-import { Search, Download, Plus, MoreHorizontal, Eye, ArrowUpRight, Sparkles, ShieldCheck, Trash2, RefreshCw, CheckCircle, XCircle, AlertTriangle, Users, Bell, AlertCircle, Calendar, GraduationCap, ChevronDown, Mail, Send, Pencil, X, ShieldAlert, MessageSquare, Briefcase, UserCheck, Loader2, Check, CheckCheck, Info, Activity, CreditCard, FileText, BarChart2, PieChart as PieChartIcon } from 'lucide-react';
+import { Search, Download, Plus, MoreHorizontal, Eye, ArrowUpRight, Sparkles, ShieldCheck, Trash2, RefreshCw, CheckCircle, XCircle, AlertTriangle, Users, Bell, AlertCircle, Calendar, GraduationCap, ChevronDown, Mail, Send, Pencil, X, ShieldAlert, MessageSquare, Briefcase, UserCheck, Loader2, Check, CheckCheck, Info } from 'lucide-react';
 import Modal from './Modal';
 import SystemHealthPanel from './SystemHealthPanel';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, PieChart, Pie } from 'recharts';
@@ -50,11 +50,11 @@ const AdminDashboard = () => {
   const { showToast } = useToast();
   // Navigation Tabs
   const [activePanelTab, setActivePanelTab] = useState('students'); 
-  const [activePanelGroup, setActivePanelGroup] = useState('People Management');
   const [pendingRoleChanges, setPendingRoleChanges] = useState({});
   const [auditLogs, setAuditLogs] = useState([]);
   const [doctorRunning, setDoctorRunning] = useState(false);
   const [doctorResults, setDoctorResults] = useState(null);
+  const [isRepairingFinancial, setIsRepairingFinancial] = useState(false);
   const [activeListenersCount, setActiveListenersCount] = useState(9); // Pooled listener count
   const [lastDrawerMsgTime, setLastDrawerMsgTime] = useState(0);
 
@@ -1309,11 +1309,69 @@ const AdminDashboard = () => {
   // ── UPDATE FEE STATUS ──
   const handleUpdateFeeStatus = async (studentId, status) => {
     try {
-      await setDoc(doc(db, 'users', studentId), { feeStatus: status }, { merge: true });
+      const feesRef = collection(db, 'users', studentId, 'fees');
+      const feesSnap = await getDocs(feesRef);
+      
+      await runTransaction(db, async (transaction) => {
+        const userRef = doc(db, 'users', studentId);
+        const userSnap = await transaction.get(userRef);
+        if (!userSnap.exists()) {
+          throw new Error('Student profile not found');
+        }
+        
+        const userData = userSnap.data();
+        const feesAmount = Number(userData.feesAmount) || 0;
+        let paidAmount = Number(userData.paidAmount) || 0;
+        let pendingAmount = Number(userData.pendingAmount) || 0;
+        
+        let targetStatus = status;
+        if (status === 'Paid') {
+          paidAmount = feesAmount;
+          pendingAmount = 0;
+        } else {
+          if (paidAmount > feesAmount) {
+            paidAmount = feesAmount;
+          }
+          pendingAmount = Math.max(0, feesAmount - paidAmount);
+          if (pendingAmount === 0 && feesAmount > 0) {
+            targetStatus = 'Paid';
+            paidAmount = feesAmount;
+          }
+        }
+        
+        // Validation rules
+        if (paidAmount > feesAmount) {
+          paidAmount = feesAmount;
+        }
+        pendingAmount = Math.max(0, feesAmount - paidAmount);
+        if (targetStatus === 'Paid') {
+          pendingAmount = 0;
+          paidAmount = feesAmount;
+        }
+        
+        transaction.update(userRef, {
+          feeStatus: targetStatus,
+          paidAmount,
+          pendingAmount,
+          updatedAt: new Date().toISOString()
+        });
+        
+        if (targetStatus === 'Paid') {
+          feesSnap.forEach(feeDoc => {
+            const feeData = feeDoc.data();
+            const amount = Number(feeData.amount) || 0;
+            transaction.update(feeDoc.ref, {
+              status: 'Paid',
+              paidAmount: amount
+            });
+          });
+        }
+      });
+      
       await logAdminAction('fee_status_update', studentId, { feeStatus: status });
       triggerToast(`Fee status updated to ${status}!`, 'success');
     } catch (err) {
-      console.error(err);
+      console.error("Error updating fee status in transaction:", err);
       triggerToast('Failed to update fee status', 'danger');
     }
   };
@@ -1589,6 +1647,27 @@ const AdminDashboard = () => {
       triggerToast('System Doctor encountered an error', 'danger');
     } finally {
       setDoctorRunning(false);
+    }
+  };
+  
+  // ── REPAIR FINANCIAL RECORDS ──
+  const handleRepairFinancialRecords = async () => {
+    if (isRepairingFinancial) return;
+    setIsRepairingFinancial(true);
+    try {
+      const studentsToScan = allUsers.filter(u => u.role?.toLowerCase() === 'student');
+      
+      // Perform transaction-safe sync for all students
+      const repairPromises = studentsToScan.map(student => syncStudentFeeAggregates(student.id));
+      await Promise.all(repairPromises);
+      
+      await logAdminAction('financial_records_repair', '', { count: studentsToScan.length });
+      triggerToast("Financial records repaired successfully", "success");
+    } catch (err) {
+      console.error("Financial records repair failed:", err);
+      triggerToast("Financial repair failed", "danger");
+    } finally {
+      setIsRepairingFinancial(false);
     }
   };
 
@@ -1975,11 +2054,11 @@ const AdminDashboard = () => {
   const activeChatRooms = chatRoomsList.length;
 
   const pendingFeesTotal = studentsList.reduce((acc, s) => {
-    return acc + (s.pendingAmount !== undefined ? s.pendingAmount : (s.feeStatus !== 'Paid' ? (s.feesAmount || 2400) : 0));
+    return acc + (Number(s.pendingAmount) || 0);
   }, 0);
 
   const totalMonthlyFees = studentsList.reduce((acc, s) => {
-    return acc + (s.feesAmount || 2400);
+    return acc + (Number(s.feesAmount) || 0);
   }, 0);
 
   const courseDensityData = () => {
@@ -2534,10 +2613,10 @@ const AdminDashboard = () => {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
         {[
           { label: 'Total Students', value: totalStudents, bg: 'var(--surface)', color: 'var(--primary)' },
-          { label: 'Faculty Staff', value: totalFaculty, bg: 'var(--surface)', color: 'var(--success)' },
-          { label: 'Management Members', value: totalMembers, bg: 'var(--surface)', color: '#D500F9' },
           { label: 'Total Monthly Fees', value: `₹${totalMonthlyFees.toLocaleString('en-IN')}`, bg: 'var(--surface)', color: 'var(--success)' },
-          { label: 'Pending Tuition fees', value: `₹${pendingFeesTotal.toLocaleString('en-IN')}`, bg: 'var(--surface)', color: 'var(--danger)' }
+          { label: 'Pending Tuition fees', value: `₹${pendingFeesTotal.toLocaleString('en-IN')}`, bg: 'var(--surface)', color: 'var(--danger)' },
+          { label: 'Faculty Staff', value: totalFaculty, bg: 'var(--surface)', color: 'var(--primary)' },
+          { label: 'Management Members', value: totalMembers, bg: 'var(--surface)', color: '#D500F9' }
         ].map((item, i) => (
           <div key={i} className="card" style={{ padding: '16px 20px', background: item.bg }}>
             <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600, marginBottom: '6px' }}>{item.label}</div>
@@ -2546,164 +2625,35 @@ const AdminDashboard = () => {
         ))}
       </div>
 
-      {/* Inner Navigation Tabs - Framer-like UI */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', borderBottom: '1px solid var(--border)', paddingBottom: '16px', flexShrink: 0 }}>
-        {(() => {
-          const adminTabGroups = [
-            {
-              group: 'Core & Overview',
-              tabs: [
-                { key: 'overview', label: user?.role === 'admin' ? 'Admin Overview' : user?.role === 'faculty' ? 'Faculty Overview' : 'Member Overview', roles: ['admin', 'faculty', 'member'], icon: <PieChartIcon size={16} /> },
-                { key: 'analytics', label: 'Analytics', roles: ['admin'], icon: <BarChart2 size={16} /> },
-              ]
-            },
-            {
-              group: 'Academics',
-              tabs: [
-                { key: 'schedules', label: 'Class Schedules', roles: ['admin', 'faculty'], icon: <Calendar size={16} /> },
-                { key: 'attendance', label: 'Attendance logs', roles: ['admin'], icon: <CheckCircle size={16} /> },
-                { key: 'chats', label: 'Doubt Chats', roles: ['admin', 'faculty', 'member'], icon: <MessageSquare size={16} /> },
-              ]
-            },
-            {
-              group: 'People Management',
-              tabs: [
-                { key: 'students', label: 'Students Roster', roles: ['admin', 'faculty', 'member'], icon: <Users size={16} /> },
-                { key: 'faculty', label: 'Faculty Staff', roles: ['admin'], icon: <GraduationCap size={16} /> },
-                { key: 'members', label: 'Management Members', roles: ['admin'], icon: <Briefcase size={16} /> },
-                { key: 'roles', label: 'Roles Panel', roles: ['admin'], icon: <ShieldAlert size={16} /> },
-              ]
-            },
-            {
-              group: 'Operations & System',
-              tabs: [
-                { key: 'billing', label: 'Payments & Billing', roles: ['admin'], icon: <CreditCard size={16} /> },
-                { key: 'notifications', label: 'Alert logs', roles: ['admin', 'member'], icon: <Bell size={16} /> },
-                { key: 'audit_logs', label: 'System Audits', roles: ['admin'], icon: <FileText size={16} /> },
-                { key: 'system_health', label: 'System Health', roles: ['admin'], icon: <Activity size={16} /> }
-              ]
-            }
-          ];
-
-          return (
-            <>
-              {/* Group Selector */}
-              <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '4px' }} className="hide-scrollbar">
-                {adminTabGroups.map(grp => {
-                  const hasVisibleTabs = grp.tabs.some(t => t.roles.includes(user?.role || 'student'));
-                  if (!hasVisibleTabs) return null;
-                  const isActiveGroup = activePanelGroup === grp.group;
-                  return (
-                    <button
-                      key={grp.group}
-                      onClick={() => {
-                        setActivePanelGroup(grp.group);
-                        const firstTab = grp.tabs.find(t => t.roles.includes(user?.role || 'student'));
-                        if (firstTab) setActivePanelTab(firstTab.key);
-                      }}
-                      style={{
-                        padding: '10px 18px',
-                        borderRadius: '100px',
-                        fontWeight: 800,
-                        fontSize: '0.88rem',
-                        cursor: 'pointer',
-                        background: isActiveGroup ? 'var(--dark)' : 'transparent',
-                        color: isActiveGroup ? 'white' : 'var(--text-muted)',
-                        border: 'none',
-                        transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                        whiteSpace: 'nowrap',
-                        position: 'relative'
-                      }}
-                    >
-                      {grp.group}
-                      {isActiveGroup && (
-                        <motion.div
-                          layoutId="activeGroupIndicator"
-                          style={{
-                            position: 'absolute',
-                            bottom: -4,
-                            left: '50%',
-                            transform: 'translateX(-50%)',
-                            width: 6,
-                            height: 6,
-                            borderRadius: '50%',
-                            background: 'var(--primary)'
-                          }}
-                        />
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* Sub-tabs for the active group */}
-              <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginTop: '4px' }}>
-                <AnimatePresence mode="popLayout">
-                  {adminTabGroups.find(g => g.group === activePanelGroup)?.tabs
-                    .filter(tab => tab.roles.includes(user?.role || 'student'))
-                    .map(tab => {
-                      const isActive = activePanelTab === tab.key;
-                      return (
-                        <motion.button
-                          layout
-                          initial={{ opacity: 0, scale: 0.9 }}
-                          animate={{ opacity: 1, scale: 1 }}
-                          exit={{ opacity: 0, scale: 0.9 }}
-                          transition={{ duration: 0.2 }}
-                          key={tab.key}
-                          onClick={() => { setActivePanelTab(tab.key); setSearch(''); }}
-                          style={{
-                            padding: '8px 16px',
-                            borderRadius: '12px',
-                            fontWeight: 700,
-                            fontSize: '0.85rem',
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '8px',
-                            background: isActive ? 'rgba(83, 109, 254, 0.1)' : 'var(--surface)',
-                            color: isActive ? 'var(--primary)' : 'var(--text-muted)',
-                            border: isActive ? '1px solid rgba(83, 109, 254, 0.2)' : '1px solid var(--border)',
-                            transition: 'all 0.2s',
-                            position: 'relative'
-                          }}
-                          onMouseEnter={(e) => {
-                            if (!isActive) {
-                              e.currentTarget.style.borderColor = 'var(--primary)';
-                              e.currentTarget.style.color = 'var(--primary)';
-                            }
-                          }}
-                          onMouseLeave={(e) => {
-                            if (!isActive) {
-                              e.currentTarget.style.borderColor = 'var(--border)';
-                              e.currentTarget.style.color = 'var(--text-muted)';
-                            }
-                          }}
-                        >
-                          {tab.icon}
-                          {tab.label}
-                          {isActive && (
-                            <motion.div
-                              layoutId="activeSubTabIndicator"
-                              style={{
-                                position: 'absolute',
-                                bottom: -1,
-                                left: 16,
-                                right: 16,
-                                height: 2,
-                                background: 'var(--primary)',
-                                borderRadius: '2px 2px 0 0'
-                              }}
-                            />
-                          )}
-                        </motion.button>
-                      );
-                    })}
-                </AnimatePresence>
-              </div>
-            </>
-          );
-        })()}
+      {/* Inner Navigation Tabs */}
+      <div style={{ display: 'flex', gap: '8px', borderBottom: '1px solid var(--border)', paddingBottom: '12px', flexWrap: 'wrap', flexShrink: 0 }}>
+        {[
+          { key: 'overview', label: user?.role === 'admin' ? 'Admin Overview' : user?.role === 'faculty' ? 'Faculty Overview' : 'Member Overview', roles: ['admin', 'faculty', 'member'] },
+          { key: 'students', label: 'Students Roster', roles: ['admin', 'faculty', 'member'] },
+          { key: 'billing', label: 'Payments & Billing', roles: ['admin'] },
+          { key: 'faculty', label: 'Faculty Staff', roles: ['admin'] },
+          { key: 'members', label: 'Management Members', roles: ['admin'] },
+          { key: 'attendance', label: 'Attendance logs', roles: ['admin'] },
+          { key: 'schedules', label: 'Class Schedules', roles: ['admin', 'faculty'] },
+          { key: 'chats', label: 'Doubt Chats', roles: ['admin', 'faculty', 'member'] },
+          { key: 'notifications', label: 'Alert logs', roles: ['admin', 'member'] },
+          { key: 'roles', label: 'Roles Panel', roles: ['admin'] },
+          { key: 'analytics', label: 'Analytics', roles: ['admin'] },
+          { key: 'audit_logs', label: 'System Audits', roles: ['admin'] },
+          { key: 'system_health', label: 'System Health', roles: ['admin'] }
+        ].filter(tab => tab.roles.includes(user?.role || 'student')).map(tab => (
+          <button
+            key={tab.key}
+            onClick={() => { setActivePanelTab(tab.key); setSearch(''); }}
+            style={{
+              padding: '8px 16px', borderRadius: '8px', fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer', transition: 'all 0.2s',
+              background: activePanelTab === tab.key ? 'var(--primary)' : 'var(--surface)',
+              color: activePanelTab === tab.key ? 'white' : 'var(--text-muted)'
+            }}
+          >
+            {tab.label}
+          </button>
+        ))}
       </div>
 
       {/* Main Container Area */}
@@ -2745,6 +2695,28 @@ const AdminDashboard = () => {
                   <button onClick={() => setIsAddMemberOpen(true)} className="btn btn-primary" style={{ padding: '8px 16px', fontSize: '0.82rem', borderRadius: '8px' }}><Plus size={14} /> Add Member</button>
                   <button onClick={() => handleBulkDelete('member')} className="btn btn-ghost" style={{ padding: '8px 16px', fontSize: '0.82rem', color: 'var(--danger)', borderRadius: '8px' }}><Trash2 size={14} /> Bulk Delete</button>
                 </>
+              )}
+              {activePanelTab === 'billing' && user?.role === 'admin' && (
+                <button
+                  onClick={handleRepairFinancialRecords}
+                  disabled={isRepairingFinancial}
+                  className="btn btn-primary"
+                  style={{
+                    padding: '8px 16px',
+                    fontSize: '0.82rem',
+                    borderRadius: '8px',
+                    background: 'var(--success)',
+                    color: 'white',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    border: 'none',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <RefreshCw size={14} style={{ animation: isRepairingFinancial ? 'spin 1.5s linear infinite' : 'none' }} />
+                  {isRepairingFinancial ? 'Repairing...' : 'Repair Financial Records'}
+                </button>
               )}
             </div>
           </div>

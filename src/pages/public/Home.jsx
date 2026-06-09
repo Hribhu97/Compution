@@ -20,28 +20,14 @@ const fadeUp = {
 };
 
 const ADMISSION_SUBJECTS = [
-  'Python Mastery',
-  'Data Structures & Algorithms',
-  'Class 2',
-  'Class 3',
-  'Class 4',
-  'Class 5',
-  'Class 6',
-  'Class 7',
-  'Class 8',
-  'Class 9',
-  'Class 10',
-  'Class 11 CS',
-  'Class 11 APP',
-  'Class 12 CS',
-  'Class 12 APP',
-  'Web Development (HTML/CSS/JS)',
-  'Java Development',
-  'C & C++ Fundamentals',
-  'BCA / B.Tech Computer Science Coaching',
-  'Tally Prime',
-  'Advanced Excel',
-  'Basic Computer'
+  'Basic+AI (Prompt Engn)',
+  'School Syllabus (Classes 2 to 5)',
+  'School Syllabus (Classes 6 to 10)',
+  'Class XI & XII Computer Science',
+  'Class XI & XII Computer Application',
+  'Basic Coding (C, C++, Java, Python, AI/ML)',
+  'Advance Coding (Master C/C++/Java/Python)',
+  'Data Structures & Algorithms'
 ];
 
 /* ── ADMISSION POPUP ───────────────────────────────── */
@@ -512,17 +498,17 @@ const WhyCompution = () => {
 /* ── COURSES SECTION ───────────────────────────────── */
 const CoursesSection = () => {
   const [activeFilter, setActiveFilter] = useState('All');
-  const filters = ['All', 'Academic', 'Programming', 'Undergraduate'];
+  const filters = ['All', 'Academic', 'Programming'];
 
   const courses = [
+    { tag: 'Programming', title: 'Basic+AI (Prompt Engn)', desc: 'Master computing basics along with Prompt Engineering and AI tools to supercharge your learning and productivity.', color: '#7C4DFF', icon: '🤖', duration: '2 Months', students: '0/15', isNew: true },
+    { tag: 'Academic', title: 'School Syllabus (Classes 2 to 5)', desc: 'Foundation computer classes covering school curricula, basics of typing, scratch programming, and digital literacy.', color: '#FF7043', icon: '🎒', duration: 'Ongoing', students: '0/15' },
+    { tag: 'Academic', title: 'School Syllabus (Classes 6 to 10)', desc: 'Comprehensive school syllabus support for computer applications, logic building, block coding, and basic programming concepts.', color: '#FFA726', icon: '🏫', duration: 'Ongoing', students: '0/15' },
     { tag: 'Academic', title: 'Class XI & XII Computer Science', desc: 'Board exam mastery & complete syllabus — programming fundamentals, SQL, networking, and full-stack projects in Python, C++ & Java.', color: '#536DFE', icon: '📘', duration: '1-2 Years', students: '22/30' },
     { tag: 'Academic', title: 'Class XI & XII Computer Application', desc: 'Applied computing, database management, HTML/CSS/JS, and real-world software development skills scaled to school standards.', color: '#0097A7', icon: '📙', duration: '1-2 Years', students: '18/30' },
-    { tag: 'Programming', title: 'Python Mastery', desc: 'From syntax to data structures, OOP, file handling, and mini projects.', color: '#3776AB', icon: '🐍', duration: '3 Months', students: '14/15' },
-    { tag: 'Programming', title: 'C & C++ Fundamentals', desc: 'Pointers, memory management, OOP concepts and competitive coding basics.', color: '#00599C', icon: '⚡', duration: '3 Months', students: '11/15' },
-    { tag: 'Programming', title: 'Java Development', desc: 'OOP deep dive, exception handling, collections, and desktop application.', color: '#ED8B00', icon: '☕', duration: '4 Months', students: '9/15' },
-    { tag: 'Programming', title: 'Web Development', desc: 'HTML, CSS, JavaScript — build real websites from scratch to deployment.', color: '#E44D26', icon: '🌐', duration: '3 Months', students: '15/15' },
+    { tag: 'Programming', title: 'Basic Coding', desc: 'Begin your coding journey: C, C++, Java, Python, and AI/ML foundations.', color: '#66BB6A', icon: '💻', duration: '3 Months', students: '0/15' },
+    { tag: 'Programming', title: 'Advance Coding', desc: 'Master one language of your choice: C, C++, Java, or Python to build robust software.', color: '#ED8B00', icon: '🚀', duration: '4 Months', students: '0/15' },
     { tag: 'Programming', title: 'Data Structures & Algorithms', desc: 'Arrays, trees, graphs, sorting — crack coding interviews and olympiads.', color: '#43A047', icon: '🧩', duration: '4 Months', students: '13/15' },
-    { tag: 'Undergraduate', title: 'B.Sc / BCA / B.Tech Support', desc: 'Semester-by-semester guidance for university CS courses and practicals.', color: '#F4511E', icon: '🎓', duration: 'Ongoing', students: '7/15' },
   ];
 
   const filtered = activeFilter === 'All' ? courses : courses.filter(c => c.tag === activeFilter);
@@ -556,7 +542,12 @@ const CoursesSection = () => {
               <div className="card-p">
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
                   <span style={{ fontSize: '2rem' }}>{course.icon}</span>
-                  <span className="badge badge-primary">{course.tag}</span>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    {course.isNew && (
+                      <span className="badge badge-warning" style={{ animation: 'pulseHealth 2s infinite' }}>NEW</span>
+                    )}
+                    <span className="badge badge-primary">{course.tag}</span>
+                  </div>
                 </div>
                 <h3 style={{ fontSize: '1.1rem', marginBottom: '10px' }}>{course.title}</h3>
                 <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', lineHeight: 1.7, marginBottom: '20px' }}>{course.desc}</p>
@@ -570,9 +561,33 @@ const CoursesSection = () => {
                       <Users size={14} /> {course.students}
                     </span>
                   </div>
-                  <button style={{ color: course.color, fontWeight: 700, fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '4px', background: 'none', border: 'none', cursor: 'pointer' }}>
-                    Details <ChevronRight size={14} />
-                  </button>
+                  {course.isNew ? (
+                    <button style={{
+                      background: `linear-gradient(135deg, ${course.color} 0%, #7C4DFF 100%)`,
+                      color: 'white',
+                      fontWeight: 700,
+                      fontSize: '0.8rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '6px',
+                      padding: '8px 16px',
+                      borderRadius: '20px',
+                      boxShadow: '0 4px 12px rgba(124, 77, 255, 0.35)',
+                      border: 'none',
+                      cursor: 'pointer',
+                      transition: 'transform 0.2s'
+                    }}
+                    onMouseOver={(e) => e.currentTarget.style.transform = 'scale(1.05)'}
+                    onMouseOut={(e) => e.currentTarget.style.transform = 'scale(1)'}
+                    className="pulse"
+                    >
+                      New Addition <ChevronRight size={14} />
+                    </button>
+                  ) : (
+                    <button style={{ color: course.color, fontWeight: 700, fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '4px', background: 'none', border: 'none', cursor: 'pointer' }}>
+                      Details <ChevronRight size={14} />
+                    </button>
+                  )}
                 </div>
               </div>
             </motion.div>

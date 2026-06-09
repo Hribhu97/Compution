@@ -71,6 +71,45 @@ const fetchGeminiReply = async (userMessage, chatHistory = []) => {
   }
 };
 
+const getChatBubbles = (firestoreMsgs) => {
+  const bubbles = [];
+  firestoreMsgs.forEach(m => {
+    if (m.sender === 'user' && m.message && !m.prompt) {
+      bubbles.push({
+        id: m.id + '-user',
+        message: m.message,
+        sender: 'user',
+        createdAt: m.createdAt
+      });
+    } else if (m.sender === 'bot' && m.message) {
+      bubbles.push({
+        id: m.id + '-bot',
+        message: m.message,
+        sender: 'bot',
+        createdAt: m.createdAt
+      });
+    } else {
+      if (m.prompt) {
+        bubbles.push({
+          id: m.id + '-prompt',
+          message: m.prompt,
+          sender: 'user',
+          createdAt: m.createdAt
+        });
+      }
+      if (m.response) {
+        bubbles.push({
+          id: m.id + '-response',
+          message: m.response,
+          sender: 'bot',
+          createdAt: m.createdAt
+        });
+      }
+    }
+  });
+  return bubbles;
+};
+
 const ChatAssistant = () => {
   const { user } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
@@ -79,6 +118,18 @@ const ChatAssistant = () => {
   const [isTyping, setIsTyping] = useState(false);
   
   const bottomRef = useRef(null);
+
+  const isLastMsgProcessing = () => {
+    if (messages.length === 0) return false;
+    const last = messages[messages.length - 1];
+    if (last.prompt && !last.response) {
+      if (last.status?.state === 'ERRORED') return false;
+      return true;
+    }
+    return false;
+  };
+
+  const showTyping = isTyping || isLastMsgProcessing();
 
   useEffect(() => {
     if (!user?.uid) {
@@ -98,7 +149,7 @@ const ChatAssistant = () => {
     if (isOpen) {
       setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
     }
-  }, [messages, isOpen, isTyping]);
+  }, [messages, isOpen, showTyping]);
 
   const handleSend = async (e) => {
     e.preventDefault();
@@ -109,14 +160,11 @@ const ChatAssistant = () => {
     
     if (user?.uid) {
       await addDoc(collection(db, `users/${user.uid}/chatHistory`), {
+        prompt: userMsg,
         message: userMsg,
         sender: 'user',
         createdAt: serverTimestamp()
       });
-
-      if (user.role === 'student') {
-        window.open(`https://wa.me/9674035542?text=${encodeURIComponent(userMsg)}`, '_blank');
-      }
     } else {
       const newMsg = {
         id: 'temp-' + Date.now(),
@@ -125,25 +173,17 @@ const ChatAssistant = () => {
         createdAt: { toDate: () => new Date() }
       };
       setMessages(prev => [...prev, newMsg]);
-    }
 
-    setIsTyping(true);
-    
-    let botReply = "";
-    try {
-      botReply = await fetchGeminiReply(userMsg, messages.slice(-10));
-    } catch (err) {
-      console.warn("Falling back to local FAQ matching.");
-      botReply = matchFAQ(userMsg);
-    }
+      setIsTyping(true);
+      
+      let botReply = "";
+      try {
+        botReply = await fetchGeminiReply(userMsg, messages.slice(-10));
+      } catch (err) {
+        console.warn("Falling back to local FAQ matching.");
+        botReply = matchFAQ(userMsg);
+      }
 
-    if (user?.uid) {
-      await addDoc(collection(db, `users/${user.uid}/chatHistory`), {
-        message: botReply,
-        sender: 'bot',
-        createdAt: serverTimestamp()
-      });
-    } else {
       const newBotMsg = {
         id: 'temp-bot-' + Date.now(),
         message: botReply,
@@ -151,9 +191,8 @@ const ChatAssistant = () => {
         createdAt: { toDate: () => new Date() }
       };
       setMessages(prev => [...prev, newBotMsg]);
+      setIsTyping(false);
     }
-    
-    setIsTyping(false);
   };
 
   const getInitials = (name) => name?.split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2) || 'ST';
@@ -200,18 +239,45 @@ const ChatAssistant = () => {
                     <div style={{ fontSize: '0.75rem', opacity: 0.8 }}>Online assistant</div>
                   </div>
                 </div>
-                <button onClick={() => setIsOpen(false)} style={{ color: 'white', background: 'rgba(255,255,255,0.2)', width: 32, height: 32, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <X size={16} />
-                </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  {user && (
+                    <a
+                      href="https://wa.me/9674035542"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title="Contact Support on WhatsApp"
+                      style={{
+                        color: 'white',
+                        background: 'rgba(255,255,255,0.15)',
+                        padding: '6px 12px',
+                        borderRadius: '20px',
+                        fontSize: '0.75rem',
+                        fontWeight: 600,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        textDecoration: 'none',
+                        transition: 'var(--transition)'
+                      }}
+                      onMouseOver={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.25)'}
+                      onMouseOut={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.15)'}
+                    >
+                      <span>WhatsApp Support</span>
+                    </a>
+                  )}
+                  <button onClick={() => setIsOpen(false)} style={{ color: 'white', background: 'rgba(255,255,255,0.2)', width: 32, height: 32, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <X size={16} />
+                  </button>
+                </div>
               </div>
 
               <div style={{ flex: 1, padding: '20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '16px', background: 'var(--bg)' }}>
-                {messages.length === 0 && (
+                {getChatBubbles(messages).length === 0 && (
                   <div style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: 20 }}>
                     👋 Hi {(user?.displayName || 'Student').split(' ')[0]}! How can I help you today?
                   </div>
                 )}
-                {messages.map((m, i) => {
+                {getChatBubbles(messages).map((m, i) => {
                   const isBot = m.sender === 'bot';
                   return (
                     <motion.div key={m.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
@@ -233,7 +299,7 @@ const ChatAssistant = () => {
                     </motion.div>
                   );
                 })}
-                {isTyping && (
+                {showTyping && (
                   <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} style={{ display: 'flex', gap: '10px', alignItems: 'flex-end' }}>
                     <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--primary)', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: '0.7rem', fontWeight: 800 }}>C</div>
                     <div style={{ background: 'white', padding: '12px 16px', borderRadius: '16px 16px 16px 4px', display: 'flex', gap: '4px', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>

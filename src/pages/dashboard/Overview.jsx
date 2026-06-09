@@ -549,6 +549,7 @@ const StudentOverview = () => {
 
   return (
     <motion.div variants={stagger} initial="hidden" animate="show" style={{ display: 'flex', flexDirection: 'column', gap: '28px', paddingBottom: '40px' }}>
+      <AnimatePresence>{toast && <Toast message={toast} onClose={() => setToast(null)} />}</AnimatePresence>
       
       <div style={{ display: 'grid', gridTemplateColumns: '2.1fr 0.9fr', gap: '28px' }} className="grid-2-col-mobile">
         {/* Left Column */}

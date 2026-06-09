@@ -10,29 +10,14 @@ const stagger = { show: { transition: { staggerChildren: 0.07 } } };
 const item = { hidden: { opacity: 0, y: 14 }, show: { opacity: 1, y: 0, transition: { duration: 0.4, ease: [0.16, 1, 0.3, 1] } } };
 
 const COURSE_METADATA = {
-  'Python Mastery': { subject: 'Python', color: '#3776AB', emoji: '🐍', nextLesson: 'File I/O & Exceptions', totalLessons: 32, schedule: 'Mon, Wed, Fri · 5 PM' },
-  'Data Structures & Algorithms': { subject: 'DSA', color: '#536DFE', emoji: '🧩', nextLesson: 'Binary Search Trees', totalLessons: 28, schedule: 'Tue, Thu · 6 PM' },
-  'Class 2': { subject: 'Academic', color: '#FF7043', emoji: '🐱', nextLesson: 'Lesson 1: Intro to Computers', totalLessons: 12, schedule: 'Mon, Thu · 3 PM' },
-  'Class 3': { subject: 'Academic', color: '#FF8A65', emoji: '🎨', nextLesson: 'Lesson 1: Paint & Draw', totalLessons: 14, schedule: 'Mon, Thu · 3 PM' },
-  'Class 4': { subject: 'Academic', color: '#FFB74D', emoji: '🚀', nextLesson: 'Lesson 1: Word Processing', totalLessons: 16, schedule: 'Mon, Thu · 4 PM' },
-  'Class 5': { subject: 'Academic', color: '#4DB6AC', emoji: '🎮', nextLesson: 'Lesson 1: Intro to Scratch', totalLessons: 18, schedule: 'Tue, Fri · 3 PM' },
-  'Class 6': { subject: 'Academic', color: '#81C784', emoji: '🤖', nextLesson: 'Lesson 1: Algorithms', totalLessons: 20, schedule: 'Tue, Fri · 3 PM' },
-  'Class 7': { subject: 'Academic', color: '#64B5F6', emoji: '📐', nextLesson: 'Lesson 1: Basic HTML', totalLessons: 20, schedule: 'Tue, Fri · 4 PM' },
-  'Class 8': { subject: 'Academic', color: '#BA68C8', emoji: '🌐', nextLesson: 'Lesson 1: Internet Safety', totalLessons: 22, schedule: 'Wed, Sat · 3 PM' },
-  'Class 9': { subject: 'Academic', color: '#F06292', emoji: '🐍', nextLesson: 'Lesson 1: Python Basics', totalLessons: 24, schedule: 'Wed, Sat · 4 PM' },
-  'Class 10': { subject: 'Academic', color: '#E040FB', emoji: '📙', nextLesson: 'Lesson 1: User-Defined Methods', totalLessons: 24, schedule: 'Tue, Thu, Sat · 4 PM' },
-  'Class 11 CS': { subject: 'Academic', color: '#03A9F4', emoji: '📘', nextLesson: 'Chapter 2: Data Representations', totalLessons: 22, schedule: 'Mon–Sat · 3 PM' },
-  'Class 11 App': { subject: 'Academic', color: '#26C6DA', emoji: '📱', nextLesson: 'Lesson 1: Office Tools', totalLessons: 22, schedule: 'Mon–Sat · 3 PM' },
-  'Class 12 CS': { subject: 'Academic', color: '#7C4DFF', emoji: '📗', nextLesson: 'Chapter 7: Networking', totalLessons: 24, schedule: 'Mon–Sat · 4 PM' },
-  'Class 12 App': { subject: 'Academic', color: '#651FFF', emoji: '📕', nextLesson: 'Chapter 3: SQL Queries', totalLessons: 24, schedule: 'Mon–Sat · 4 PM' },
-  'Web Development (HTML/CSS/JS)': { subject: 'Web Dev', color: '#E44D26', emoji: '🌐', nextLesson: 'HTML Semantic Structure', totalLessons: 40, schedule: 'Mon, Wed, Fri · 6 PM' },
-  'Java Development': { subject: 'Java', color: '#ED8B00', emoji: '☕', nextLesson: 'Object Oriented Programming', totalLessons: 35, schedule: 'Tue, Thu · 7 PM' },
-  'C & C++ Fundamentals': { subject: 'C/C++', color: '#00599C', emoji: '⚡', nextLesson: 'Pointers & References', totalLessons: 30, schedule: 'Wed, Sat · 6 PM' },
-  'BCA': { subject: 'Coaching', color: '#009688', emoji: '💻', nextLesson: 'Discrete Mathematics Logic', totalLessons: 45, schedule: 'Mon–Sat · 6 PM' },
-  'B.Tech': { subject: 'Coaching', color: '#00796B', emoji: '⚙️', nextLesson: 'Advanced Algorithms', totalLessons: 50, schedule: 'Mon–Sat · 7 PM' },
-  'Tally Prime': { subject: 'Accounting', color: '#1B5E20', emoji: '📊', nextLesson: 'Lesson 1: Intro to Tally', totalLessons: 16, schedule: 'Mon, Wed · 3 PM' },
-  'Advanced Excel': { subject: 'Data Analysis', color: '#01579B', emoji: '📈', nextLesson: 'Lesson 1: Pivot Tables & Formulas', totalLessons: 18, schedule: 'Tue, Thu · 4 PM' },
-  'Basic Computer': { subject: 'Fundamentals', color: '#E65100', emoji: '🖥️', nextLesson: 'Lesson 1: Windows & OS basics', totalLessons: 12, schedule: 'Fri, Sat · 2 PM' }
+  'Basic+AI (Prompt Engn)': { subject: 'AI & Basics', color: '#7C4DFF', emoji: '🤖', nextLesson: 'Intro to Prompts & LLMs', totalLessons: 16, schedule: 'Mon, Wed · 4 PM' },
+  'School Syllabus (Classes 2 to 5)': { subject: 'Academic', color: '#FF7043', emoji: '🎒', nextLesson: 'Intro to Computers & Keyboard', totalLessons: 12, schedule: 'Mon, Thu · 3 PM' },
+  'School Syllabus (Classes 6 to 10)': { subject: 'Academic', color: '#FFA726', emoji: '🏫', nextLesson: 'Block Coding & Flowcharts', totalLessons: 20, schedule: 'Tue, Fri · 3 PM' },
+  'Class XI & XII Computer Science': { subject: 'Academic', color: '#536DFE', emoji: '📘', nextLesson: 'Chapter 2: Data Representations', totalLessons: 22, schedule: 'Mon–Sat · 3 PM' },
+  'Class XI & XII Computer Application': { subject: 'Academic', color: '#0097A7', emoji: '📙', nextLesson: 'Lesson 1: Office Tools', totalLessons: 22, schedule: 'Mon–Sat · 3 PM' },
+  'Basic Coding': { subject: 'Programming', color: '#66BB6A', emoji: '💻', nextLesson: 'First Program & Variables', totalLessons: 24, schedule: 'Mon, Wed · 5 PM' },
+  'Advance Coding': { subject: 'Programming', color: '#ED8B00', emoji: '🚀', nextLesson: 'OOP & Code Design Patterns', totalLessons: 30, schedule: 'Tue, Thu · 7 PM' },
+  'Data Structures & Algorithms': { subject: 'Programming', color: '#43A047', emoji: '🧩', nextLesson: 'Binary Search Trees', totalLessons: 28, schedule: 'Tue, Thu · 6 PM' }
 };
 
 const Courses = () => {
@@ -428,7 +413,7 @@ const Courses = () => {
   ];
 
   // Secondary choice setup
-  const secondaryChoices = ['Data Structures & Algorithms', 'Class XII CS (CBSE)'].filter(c => c !== userCourse);
+  const secondaryChoices = ['Data Structures & Algorithms', 'Class XI & XII Computer Science'].filter(c => c !== userCourse);
   secondaryChoices.forEach((cName, idx) => {
     const meta = getCourseDetails(cName);
     if (meta) {
