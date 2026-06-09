@@ -131,7 +131,7 @@ service cloud.firestore {
         if signedIn();
 
       allow create:
-        if isAdmin() || isFaculty();
+        if isAdmin() || isFaculty() || isStudent();
 
       allow update, delete:
         if isAdmin()
@@ -145,7 +145,7 @@ service cloud.firestore {
         if signedIn();
 
       allow create:
-        if isAdmin() || isFaculty();
+        if isAdmin() || isFaculty() || isStudent();
 
       allow update, delete:
         if isAdmin()
@@ -163,7 +163,7 @@ service cloud.firestore {
         if signedIn();
 
       allow create, update, delete:
-        if isAdmin() || isFaculty();
+        if isAdmin() || isFaculty() || isStudent();
     }
 
     // Additional collections in use by Compution platform
@@ -232,6 +232,19 @@ service cloud.firestore {
 
       allow write:
         if isAdmin();
+    }
+
+    match /parentContacts/{contactId} {
+      allow read:
+        if signedIn() &&
+        (
+          isAdmin() ||
+          isFaculty() ||
+          resource.data.studentId == request.auth.uid
+        );
+
+      allow write:
+        if isAdmin() || isFaculty();
     }
 
     match /staff/{staffId} {

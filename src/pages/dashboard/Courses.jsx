@@ -82,6 +82,9 @@ const Courses = () => {
       });
       setCourses(data);
       setLoading(false);
+    }, (err) => {
+      console.warn("Firestore courses fetch failed, falling back to local metadata:", err);
+      setLoading(false);
     });
 
     const unsubUsers = onSnapshot(collection(db, 'users'), (snap) => {
@@ -91,6 +94,8 @@ const Courses = () => {
         if (d.role !== 'admin') data.push({ id: doc.id, ...d });
       });
       setStudents(data);
+    }, (err) => {
+      console.warn("Firestore users fetch failed:", err);
     });
 
     return () => {

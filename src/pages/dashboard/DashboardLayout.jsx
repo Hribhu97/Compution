@@ -8,7 +8,8 @@ import { useAuth } from '../../contexts/AuthContext';
 import {
   LayoutDashboard, BookOpen, ClipboardList,
   FileText, Settings, LogOut, Search, Bell,
-  CalendarCheck, Calendar, MessageSquare, User, Sparkles, ShieldAlert, Loader2
+  CalendarCheck, Calendar, MessageSquare, User, Sparkles, ShieldAlert, Loader2,
+  Video
 } from 'lucide-react';
 
 const ADMISSION_SUBJECTS = [
@@ -318,6 +319,29 @@ const DashboardLayout = () => {
               )}
             </NavLink>
           ))}
+          {(user?.role?.toLowerCase() === 'admin' || user?.role?.toLowerCase() === 'faculty') && (
+            <a 
+              href="https://meet.google.com/kzw-aheq-ejj" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              style={{ display: 'block' }}
+            >
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 16px', borderRadius: '12px',
+                background: 'transparent', color: 'white',
+                fontWeight: 500, fontSize: '0.92rem', transition: 'all 0.2s', cursor: 'pointer',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'rgba(255,255,255,0.12)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'transparent';
+              }}
+              >
+                <Video size={18} /> Meet
+              </div>
+            </a>
+          )}
         </nav>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', borderTop: '1px solid rgba(255,255,255,0.15)', paddingTop: '16px' }}>
@@ -489,6 +513,29 @@ const DashboardLayout = () => {
             <span>{label}</span>
           </NavLink>
         ))}
+        {(user?.role?.toLowerCase() === 'admin' || user?.role?.toLowerCase() === 'faculty') && (
+          <a 
+            href="https://meet.google.com/kzw-aheq-ejj" 
+            target="_blank" 
+            rel="noopener noreferrer"
+            style={{
+              flex: 1,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: '4px',
+              padding: '8px 4px',
+              borderRadius: 'var(--radius-sm)',
+              color: 'var(--text-muted)',
+              fontSize: '0.65rem',
+              fontWeight: 600,
+              minWidth: 0,
+            }}
+          >
+            <Video size={20} />
+            <span>Meet</span>
+          </a>
+        )}
       </nav>
 
       <AnimatePresence>

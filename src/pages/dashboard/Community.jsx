@@ -570,7 +570,7 @@ const Community = () => {
           <div style={{ height: '100%', display: 'flex', flexDirection: 'column', padding: '24px', overflowY: 'auto' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', borderBottom: '1px solid var(--border)', paddingBottom: '16px' }}>
               <h2 style={{ fontSize: '1.25rem', fontWeight: 800 }}>Student Announcement Board</h2>
-              {(isAdmin || isFaculty) && (
+              {(isAdmin || isFaculty || isStudent) && (
                 <button onClick={() => { setEditingPost(null); setMessage(''); setPostAttachment(null); setIsModalOpen(true); }} className="btn btn-primary" style={{ padding: '10px 18px', fontSize: '0.85rem', borderRadius: '10px' }}>
                   <Plus size={16} /> Create Notice Note
                 </button>
@@ -611,8 +611,8 @@ const Community = () => {
                         </div>
                       </div>
                       
-                      {/* Action buttons visible only to author (if Faculty) and admin */}
-                      {((isFaculty && user?.uid === post.authorId) || isAdmin) && (
+                      {/* Action buttons visible only to author and admin */}
+                      {(user?.uid === post.authorId || isAdmin) && (
                         <div style={{ display: 'flex', gap: '8px' }}>
                           <button
                             onClick={() => {

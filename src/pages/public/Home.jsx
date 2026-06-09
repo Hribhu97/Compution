@@ -31,9 +31,28 @@ const ADMISSION_SUBJECTS = [
 ];
 
 /* ── ADMISSION POPUP ───────────────────────────────── */
-const AdmissionApplicationModal = ({ isOpen, onClose, triggerToast }) => {
-  const [form, setForm] = useState({ name: '', contact: '', subject: 'Class 11 CS' });
+const AdmissionApplicationModal = ({ isOpen, onClose, triggerToast, initialSubject }) => {
+  const [form, setForm] = useState({ name: '', contact: '', subject: 'Basic+AI (Prompt Engn)' });
   const [status, setStatus] = useState('idle'); // 'idle' | 'submitting' | 'success'
+
+  useEffect(() => {
+    if (isOpen) {
+      let matchedSubject = ADMISSION_SUBJECTS[0];
+      if (initialSubject) {
+        const found = ADMISSION_SUBJECTS.find(s => 
+          s.toLowerCase().startsWith(initialSubject.toLowerCase()) || 
+          initialSubject.toLowerCase().startsWith(s.toLowerCase())
+        );
+        if (found) {
+          matchedSubject = found;
+        }
+      }
+      setForm(prev => ({
+        ...prev,
+        subject: matchedSubject
+      }));
+    }
+  }, [isOpen, initialSubject]);
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -496,7 +515,7 @@ const WhyCompution = () => {
 };
 
 /* ── COURSES SECTION ───────────────────────────────── */
-const CoursesSection = () => {
+const CoursesSection = ({ onOpenAdmission }) => {
   const [activeFilter, setActiveFilter] = useState('All');
   const filters = ['All', 'Academic', 'Programming'];
 
@@ -562,30 +581,35 @@ const CoursesSection = () => {
                     </span>
                   </div>
                   {course.isNew ? (
-                    <button style={{
-                      background: `linear-gradient(135deg, ${course.color} 0%, #7C4DFF 100%)`,
-                      color: 'white',
-                      fontWeight: 700,
-                      fontSize: '0.8rem',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '6px',
-                      padding: '8px 16px',
-                      borderRadius: '20px',
-                      boxShadow: '0 4px 12px rgba(124, 77, 255, 0.35)',
-                      border: 'none',
-                      cursor: 'pointer',
-                      transition: 'transform 0.2s'
-                    }}
-                    onMouseOver={(e) => e.currentTarget.style.transform = 'scale(1.05)'}
-                    onMouseOut={(e) => e.currentTarget.style.transform = 'scale(1)'}
-                    className="pulse"
+                    <button
+                      onClick={() => onOpenAdmission(course.title)}
+                      style={{
+                        background: `linear-gradient(135deg, ${course.color} 0%, #7C4DFF 100%)`,
+                        color: 'white',
+                        fontWeight: 700,
+                        fontSize: '0.8rem',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        padding: '8px 16px',
+                        borderRadius: '20px',
+                        boxShadow: '0 4px 12px rgba(124, 77, 255, 0.35)',
+                        border: 'none',
+                        cursor: 'pointer',
+                        transition: 'transform 0.2s'
+                      }}
+                      onMouseOver={(e) => e.currentTarget.style.transform = 'scale(1.05)'}
+                      onMouseOut={(e) => e.currentTarget.style.transform = 'scale(1)'}
+                      className="pulse"
                     >
-                      New Addition <ChevronRight size={14} />
+                      Admission
                     </button>
                   ) : (
-                    <button style={{ color: course.color, fontWeight: 700, fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '4px', background: 'none', border: 'none', cursor: 'pointer' }}>
-                      Details <ChevronRight size={14} />
+                    <button
+                      onClick={() => onOpenAdmission(course.title)}
+                      style={{ color: course.color, fontWeight: 700, fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '4px', background: 'none', border: 'none', cursor: 'pointer' }}
+                    >
+                      Admission
                     </button>
                   )}
                 </div>
@@ -1055,9 +1079,13 @@ const Toast = ({ message, onClose }) => {
 const Home = () => {
   const { user } = useAuth();
   const [admissionOpen, setAdmissionOpen] = useState(false);
+  const [selectedCourse, setSelectedCourse] = useState('');
   const [toast, setToast] = useState(null);
 
-  const openAdmission = () => setAdmissionOpen(true);
+  const openAdmission = (courseName = '') => {
+    setSelectedCourse(courseName);
+    setAdmissionOpen(true);
+  };
   const closeAdmission = () => setAdmissionOpen(false);
 
   // Auto-open enquire form after 4 minutes (240,000 ms) for logged-out users
@@ -1076,7 +1104,7 @@ const Home = () => {
       <Navbar onOpenAdmission={openAdmission} />
       <Hero onOpenAdmission={openAdmission} />
       <WhyCompution />
-      <CoursesSection />
+      <CoursesSection onOpenAdmission={openAdmission} />
       <LearningJourney />
       <Testimonials />
       <OurStories onOpenAdmission={openAdmission} />
@@ -1086,6 +1114,7 @@ const Home = () => {
         isOpen={admissionOpen} 
         onClose={closeAdmission} 
         triggerToast={setToast}
+        initialSubject={selectedCourse}
       />
 
       <AnimatePresence>

@@ -23,7 +23,7 @@ const Attendance = () => {
   // Faculty/Admin View States
   const [students, setStudents] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedSubject, setSelectedSubject] = useState('Python Mastery');
+  const [selectedSubject, setSelectedSubject] = useState('Basic+AI (Prompt Engn)');
   const [attendanceDate, setAttendanceDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [attendanceStatusMap, setAttendanceStatusMap] = useState({}); // studentId -> status
 
@@ -478,18 +478,14 @@ const Attendance = () => {
                 onChange={e => setSelectedSubject(e.target.value)}
                 style={{ flex: 1, padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border)', background: 'var(--white)', outline: 'none', fontSize: '0.88rem' }}
               >
-                <option value="Python Mastery">Python Mastery</option>
+                <option value="Basic+AI (Prompt Engn)">Basic+AI (Prompt Engn)</option>
+                <option value="School Syllabus (Classes 2 to 5)">School Syllabus (Classes 2 to 5)</option>
+                <option value="School Syllabus (Classes 6 to 10)">School Syllabus (Classes 6 to 10)</option>
+                <option value="Class XI & XII Computer Science">Class XI & XII Computer Science</option>
+                <option value="Class XI & XII Computer Application">Class XI & XII Computer Application</option>
+                <option value="Basic Coding">Basic Coding</option>
+                <option value="Advance Coding">Advance Coding</option>
                 <option value="Data Structures & Algorithms">Data Structures & Algorithms</option>
-                <option value="Class 11 CS">Class 11 CS</option>
-                <option value="Class 11 App">Class 11 App</option>
-                <option value="Class 12 CS">Class 12 CS</option>
-                <option value="Class 12 App">Class 12 App</option>
-                <option value="Web Development (HTML/CSS/JS)">Web Development (HTML/CSS/JS)</option>
-                <option value="Java Development">Java Development</option>
-                <option value="C & C++ Fundamentals">C & C++ Fundamentals</option>
-                <option value="Tally Prime">Tally Prime</option>
-                <option value="Advanced Excel">Advanced Excel</option>
-                <option value="Basic Computer">Basic Computer</option>
               </select>
             </div>
 
