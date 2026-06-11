@@ -299,5 +299,32 @@ service cloud.firestore {
       allow read, write:
         if isAdmin() || isFaculty();
     }
+
+    match /facultyRoster/{facultyId} {
+      allow read, write:
+        if isAdmin() || isFaculty();
+      match /{allPaths=**} {
+        allow read, write:
+          if isAdmin() || isFaculty();
+      }
+    }
+
+    match /auditLogs/{logId} {
+      allow read:
+        if isAdmin();
+      allow create:
+        if signedIn() && (isAdmin() || isFaculty() || isMember());
+    }
+
+    match /progressReports/{studentId} {
+      allow read:
+        if signedIn() && (
+          request.auth.uid == studentId
+          || isAdmin()
+          || isFaculty()
+        );
+      allow write:
+        if isAdmin() || isFaculty();
+    }
   }
 }
