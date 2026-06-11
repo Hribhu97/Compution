@@ -26,10 +26,9 @@ const PublicLayout = () => (
 );
 
 const ProtectedRoute = ({ children }) => {
-  const { user, authReady, userProfileLoaded } = useAuth();
-  const isProfileLoading = !authReady || (authReady && user && !userProfileLoaded);
+  const { user, loading } = useAuth();
   
-  if (isProfileLoading) {
+  if (loading) {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', width: '100vw', background: '#F0F4FF' }}>
         <div style={{ width: '40px', height: '40px', borderRadius: '50%', border: '4px solid rgba(83,109,254,0.2)', borderTopColor: 'var(--primary)', animation: 'spin 1s linear infinite' }} />
