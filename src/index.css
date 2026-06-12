@@ -31,6 +31,7 @@
   --font-body: 'General Sans', sans-serif;
   --font-support: 'Satoshi', sans-serif;
   --transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  --child-padding: 24px;
 }
 
 /* =================== RESET =================== */
@@ -381,6 +382,9 @@ h3 { font-size: clamp(1.25rem, 2.5vw, 1.75rem); }
 }
 
 @media (max-width: 768px) {
+  :root {
+    --child-padding: 12px;
+  }
   .container { padding: 0 16px; }
   .section { padding: 56px 0; }
   .card-p { padding: 20px; }
@@ -444,7 +448,8 @@ html.lenis, html.lenis body { height: auto; }
 .lenis.lenis-stopped { overflow: hidden; }
 
 @media (max-width: 1024px) {
-  .grid-2-col-mobile {
+  .grid-2-col-mobile,
+  .grid-3-col-mobile {
     grid-template-columns: 1fr !important;
   }
 }
@@ -532,6 +537,19 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover {
   .grid-3-col-equal-responsive {
     grid-template-columns: 1fr !important;
   }
+}
+
+/* Prevent grid items from overflowing */
+.grid-2-col-mobile > *,
+.grid-3-col-mobile > *,
+.grid-3-col-responsive > *,
+.grid-3-col-equal-responsive > *,
+.grid-2-col > *,
+.grid-2-1 > *,
+.grid-stats-dashboard > *,
+.grid-auto-cards > *,
+.grid-auto-cards-sm > * {
+  min-width: 0;
 }
 
 /* Modal Responsiveness Helpers */

@@ -796,7 +796,7 @@ const StudentOverview = ({
               <h3 style={{ fontSize: '1.25rem', fontWeight: 800, color: isDarkMode ? '#F1F5F9' : 'var(--dark)' }}>Your Assigned Mentor</h3>
             </div>
             
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '20px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(280px, 100%), 1fr))', gap: '20px' }}>
               {mentorList.map((mentor, index) => {
                 const buttonColors = ['#FFA726', '#AB47BC', 'var(--primary)'];
                 const btnColor = buttonColors[index % buttonColors.length];

@@ -258,7 +258,7 @@ const ChildDashboard = ({
   const searchInputBorder = isDarkMode ? '1.5px solid rgba(255, 255, 255, 0.08)' : '1.5px solid rgba(0,0,0,0.08)';
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '2.1fr 0.9fr', gap: '32px', background: bgMain, padding: isDarkMode ? '24px' : '0', borderRadius: '32px', transition: 'all 0.3s ease' }} className="grid-2-col-mobile">
+    <div style={{ display: 'grid', gridTemplateColumns: '2.1fr 0.9fr', gap: '32px', background: bgMain, padding: isDarkMode ? 'var(--child-padding)' : '0', borderRadius: '32px', transition: 'all 0.3s ease' }} className="grid-2-col-mobile">
       
       {/* Styles injecting */}
       <style>{`

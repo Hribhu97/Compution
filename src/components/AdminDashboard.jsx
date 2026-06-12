@@ -2767,7 +2767,10 @@ const AdminDashboard = () => {
       </div>
 
       {/* Main Container Area */}
-      <div className="card card-p" style={{ background: 'var(--white)', border: '1px solid var(--border)' }}>
+      <div 
+        className={activePanelTab === 'overview' ? "" : "card card-p"} 
+        style={activePanelTab === 'overview' ? { display: 'flex', flexDirection: 'column', gap: '24px' } : { background: 'var(--white)', border: '1px solid var(--border)' }}
+      >
         
         {/* Search and creation tools header */}
         {activePanelTab !== 'overview' && (
