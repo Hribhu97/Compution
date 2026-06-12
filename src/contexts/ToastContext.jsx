@@ -6,10 +6,32 @@ const ToastContext = createContext(null);
 
 export const useToast = () => {
   const context = useContext(ToastContext);
-  if (!context) {
-    throw new Error('useToast must be used within a ToastProvider');
-  }
-  return context;
+  
+  const showToastSafe = useCallback((message, type = 'success', duration = 4000) => {
+    try {
+      if (context && typeof context.showToast === 'function') {
+        context.showToast(message, type, duration);
+      } else {
+        console.warn(`[Toast Fallback] ${type.toUpperCase()}: ${message}`);
+      }
+    } catch (err) {
+      console.error("Toast notification failed:", err);
+    }
+  }, [context]);
+
+  const safeToastSuccess = useCallback((message) => {
+    showToastSafe(message, 'success');
+  }, [showToastSafe]);
+
+  const safeToastError = useCallback((message) => {
+    showToastSafe(message, 'error');
+  }, [showToastSafe]);
+
+  return {
+    showToast: showToastSafe,
+    safeToastSuccess,
+    safeToastError
+  };
 };
 
 export const ToastProvider = ({ children }) => {

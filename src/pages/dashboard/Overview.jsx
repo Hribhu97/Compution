@@ -7,7 +7,7 @@ import { collection, query, doc, updateDoc, addDoc, serverTimestamp, where, setD
 import { useNavigate } from 'react-router-dom';
 import {
   Users, Send, Clock, UserMinus, ChevronDown, Share2,
-  Sparkles, ShieldCheck, Download, ExternalLink, Calendar,
+  Sparkles, Download, ExternalLink, Calendar,
   ChevronRight, BookOpen, Clock3, CheckCircle, Info, Play, MessageSquare, ShieldAlert,
   FileEdit, Trash2, Pencil, Plus, FileText, GraduationCap, Globe, Megaphone, ClipboardList, UserCheck, ArrowUpRight, Phone
 } from 'lucide-react';
@@ -22,55 +22,7 @@ const fadeItem = {
   show: { opacity: 1, y: 0, transition: { duration: 0.45, ease: [0.16, 1, 0.3, 1] } }
 };
 
-/* ── TOAST NOTIFICATION ────────────────────────────── */
-const Toast = ({ message, onClose }) => {
-  useEffect(() => {
-    const timer = setTimeout(onClose, 3000);
-    return () => clearTimeout(timer);
-  }, [onClose]);
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: -20, x: '-50%', scale: 0.9 }}
-      animate={{ opacity: 1, y: 0, x: '-50%', scale: 1 }}
-      exit={{ opacity: 0, y: -20, x: '-50%', scale: 0.9 }}
-      transition={{ type: 'spring', damping: 25, stiffness: 350 }}
-      style={{
-        position: 'fixed',
-        top: '32px',
-        left: '50%',
-        zIndex: 99999,
-        display: 'flex',
-        alignItems: 'center',
-        gap: '12px',
-        padding: '16px 24px',
-        borderRadius: 'var(--radius-lg)',
-        background: 'rgba(255, 255, 255, 0.95)',
-        backdropFilter: 'blur(16px)',
-        border: '1px solid rgba(255, 255, 255, 0.6)',
-        boxShadow: '0 20px 48px rgba(0, 0, 0, 0.12), 0 8px 16px rgba(0, 0, 0, 0.06)',
-        color: 'var(--dark)',
-        fontFamily: 'var(--font-support)',
-        fontWeight: 600,
-        fontSize: '0.95rem',
-      }}
-    >
-      <div style={{
-        width: 24,
-        height: 24,
-        borderRadius: '50%',
-        background: 'var(--success)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        color: 'white',
-      }}>
-        <ShieldCheck size={14} />
-      </div>
-      <span>{message}</span>
-    </motion.div>
-  );
-};
+/* Local Toast component removed in favor of global ToastProvider */
 
 const StudentOverview = () => {
   const { user } = useAuth();
@@ -86,7 +38,7 @@ const StudentOverview = () => {
   const [globalCourses, setGlobalCourses] = useState([]);
   const [loading, setLoading] = useState(true);
   
-  const setToast = (msg) => showToast(msg);
+  const setToast = (msg, type = 'success') => showToast(msg, type);
 
   const [isAddCourseModalOpen, setIsAddCourseModalOpen] = useState(false);
   const [editingCourseName, setEditingCourseName] = useState(null);
@@ -363,7 +315,7 @@ const StudentOverview = () => {
       setToast('Attendance marked successfully! 🎉');
     } catch (err) {
       console.error(err);
-      setToast('Failed to mark attendance.');
+      setToast('Failed to mark attendance.', 'error');
     }
   };
 
@@ -375,7 +327,7 @@ const StudentOverview = () => {
         await setDoc(userRef, { enrolledCourses: [...currentEnrolled, courseTitle] }, { merge: true });
         setToast(`Enrolled in ${courseTitle}! 📚`);
       }
-    } catch (err) { setToast("Failed to enroll."); }
+    } catch (err) { setToast("Failed to enroll.", 'error'); }
   };
 
   const handleRemoveCourse = async (courseTitle) => {
@@ -395,7 +347,7 @@ const StudentOverview = () => {
         setToast(`Removed ${courseTitle}.`);
       } catch (err) {
         console.error(err);
-        setToast("Failed to remove course.");
+        setToast("Failed to remove course.", 'error');
       }
     }
   };
@@ -415,7 +367,7 @@ const StudentOverview = () => {
       setEditingCourseName(null);
     } catch (err) {
       console.error(err);
-      setToast("Failed to update course.");
+      setToast("Failed to update course.", 'error');
     }
   };
 
@@ -549,7 +501,6 @@ const StudentOverview = () => {
 
   return (
     <motion.div variants={stagger} initial="hidden" animate="show" style={{ display: 'flex', flexDirection: 'column', gap: '28px', paddingBottom: '40px' }}>
-      <AnimatePresence>{toast && <Toast message={toast} onClose={() => setToast(null)} />}</AnimatePresence>
       
       <div style={{ display: 'grid', gridTemplateColumns: '2.1fr 0.9fr', gap: '28px' }} className="grid-2-col-mobile">
         {/* Left Column */}
