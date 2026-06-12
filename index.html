@@ -4,6 +4,29 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Compution - Learn Computer Science Beyond Textbooks</title>
+    <script>
+      (function() {
+        try {
+          var isDark = false;
+          var systemDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+          var hasSavedPref = false;
+          var savedVal = false;
+          for (var i = 0; i < localStorage.length; i++) {
+            var key = localStorage.key(i);
+            if (key && key.indexOf('isDarkMode_') === 0) {
+              hasSavedPref = true;
+              if (localStorage.getItem(key) === 'true') {
+                savedVal = true;
+              }
+            }
+          }
+          isDark = hasSavedPref ? savedVal : systemDark;
+          if (isDark) {
+            document.documentElement.classList.add('dark-theme');
+          }
+        } catch (e) {}
+      })();
+    </script>
     <script src="https://unpkg.com/@dotlottie/player-component@2.7.12/dist/dotlottie-player.mjs" type="module"></script>
   </head>
   <body>

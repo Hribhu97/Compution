@@ -61,6 +61,50 @@ const DashboardLayout = () => {
   const [hasUnread, setHasUnread] = useState(false);
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
   const [showOnlineBanner, setShowOnlineBanner] = useState(false);
+  const [isDarkMode, setIsDarkMode] = useState(() => {
+    if (!user?.uid) {
+      return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    }
+    const saved = localStorage.getItem(`isDarkMode_${user.uid}`);
+    if (saved !== null) {
+      return saved === 'true';
+    }
+    return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  });
+
+  useEffect(() => {
+    if (user?.uid) {
+      const saved = localStorage.getItem(`isDarkMode_${user.uid}`);
+      if (saved !== null) {
+        setIsDarkMode(saved === 'true');
+      } else {
+        setIsDarkMode(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      }
+    }
+  }, [user]);
+
+  useEffect(() => {
+    const syncTheme = () => {
+      if (user?.uid) {
+        const saved = localStorage.getItem(`isDarkMode_${user.uid}`);
+        if (saved !== null) {
+          setIsDarkMode(saved === 'true');
+        } else {
+          setIsDarkMode(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        }
+      }
+    };
+    window.addEventListener('themechange', syncTheme);
+    window.addEventListener('storage', syncTheme);
+    return () => {
+      window.removeEventListener('themechange', syncTheme);
+      window.removeEventListener('storage', syncTheme);
+    };
+  }, [user]);
+
+  useEffect(() => {
+    document.body.classList.toggle('dark-theme', isDarkMode);
+  }, [isDarkMode]);
 
   useEffect(() => {
     let timer;
@@ -289,7 +333,7 @@ const DashboardLayout = () => {
   ];
 
   return (
-    <div className="dash-shell">
+    <div className="dash-shell" style={{ transition: 'background-color 0.3s ease' }}>
       <aside className="dash-sidebar-panel hide-mobile">
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', paddingLeft: '8px', marginBottom: '40px' }}>
           <div style={{
@@ -413,36 +457,85 @@ const DashboardLayout = () => {
           )}
         </AnimatePresence>
         <header className="dash-header-bar">
-          <div className="dash-welcome" style={{ fontWeight: 600, color: 'var(--dark)', fontSize: '1.05rem', marginRight: '16px' }}>
+          <div className="dash-welcome" style={{ 
+            fontWeight: 600, 
+            color: isDarkMode ? '#F1F5F9' : 'var(--dark)', 
+            fontSize: '1.05rem', 
+            marginRight: '16px',
+            transition: 'color 0.3s ease'
+          }}>
             Welcome back, {user?.role?.toLowerCase() === 'admin' ? 'Admin' : (user?.displayName || 'Student').split(' ')[0]} 👋
           </div>
 
           <div className="dash-search-wrap">
-            <Search size={18} style={{ position: 'absolute', left: '16px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+            <Search size={18} style={{ 
+              position: 'absolute', 
+              left: '16px', 
+              top: '50%', 
+              transform: 'translateY(-50%)', 
+              color: isDarkMode ? '#94A3B8' : 'var(--text-muted)',
+              transition: 'color 0.3s ease'
+            }} />
             <input
               placeholder="Search courses...."
               style={{
-                width: '100%', padding: '13px 16px 13px 46px', borderRadius: '100px', border: '1.5px solid rgba(83,109,254,0.2)',
-                background: 'white', fontSize: '0.9rem', outline: 'none', color: 'var(--dark)', transition: 'border-color 0.2s',
+                width: '100%', 
+                padding: '13px 16px 13px 46px', 
+                borderRadius: '100px', 
+                border: isDarkMode ? '1.5px solid rgba(255,255,255,0.08)' : '1.5px solid rgba(83,109,254,0.2)',
+                background: isDarkMode ? '#151F32' : 'white', 
+                fontSize: '0.9rem', 
+                outline: 'none', 
+                color: isDarkMode ? '#F1F5F9' : 'var(--dark)', 
+                transition: 'all 0.3s ease',
               }}
-              onFocus={(e) => e.target.style.borderColor = 'var(--primary)'}
-              onBlur={(e) => e.target.style.borderColor = 'rgba(83,109,254,0.2)'}
+              onFocus={(e) => {
+                e.target.style.borderColor = 'var(--primary)';
+                if (isDarkMode) e.target.style.boxShadow = '0 0 0 3px rgba(83,109,254,0.25)';
+              }}
+              onBlur={(e) => {
+                e.target.style.borderColor = isDarkMode ? 'rgba(255,255,255,0.08)' : 'rgba(83,109,254,0.2)';
+                e.target.style.boxShadow = 'none';
+              }}
             />
           </div>
 
           <div className="dash-header-actions" style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '16px' }}>
-            <button style={{ position: 'relative', color: 'var(--text-muted)', padding: '8px' }}>
+            <button style={{ 
+              position: 'relative', 
+              color: isDarkMode ? '#94A3B8' : 'var(--text-muted)', 
+              padding: '8px',
+              transition: 'color 0.3s ease'
+            }}>
               <Bell size={22} />
-              {hasUnread && <span style={{ position: 'absolute', top: '6px', right: '6px', width: '8px', height: '8px', background: 'var(--danger)', borderRadius: '50%', border: '2px solid #F0F4FF' }} />}
+              {hasUnread && <span style={{ 
+                position: 'absolute', 
+                top: '6px', 
+                right: '6px', 
+                width: '8px', 
+                height: '8px', 
+                background: 'var(--danger)', 
+                borderRadius: '50%', 
+                border: `2px solid ${isDarkMode ? '#0B0F19' : '#F0F4FF'}`,
+                transition: 'border-color 0.3s ease'
+              }} />}
             </button>
             
             <div style={{ position: 'relative' }}>
               <div 
                 onClick={() => setDropdownOpen(!dropdownOpen)}
                 style={{ 
-                  display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', 
-                  background: 'white', padding: '6px 16px 6px 6px', borderRadius: '100px',
-                  boxShadow: '0 2px 8px rgba(0,0,0,0.04)'
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '10px', 
+                  cursor: 'pointer', 
+                  background: isDarkMode ? '#151F32' : 'white', 
+                  padding: '6px 16px 6px 6px', 
+                  borderRadius: '100px',
+                  border: isDarkMode ? '1px solid rgba(255,255,255,0.08)' : '1px solid transparent',
+                  boxShadow: isDarkMode ? 'none' : '0 2px 8px rgba(0,0,0,0.04)',
+                  color: isDarkMode ? '#F1F5F9' : 'var(--dark)',
+                  transition: 'all 0.3s ease'
                 }}>
                 {user?.photoURL ? (
                   <img src={user.photoURL} alt="avatar" style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover' }} />
@@ -465,8 +558,14 @@ const DashboardLayout = () => {
                     exit={{ opacity: 0, y: 10, scale: 0.95 }}
                     style={{
                       position: 'absolute', top: 'calc(100% + 8px)', right: 0, width: '200px',
-                      background: 'white', borderRadius: '16px', boxShadow: '0 8px 24px rgba(0,0,0,0.08)',
-                      padding: '8px', zIndex: 100
+                      background: isDarkMode ? '#151F32' : 'white', 
+                      borderRadius: '16px', 
+                      boxShadow: isDarkMode ? '0 8px 32px rgba(0,0,0,0.24)' : '0 8px 24px rgba(0,0,0,0.08)',
+                      border: isDarkMode ? '1px solid rgba(255,255,255,0.08)' : '1px solid var(--border)',
+                      padding: '8px', 
+                      zIndex: 100,
+                      color: isDarkMode ? '#F1F5F9' : 'var(--dark)',
+                      transition: 'background-color 0.3s ease, color 0.3s ease'
                     }}
                   >
                     <div 
@@ -475,16 +574,25 @@ const DashboardLayout = () => {
                         navigate('/dashboard/profile');
                       }}
                       style={{ padding: '8px 12px', cursor: 'pointer', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.9rem', fontWeight: 500 }} 
-                      onMouseEnter={e => e.currentTarget.style.background='var(--surface)'} 
-                      onMouseLeave={e => e.currentTarget.style.background='transparent'}
+                      onMouseEnter={e => e.currentTarget.style.background = isDarkMode ? '#1E2D4A' : 'var(--surface)'} 
+                      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                     >
                       <User size={16} /> My Profile
                     </div>
-                    <div style={{ padding: '8px 12px', cursor: 'pointer', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.9rem', fontWeight: 500 }} onMouseEnter={e => e.currentTarget.style.background='var(--surface)'} onMouseLeave={e => e.currentTarget.style.background='transparent'}>
+                    <div 
+                      style={{ padding: '8px 12px', cursor: 'pointer', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.9rem', fontWeight: 500 }} 
+                      onMouseEnter={e => e.currentTarget.style.background = isDarkMode ? '#1E2D4A' : 'var(--surface)'} 
+                      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                    >
                       <Settings size={16} /> Settings
                     </div>
-                    <div style={{ margin: '4px 0', height: 1, background: 'var(--border)' }} />
-                    <div onClick={handleLogout} style={{ padding: '8px 12px', cursor: 'pointer', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.9rem', fontWeight: 500, color: 'var(--danger)' }} onMouseEnter={e => e.currentTarget.style.background='rgba(239,83,80,0.08)'} onMouseLeave={e => e.currentTarget.style.background='transparent'}>
+                    <div style={{ margin: '4px 0', height: 1, background: isDarkMode ? 'rgba(255,255,255,0.08)' : 'var(--border)' }} />
+                    <div 
+                      onClick={handleLogout} 
+                      style={{ padding: '8px 12px', cursor: 'pointer', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.9rem', fontWeight: 500, color: 'var(--danger)' }} 
+                      onMouseEnter={e => e.currentTarget.style.background = isDarkMode ? 'rgba(239,83,80,0.12)' : 'rgba(239,83,80,0.08)'} 
+                      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                    >
                       <LogOut size={16} /> Logout
                     </div>
                   </motion.div>
@@ -506,9 +614,32 @@ const DashboardLayout = () => {
           </AnimatePresence>
         </div>
       </div>
-      <nav className="dash-bottom-nav hide-desktop hide-desktop--flex" aria-label="Mobile navigation">
+      <nav 
+        className="dash-bottom-nav hide-desktop hide-desktop--flex" 
+        aria-label="Mobile navigation"
+        style={{
+          background: isDarkMode ? '#151F32' : 'white',
+          borderTop: isDarkMode ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid var(--border)',
+          boxShadow: isDarkMode ? '0 -4px 20px rgba(0, 0, 0, 0.25)' : '0 -4px 20px rgba(0, 0, 0, 0.06)',
+          transition: 'all 0.3s ease'
+        }}
+      >
         {bottomNav.map(({ to, label, icon: Icon, exact }) => (
-          <NavLink key={to} to={to} end={exact} className={({ isActive }) => isActive ? 'active' : ''}>
+          <NavLink 
+            key={to} 
+            to={to} 
+            end={exact} 
+            style={({ isActive }) => ({
+              color: isActive 
+                ? (isDarkMode ? '#00E5FF' : 'var(--primary)') 
+                : (isDarkMode ? '#94A3B8' : 'var(--text-muted)'),
+              background: isActive 
+                ? (isDarkMode ? 'rgba(0, 229, 255, 0.1)' : 'var(--primary-light)') 
+                : 'transparent',
+              transition: 'all 0.2s ease',
+              borderRadius: 'var(--radius-sm)',
+            })}
+          >
             <Icon size={20} />
             <span>{label}</span>
           </NavLink>
@@ -526,10 +657,11 @@ const DashboardLayout = () => {
               gap: '4px',
               padding: '8px 4px',
               borderRadius: 'var(--radius-sm)',
-              color: 'var(--text-muted)',
+              color: isDarkMode ? '#94A3B8' : 'var(--text-muted)',
               fontSize: '0.65rem',
               fontWeight: 600,
               minWidth: 0,
+              transition: 'all 0.2s ease',
             }}
           >
             <Video size={20} />

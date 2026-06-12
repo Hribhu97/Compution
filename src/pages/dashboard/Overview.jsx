@@ -1164,10 +1164,16 @@ export default function Overview() {
   const { user, loading } = useAuth();
   const { showToast } = useToast();
   
-  // Theme Switching (Defaulting to light mode)
+  // Theme Switching (Defaulting to system default)
   const [isDarkMode, setIsDarkMode] = useState(() => {
-    if (!user?.uid) return false;
-    return localStorage.getItem(`isDarkMode_${user.uid}`) === 'true';
+    if (!user?.uid) {
+      return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    }
+    const saved = localStorage.getItem(`isDarkMode_${user.uid}`);
+    if (saved !== null) {
+      return saved === 'true';
+    }
+    return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
   });
 
   // UI layout mode switcher
@@ -1225,8 +1231,13 @@ export default function Overview() {
       localStorage.setItem(`friends_${user.uid}`, JSON.stringify(friends));
       localStorage.setItem(`studentHasCrown_${user.uid}`, studentHasCrown);
       localStorage.setItem(`hasPlayedGame_${user.uid}`, hasPlayedGame);
+      window.dispatchEvent(new Event('themechange'));
     }
   }, [uiMode, isDarkMode, xp, level, rankPoints, streak, friends, studentHasCrown, hasPlayedGame, user?.uid]);
+
+  useEffect(() => {
+    document.body.classList.toggle('dark-theme', isDarkMode);
+  }, [isDarkMode]);
 
   const getReferralCode = () => {
     if (!user?.studentId) return 'COMP2K260000';

@@ -44,7 +44,7 @@ const Modal = ({ isOpen, onClose, title, children }) => {
               style={{
                 pointerEvents: 'auto',
                 width: 'min(500px, calc(100vw - 32px))', maxHeight: 'min(90vh, 90dvh)', overflowY: 'auto',
-                background: 'white', borderRadius: '24px',
+                background: 'var(--white)', borderRadius: '24px',
                 boxShadow: '0 24px 48px rgba(0,0,0,0.12)',
                 padding: 'clamp(20px, 5vw, 32px)'
               }}

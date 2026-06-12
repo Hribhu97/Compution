@@ -572,3 +572,41 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover {
   }
 }
 
+/* =================== DARK THEME STYLING =================== */
+.dark-theme, body.dark-theme {
+  --bg: #0B0F19;
+  --white: #151F32;
+  --dark: #F1F5F9;
+  --surface: #1E2D4A;
+  --text-main: #F1F5F9;
+  --text-muted: #94A3B8;
+  --text-light: #64748B;
+  --border: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.15);
+}
+
+body.dark-theme, .dark-theme body {
+  background: var(--bg) !important;
+  color: var(--text-main) !important;
+}
+
+body.dark-theme .dash-shell {
+  background: #0B0F19;
+}
+
+body.dark-theme .dash-bottom-nav {
+  background: #151F32;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.25);
+}
+
+body.dark-theme .dash-bottom-nav a {
+  color: #94A3B8;
+}
+
+body.dark-theme .dash-bottom-nav a.active {
+  color: #00E5FF;
+  background: rgba(0, 229, 255, 0.1);
+}
+
+
