@@ -325,7 +325,7 @@ const ChatAssistant = () => {
             >
               <div style={{ background: 'linear-gradient(180deg, #536DFE 0%, #667FFF 100%)', padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: 'white' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--primary)', fontWeight: 800, fontSize: '1rem' }}>C</div>
+                  <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'var(--white)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--primary)', fontWeight: 800, fontSize: '1rem' }}>C</div>
                   <div>
                     <div style={{ fontWeight: 700, fontSize: '1rem', lineHeight: 1.2 }}>Compution AI</div>
                     <div style={{ fontSize: '0.75rem', opacity: 0.8 }}>Online assistant</div>
@@ -394,7 +394,7 @@ const ChatAssistant = () => {
                 {showTyping && (
                   <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} style={{ display: 'flex', gap: '10px', alignItems: 'flex-end' }}>
                     <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--primary)', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: '0.7rem', fontWeight: 800 }}>C</div>
-                    <div style={{ background: 'white', padding: '12px 16px', borderRadius: '16px 16px 16px 4px', display: 'flex', gap: '4px', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
+                    <div style={{ background: 'var(--white)', padding: '12px 16px', borderRadius: '16px 16px 16px 4px', display: 'flex', gap: '4px', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
                       <motion.div animate={{ y: [0, -4, 0] }} transition={{ duration: 0.6, repeat: Infinity, delay: 0 }} style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--text-light)' }} />
                       <motion.div animate={{ y: [0, -4, 0] }} transition={{ duration: 0.6, repeat: Infinity, delay: 0.2 }} style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--text-light)' }} />
                       <motion.div animate={{ y: [0, -4, 0] }} transition={{ duration: 0.6, repeat: Infinity, delay: 0.4 }} style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--text-light)' }} />
@@ -404,7 +404,7 @@ const ChatAssistant = () => {
                 <div ref={bottomRef} />
               </div>
 
-              <div style={{ padding: '16px', background: 'white', borderTop: '1px solid var(--border)' }}>
+              <div style={{ padding: '16px', background: 'var(--white)', borderTop: '1px solid var(--border)' }}>
                 <form onSubmit={handleSend} style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
                   <input
                     value={input} onChange={(e) => setInput(e.target.value)}

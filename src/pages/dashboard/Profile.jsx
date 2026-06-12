@@ -576,7 +576,7 @@ const Profile = () => {
                   width: 20,
                   height: 20,
                   borderRadius: '50%',
-                  background: 'white',
+                  background: 'var(--white)',
                   boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
                 }}
               />

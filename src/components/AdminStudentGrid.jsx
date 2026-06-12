@@ -116,7 +116,7 @@ const AdminStudentGrid = () => {
             onChange={(e) => setSearchTerm(e.target.value)}
             style={{
               width: '100%', padding: '10px 16px 10px 46px', borderRadius: '100px', border: '1px solid var(--border)',
-              background: 'white', fontSize: '0.9rem', outline: 'none', color: 'var(--dark)'
+              background: 'var(--white)', fontSize: '0.9rem', outline: 'none', color: 'var(--dark)'
             }}
           />
         </div>
@@ -124,7 +124,7 @@ const AdminStudentGrid = () => {
 
       {loading ? (
         <div style={{ display: 'flex', gap: '20px' }}>
-          {[1,2,3].map(i => <div key={i} style={{ height: 200, flex: 1, background: 'white', borderRadius: 20, animation: 'pulse 1.5s infinite' }} />)}
+          {[1,2,3].map(i => <div key={i} style={{ height: 200, flex: 1, background: 'var(--white)', borderRadius: 20, animation: 'pulse 1.5s infinite' }} />)}
         </div>
       ) : (
         <div className="grid-auto-cards-sm">
@@ -137,7 +137,7 @@ const AdminStudentGrid = () => {
                   initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
                   onClick={() => handleOpenStudent(student)}
                   className="card card-p"
-                  style={{ padding: '24px', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: '16px', background: 'white' }}
+                  style={{ padding: '24px', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: '16px', background: 'var(--white)' }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                     {student.photoURL ? (

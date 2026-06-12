@@ -194,7 +194,7 @@ const MockTests = () => {
               onChange={e => setSearchQuery(e.target.value)}
               style={{
                 width: '100%', padding: '12px 16px 12px 48px', borderRadius: '12px', border: '1px solid var(--border)',
-                background: 'white', fontSize: '0.9rem', outline: 'none', color: 'var(--dark)'
+                background: 'var(--white)', fontSize: '0.9rem', outline: 'none', color: 'var(--dark)'
               }}
             />
           </div>
@@ -203,9 +203,9 @@ const MockTests = () => {
         {/* Tests Grid */}
         <div className="grid-auto-cards">
           {loading ? (
-            [1, 2, 3].map(i => <div key={i} style={{ height: 220, background: 'white', borderRadius: 20, animation: 'pulse 1.5s infinite' }} />)
+            [1, 2, 3].map(i => <div key={i} style={{ height: 220, background: 'var(--white)', borderRadius: 20, animation: 'pulse 1.5s infinite' }} />)
           ) : filteredTests.length === 0 ? (
-            <motion.div variants={item} style={{ gridColumn: '1 / -1', padding: '60px', textAlign: 'center', background: 'white', borderRadius: '20px', color: 'var(--text-light)', border: '1px dashed var(--border-strong)' }}>
+            <motion.div variants={item} style={{ gridColumn: '1 / -1', padding: '60px', textAlign: 'center', background: 'var(--white)', borderRadius: '20px', color: 'var(--text-light)', border: '1px dashed var(--border-strong)' }}>
               <FileText size={40} style={{ margin: '0 auto 16px', opacity: 0.5 }} />
               <h3 style={{ fontSize: '1.2rem', color: 'var(--dark)', marginBottom: '8px' }}>No Mock Tests Uploaded</h3>
               <p>Create your first mock test question sheet by clicking Upload above!</p>

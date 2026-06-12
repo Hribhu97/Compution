@@ -268,7 +268,7 @@ const Schedule = () => {
 
       {/* Filter bar for Faculty */}
       {canManage && (
-        <motion.div variants={fadeItem} className="card card-p" style={{ padding: '16px 24px', display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap', background: 'white' }}>
+        <motion.div variants={fadeItem} className="card card-p" style={{ padding: '16px 24px', display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap', background: 'var(--white)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, minWidth: '240px' }}>
             <span style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>Filter by Student:</span>
             <select
@@ -290,12 +290,12 @@ const Schedule = () => {
 
       {/* LOADING STATE */}
       {loading ? (
-        <div style={{ height: '300px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'white', borderRadius: 20 }}>
+        <div style={{ height: '300px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--white)', borderRadius: 20 }}>
           <div style={{ width: '32px', height: '32px', border: '3px solid rgba(83,109,254,0.2)', borderTopColor: 'var(--primary)', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
           <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
         </div>
       ) : displayedSchedules.length === 0 ? (
-        <motion.div variants={fadeItem} className="card card-p" style={{ textAlign: 'center', padding: '60px 20px', background: 'white' }}>
+        <motion.div variants={fadeItem} className="card card-p" style={{ textAlign: 'center', padding: '60px 20px', background: 'var(--white)' }}>
           <CalendarIcon size={48} style={{ margin: '0 auto 16px', color: 'var(--text-light)', opacity: 0.6 }} />
           <h3 style={{ fontSize: '1.2rem', marginBottom: '6px' }}>No classes scheduled</h3>
           <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
@@ -309,7 +309,7 @@ const Schedule = () => {
             const isToday = isSameDay(new Date(), parseISO(item.date));
             const eventColor = getEventColor(item.eventType);
             return (
-              <motion.div key={item.id} variants={fadeItem} className="card card-p" style={{ background: 'white', display: 'flex', flexDirection: 'column', gap: '14px', borderLeft: `5px solid ${eventColor}`, borderTop: isToday ? '1.5px solid var(--success)' : '1px solid var(--border)', borderRight: '1px solid var(--border)', borderBottom: '1px solid var(--border)' }}>
+              <motion.div key={item.id} variants={fadeItem} className="card card-p" style={{ background: 'var(--white)', display: 'flex', flexDirection: 'column', gap: '14px', borderLeft: `5px solid ${eventColor}`, borderTop: isToday ? '1.5px solid var(--success)' : '1px solid var(--border)', borderRight: '1px solid var(--border)', borderBottom: '1px solid var(--border)' }}>
                 
                 {/* Top Header */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -371,7 +371,7 @@ const Schedule = () => {
         </motion.div>
       ) : (
         /* CALENDAR WEEKLY VIEW */
-        <motion.div variants={fadeItem} className="card card-p" style={{ background: 'white', display: 'flex', flexDirection: 'column', gap: '20px', overflowX: 'auto' }}>
+        <motion.div variants={fadeItem} className="card card-p" style={{ background: 'var(--white)', display: 'flex', flexDirection: 'column', gap: '20px', overflowX: 'auto' }}>
           
           {/* Week Changer header */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minWidth: '600px' }}>
@@ -457,7 +457,7 @@ const Schedule = () => {
                 className="form-input"
                 value={eventType}
                 onChange={e => setEventType(e.target.value)}
-                style={{ background: 'white' }}
+                style={{ background: 'var(--white)' }}
               >
                 <option value="Regular Class">Regular Class</option>
                 <option value="Extra Class">Extra Class</option>
@@ -475,7 +475,7 @@ const Schedule = () => {
                   className="form-input"
                   value={assignedFacultyId}
                   onChange={e => setAssignedFacultyId(e.target.value)}
-                  style={{ background: 'white' }}
+                  style={{ background: 'var(--white)' }}
                 >
                   <option value="" disabled>Choose Faculty</option>
                   {facultyUsers.map(f => (
@@ -655,7 +655,7 @@ const Schedule = () => {
                   className="form-input"
                   value={recurrenceType}
                   onChange={e => setRecurrenceType(e.target.value)}
-                  style={{ background: 'white' }}
+                  style={{ background: 'var(--white)' }}
                 >
                   <option value="none" disabled>Choose Type</option>
                   <option value="daily">Daily</option>

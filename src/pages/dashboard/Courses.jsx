@@ -208,7 +208,7 @@ const Courses = () => {
               onChange={e => setSearchQuery(e.target.value)}
               style={{
                 width: '100%', padding: '12px 16px 12px 48px', borderRadius: '12px', border: '1px solid var(--border)',
-                background: 'white', fontSize: '0.9rem', outline: 'none', color: 'var(--dark)'
+                background: 'var(--white)', fontSize: '0.9rem', outline: 'none', color: 'var(--dark)'
               }}
             />
           </div>
@@ -220,7 +220,7 @@ const Courses = () => {
         {/* Courses Admin Grid */}
         <div className="grid-auto-cards">
           {loading ? (
-            [1, 2, 3].map(i => <div key={i} style={{ height: 220, background: 'white', borderRadius: 20, animation: 'pulse 1.5s infinite' }} />)
+            [1, 2, 3].map(i => <div key={i} style={{ height: 220, background: 'var(--white)', borderRadius: 20, animation: 'pulse 1.5s infinite' }} />)
           ) : (
             filteredCourses.map((c) => {
               const enrolledCount = students.filter(s => s.course === c.title).length;

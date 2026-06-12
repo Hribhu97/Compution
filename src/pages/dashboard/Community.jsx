@@ -17,6 +17,24 @@ const Community = () => {
   const location = useLocation();
   const { showToast } = useToast();
   const [activeTab, setActiveTab] = useState('board'); // 'board' | 'chat'
+  const [isDarkMode, setIsDarkMode] = useState(() => {
+    if (!user?.uid) return false;
+    return localStorage.getItem(`isDarkMode_${user.uid}`) === 'true';
+  });
+
+  useEffect(() => {
+    const syncTheme = () => {
+      if (user?.uid) {
+        setIsDarkMode(localStorage.getItem(`isDarkMode_${user.uid}`) === 'true');
+      }
+    };
+    window.addEventListener('themechange', syncTheme);
+    window.addEventListener('storage', syncTheme);
+    return () => {
+      window.removeEventListener('themechange', syncTheme);
+      window.removeEventListener('storage', syncTheme);
+    };
+  }, [user]);
 
   // Post Board state
   const [posts, setPosts] = useState([]);
@@ -563,7 +581,7 @@ const Community = () => {
         </div>
       </div>
 
-      <div style={{ flex: 1, minHeight: 0, background: 'white', borderRadius: '24px', border: '1px solid var(--border)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden' }}>
+      <div style={{ flex: 1, minHeight: 0, background: 'var(--white)', borderRadius: '24px', border: '1px solid var(--border)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden' }}>
         
         {/* ==================== TAB 1: POST BOARD ==================== */}
         {activeTab === 'board' && (
@@ -733,11 +751,11 @@ const Community = () => {
             </div>
 
             {/* Right pane: message window */}
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: '#F8FAFC' }}>
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: isDarkMode ? '#0B0F19' : '#F8FAFC' }}>
               {activeRoom ? (
                 <>
                   {/* Chat header */}
-                  <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--border)', background: 'white', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+                  <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--border)', background: 'var(--white)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                       <img src={activeRoom.photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=100'} alt={activeRoom.displayName} style={{ width: 42, height: 42, borderRadius: '50%', objectFit: 'cover' }} />
                       <div>
@@ -778,7 +796,7 @@ const Community = () => {
                                 )}
                                 <div style={{
                                   padding: '12px 16px', borderRadius: isMe ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
-                                  background: isMe ? 'var(--primary)' : 'white',
+                                  background: isMe ? 'var(--primary)' : (isDarkMode ? '#1E2D4A' : 'white'),
                                   color: isMe ? 'white' : 'var(--dark)',
                                   boxShadow: 'var(--shadow-sm)',
                                   border: isMe ? 'none' : '1px solid var(--border)'
@@ -825,7 +843,7 @@ const Community = () => {
                           if (userId !== user.uid && typingVal) {
                             return (
                               <div key={userId} style={{ display: 'flex', justifyContent: 'flex-start', padding: '4px' }}>
-                                <div style={{ display: 'flex', gap: '4px', padding: '8px 12px', borderRadius: '12px', background: '#E2E8F0', color: 'var(--text-muted)', fontSize: '0.75rem', fontWeight: 600 }}>
+                                <div style={{ display: 'flex', gap: '4px', padding: '8px 12px', borderRadius: '12px', background: isDarkMode ? '#1E2D4A' : '#E2E8F0', color: isDarkMode ? '#94A3B8' : 'var(--text-muted)', fontSize: '0.75rem', fontWeight: 600 }}>
                                   <span>{activeRoom.displayName} is typing</span>
                                   <motion.span animate={{ opacity: [0, 1, 0] }} transition={{ repeat: Infinity, duration: 1 }}>.</motion.span>
                                   <motion.span animate={{ opacity: [0, 1, 0] }} transition={{ repeat: Infinity, duration: 1, delay: 0.2 }}>.</motion.span>
@@ -843,7 +861,7 @@ const Community = () => {
 
                   {/* Attachment Preview panel */}
                   {attachment && (
-                    <div style={{ padding: '8px 24px', background: '#F1F5F9', borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+                    <div style={{ padding: '8px 24px', background: isDarkMode ? '#1E2D4A' : '#F1F5F9', borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         {attachment.type === 'image' ? <Image size={18} style={{ color: 'var(--primary)' }} /> : <FileText size={18} style={{ color: 'var(--danger)' }} />}
                         <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--dark)' }}>{attachment.name}</span>
@@ -853,7 +871,7 @@ const Community = () => {
                   )}
 
                   {/* Input entry bar */}
-                  <form onSubmit={handleSendMessage} style={{ padding: '16px 24px', borderTop: '1px solid var(--border)', background: 'white', display: 'flex', gap: '12px', alignItems: 'center', flexShrink: 0 }}>
+                  <form onSubmit={handleSendMessage} style={{ padding: '16px 24px', borderTop: '1px solid var(--border)', background: 'var(--white)', display: 'flex', gap: '12px', alignItems: 'center', flexShrink: 0 }}>
                     {/* Attachment trigger */}
                     <div style={{ position: 'relative' }}>
                       <label htmlFor="chat-attachment-file" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '38px', height: '38px', borderRadius: '50%', background: 'var(--surface)', color: 'var(--text-muted)', cursor: 'pointer', transition: 'all 0.2s' }} onMouseEnter={e => e.currentTarget.style.color = 'var(--primary)'} onMouseLeave={e => e.currentTarget.style.color = 'var(--text-muted)'}>

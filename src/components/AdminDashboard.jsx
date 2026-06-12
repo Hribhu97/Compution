@@ -2225,7 +2225,7 @@ const AdminDashboard = () => {
         <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr', gap: '24px' }} className="grid-3-col-mobile">
           
           {/* Card 1: Faculty Workload */}
-          <div className="card" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px', border: '1px solid var(--border)', background: 'white' }}>
+          <div className="card" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px', border: '1px solid var(--border)', background: 'var(--white)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <h3 style={{ margin: 0, fontSize: '0.98rem', fontWeight: 800, color: 'var(--dark)' }}>Faculty Workload Distribution</h3>
               <span style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--primary)', background: 'var(--primary-light)', padding: '2px 8px', borderRadius: '4px' }}>Utilization Rate</span>
@@ -2254,7 +2254,7 @@ const AdminDashboard = () => {
           </div>
 
           {/* Card 2: Student Batches & Groups */}
-          <div className="card" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px', border: '1px solid var(--border)', background: 'white' }}>
+          <div className="card" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px', border: '1px solid var(--border)', background: 'var(--white)' }}>
             <h3 style={{ margin: 0, fontSize: '0.98rem', fontWeight: 800, color: 'var(--dark)' }}>Academic Groups & Roster Stats</h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               {[
@@ -2279,13 +2279,13 @@ const AdminDashboard = () => {
           </div>
 
           {/* Card 3: Metrics */}
-          <div className="card" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px', border: '1px solid var(--border)', background: 'white', justifyContent: 'space-between' }}>
+          <div className="card" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px', border: '1px solid var(--border)', background: 'var(--white)', justifyContent: 'space-between' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
               <h3 style={{ margin: 0, fontSize: '0.98rem', fontWeight: 800, color: 'var(--dark)' }}>Performance Metrics</h3>
               
               <div style={{ display: 'flex', alignItems: 'center', gap: '14px', background: 'var(--surface)', padding: '12px', borderRadius: '12px' }}>
                 <div style={{ position: 'relative', width: '56px', height: '56px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', background: 'conic-gradient(var(--success) 0deg, var(--success) ' + (rate * 3.6) + 'deg, #e2e8f0 ' + (rate * 3.6) + 'deg 360deg)' }}>
-                  <div style={{ position: 'absolute', width: '44px', height: '44px', borderRadius: '50%', background: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: '0.85rem', color: 'var(--success)' }}>
+                  <div style={{ position: 'absolute', width: '44px', height: '44px', borderRadius: '50%', background: 'var(--white)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: '0.85rem', color: 'var(--success)' }}>
                     {rate}%
                   </div>
                 </div>
@@ -2297,7 +2297,7 @@ const AdminDashboard = () => {
 
               <div style={{ display: 'flex', alignItems: 'center', gap: '14px', background: 'var(--surface)', padding: '12px', borderRadius: '12px', marginTop: '4px' }}>
                 <div style={{ position: 'relative', width: '56px', height: '56px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', background: 'conic-gradient(var(--primary) 0deg, var(--primary) ' + (collectionPercent * 3.6) + 'deg, #e2e8f0 ' + (collectionPercent * 3.6) + 'deg 360deg)' }}>
-                  <div style={{ position: 'absolute', width: '44px', height: '44px', borderRadius: '50%', background: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: '0.85rem', color: 'var(--primary)' }}>
+                  <div style={{ position: 'absolute', width: '44px', height: '44px', borderRadius: '50%', background: 'var(--white)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: '0.85rem', color: 'var(--primary)' }}>
                     {collectionPercent}%
                   </div>
                 </div>
@@ -2384,7 +2384,7 @@ const AdminDashboard = () => {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
             
             {/* Student Progress */}
-            <div className="card" style={{ padding: '20px', border: '1px solid var(--border)', background: 'white' }}>
+            <div className="card" style={{ padding: '20px', border: '1px solid var(--border)', background: 'var(--white)' }}>
               <h3 style={{ margin: '0 0 16px 0', fontSize: '0.98rem', fontWeight: 800, color: 'var(--dark)' }}>Assigned Students Progress</h3>
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.8rem' }}>
@@ -2436,7 +2436,7 @@ const AdminDashboard = () => {
             </div>
 
             {/* Doubt Queue */}
-            <div className="card" style={{ padding: '20px', border: '1px solid var(--border)', background: 'white' }}>
+            <div className="card" style={{ padding: '20px', border: '1px solid var(--border)', background: 'var(--white)' }}>
               <h3 style={{ margin: '0 0 16px 0', fontSize: '0.98rem', fontWeight: 800, color: 'var(--dark)' }}>Active Doubt Queue</h3>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 {myRooms.slice(0, 5).map(rm => {
@@ -2505,7 +2505,7 @@ const AdminDashboard = () => {
               </button>
             </div>
 
-            <div className="card" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px', border: '1px solid var(--border)', background: 'white' }}>
+            <div className="card" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px', border: '1px solid var(--border)', background: 'var(--white)' }}>
               <h3 style={{ margin: 0, fontSize: '1.02rem', fontWeight: 800, color: 'var(--dark)' }}>My Classes Today</h3>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 {myClasses.map(sch => (
@@ -2767,7 +2767,7 @@ const AdminDashboard = () => {
       </div>
 
       {/* Main Container Area */}
-      <div className="card card-p" style={{ background: 'white', border: '1px solid var(--border)' }}>
+      <div className="card card-p" style={{ background: 'var(--white)', border: '1px solid var(--border)' }}>
         
         {/* Search and creation tools header */}
         {activePanelTab !== 'overview' && (
@@ -2852,7 +2852,7 @@ const AdminDashboard = () => {
                       <div style={{ fontSize: '1.75rem', fontWeight: 800 }}>{studentsList.length} Students</div>
                       <div style={{ fontSize: '0.72rem', opacity: 0.8, marginTop: '8px' }}>You are currently assigned as their primary mentor for doubt-solving & schedule tracking.</div>
                     </div>
-                    <div style={{ padding: '20px', background: 'white', borderRadius: '16px', border: '1px solid var(--border)', boxShadow: 'var(--shadow-sm)' }}>
+                    <div style={{ padding: '20px', background: 'var(--white)', borderRadius: '16px', border: '1px solid var(--border)', boxShadow: 'var(--shadow-sm)' }}>
                       <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600, marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Active Scheduled Classes</div>
                       <div style={{ fontSize: '1.75rem', fontWeight: 800, color: 'var(--success)' }}>
                         {schedulesList.filter(sch => sch.date === new Date().toISOString().split('T')[0] && (sch.facultyId === user.uid || sch.faculty === user.displayName)).length} Today
@@ -3133,7 +3133,7 @@ const AdminDashboard = () => {
                       <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', textAlign: 'center', padding: '20px' }}>No transactions recorded.</div>
                     ) : (
                       paymentHistoryList.slice(0, 20).map((log, index) => (
-                        <div key={index} style={{ background: 'white', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div key={index} style={{ background: 'var(--white)', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <div>
                             <div style={{ fontWeight: 700, fontSize: '0.8rem', color: 'var(--dark)' }}>{log.studentName}</div>
                             <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{log.feeName} • {log.paymentMethod}</div>
@@ -3473,7 +3473,7 @@ const AdminDashboard = () => {
                           <select
                             onChange={e => setPendingRoleChanges(prev => ({ ...prev, [u.id]: e.target.value }))}
                             value={pendingRoleChanges[u.id] !== undefined ? pendingRoleChanges[u.id] : (u.role || 'student')}
-                            style={{ padding: '6px 10px', borderRadius: '8px', border: '1px solid var(--border)', fontSize: '0.85rem', outline: 'none', background: 'white' }}
+                            style={{ padding: '6px 10px', borderRadius: '8px', border: '1px solid var(--border)', fontSize: '0.85rem', outline: 'none', background: 'var(--white)' }}
                           >
                             <option value="student">Student</option>
                             <option value="faculty">Faculty</option>
@@ -3679,7 +3679,7 @@ const AdminDashboard = () => {
               className="form-input"
               value={meetParticipants}
               onChange={e => setMeetParticipants(e.target.value)}
-              style={{ background: 'white' }}
+              style={{ background: 'var(--white)' }}
             >
               <option value="All Students">All Students</option>
               {allUsers.filter(u => u.role === 'student').map(stud => (
@@ -3743,7 +3743,7 @@ const AdminDashboard = () => {
                   value={rosterForm.studentId}
                   onChange={handleRosterStudentSelect}
                   className="form-input"
-                  style={{ background: 'white' }}
+                  style={{ background: 'var(--white)' }}
                 >
                   <option value="" disabled>Select Student</option>
                   {allUsers
@@ -3796,7 +3796,7 @@ const AdminDashboard = () => {
                     value={rosterForm.facultyId}
                     onChange={e => setRosterForm({ ...rosterForm, facultyId: e.target.value })}
                     className="form-input"
-                    style={{ background: 'white' }}
+                    style={{ background: 'var(--white)' }}
                   >
                     <option value="" disabled>Select Faculty Mentor</option>
                     {allUsers
@@ -3828,7 +3828,7 @@ const AdminDashboard = () => {
               </div>
               <div>
                 <label className="form-label">Course / Program</label>
-                <select required value={newStudent.course} onChange={e => setNewStudent({...newStudent, course: e.target.value})} className="form-input" style={{ background: 'white' }}>
+                <select required value={newStudent.course} onChange={e => setNewStudent({...newStudent, course: e.target.value})} className="form-input" style={{ background: 'var(--white)' }}>
                   <option value="" disabled>Select course</option>
                   {['Class 2', 'Class 3', 'Class 4', 'Class 5', 'Class 6', 'Class 7', 'Class 8', 'Class 9', 'Class 10', 'Class 11 CS', 'Class 11 App', 'Class 12 CS', 'Class 12 App', 'BCA', 'B.Tech', 'Tally Prime', 'Advanced Excel', 'Basic Computer'].map(course => (
                     <option key={course} value={course}>{course}</option>
@@ -3959,7 +3959,7 @@ const AdminDashboard = () => {
                 right: 0,
                 bottom: 0,
                 width: 'min(760px, 100vw)',
-                background: 'white',
+                background: 'var(--white)',
                 boxShadow: '-10px 0 40px rgba(0, 0, 0, 0.15)',
                 zIndex: 1101,
                 display: 'flex',
@@ -3975,7 +3975,7 @@ const AdminDashboard = () => {
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
-                background: 'white',
+                background: 'var(--white)',
                 flexShrink: 0
               }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -4081,7 +4081,7 @@ const AdminDashboard = () => {
                               value={selectedStudentDetails.classCategory || ''}
                               onChange={(e) => setSelectedStudentDetails(prev => ({ ...prev, classCategory: e.target.value }))}
                               className="form-input"
-                              style={{ padding: '6px', fontSize: '0.8rem', background: 'white' }}
+                              style={{ padding: '6px', fontSize: '0.8rem', background: 'var(--white)' }}
                             >
                               <option value="">None / Auto</option>
                               <option value="2">Class 2-5</option>
@@ -4098,7 +4098,7 @@ const AdminDashboard = () => {
                               disabled={!['11', '12'].includes(selectedStudentDetails.classCategory)}
                               onChange={(e) => setSelectedStudentDetails(prev => ({ ...prev, stream: e.target.value }))}
                               className="form-input"
-                              style={{ padding: '6px', fontSize: '0.8rem', background: 'white' }}
+                              style={{ padding: '6px', fontSize: '0.8rem', background: 'var(--white)' }}
                             >
                               <option value="">None</option>
                               <option value="science">Science</option>
@@ -4115,7 +4115,7 @@ const AdminDashboard = () => {
                               placeholder="e.g. advanced_python_batch"
                               onChange={(e) => setSelectedStudentDetails(prev => ({ ...prev, customGroupException: e.target.value }))}
                               className="form-input"
-                              style={{ padding: '6px 12px', fontSize: '0.8rem', flex: 1, background: 'white' }}
+                              style={{ padding: '6px 12px', fontSize: '0.8rem', flex: 1, background: 'var(--white)' }}
                             />
                             <button
                               onClick={() => handleUpdateStudentGrouping(
@@ -4131,7 +4131,7 @@ const AdminDashboard = () => {
                             </button>
                           </div>
                         </div>
-                        <div style={{ marginTop: '12px', fontSize: '0.78rem', display: 'flex', justifyContent: 'space-between', padding: '8px 12px', background: 'white', borderRadius: '8px', border: '1px solid var(--border)' }}>
+                        <div style={{ marginTop: '12px', fontSize: '0.78rem', display: 'flex', justifyContent: 'space-between', padding: '8px 12px', background: 'var(--white)', borderRadius: '8px', border: '1px solid var(--border)' }}>
                           <span><strong>Computed Auto-Group:</strong> {selectedStudentDetails.autoGroup || 'None'}</span>
                           <span><strong>Active Group:</strong> <span style={{ color: 'var(--primary)', fontWeight: 700 }}>{selectedStudentDetails.studentGroup || 'None'}</span></span>
                         </div>
@@ -4346,7 +4346,7 @@ const AdminDashboard = () => {
                             <select
                               value={facSubjectFilter}
                               onChange={e => setFacSubjectFilter(e.target.value)}
-                              style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid var(--border)', fontSize: '0.78rem', background: 'white' }}
+                              style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid var(--border)', fontSize: '0.78rem', background: 'var(--white)' }}
                             >
                               <option value="all">All Subjects</option>
                               {['Python', 'Data Structures', 'Class 11', 'Class 12', 'Web Development', 'Java', 'C & C++', 'Tally', 'Excel', 'Basic Computer'].map(sub => (
@@ -4356,7 +4356,7 @@ const AdminDashboard = () => {
                             <select
                               value={facAvailabilityFilter}
                               onChange={e => setFacAvailabilityFilter(e.target.value)}
-                              style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid var(--border)', fontSize: '0.78rem', background: 'white' }}
+                              style={{ padding: '6px 12px', borderRadius: '8px', border: '1px solid var(--border)', fontSize: '0.78rem', background: 'var(--white)' }}
                             >
                               <option value="all">All Statuses</option>
                               <option value="Available">Available</option>
@@ -4543,7 +4543,7 @@ const AdminDashboard = () => {
                               padding: '5px 10px',
                               borderRadius: '8px',
                               border: '1px solid rgba(83,109,254,0.2)',
-                              background: 'white',
+                              background: 'var(--white)',
                               color: 'var(--primary)',
                               fontSize: '0.7rem',
                               fontWeight: 700,
@@ -4646,7 +4646,7 @@ const AdminDashboard = () => {
               value={feeForm.feeName}
               onChange={e => setFeeForm({ ...feeForm, feeName: e.target.value })}
               className="form-input"
-              style={{ background: 'white' }}
+              style={{ background: 'var(--white)' }}
             >
               {['Tuition', 'Lab Fee', 'Exam Fee', 'Course Fee', 'Tally Prime Fee', 'Excel Training Fee', 'Basic CS Fee', 'Admission Fee', 'Other Fee'].map(name => (
                 <option key={name} value={name}>{name}</option>
@@ -4671,7 +4671,7 @@ const AdminDashboard = () => {
               value={feeForm.month}
               onChange={e => setFeeForm({ ...feeForm, month: e.target.value })}
               className="form-input"
-              style={{ background: 'white' }}
+              style={{ background: 'var(--white)' }}
             >
               {[
                 'January 2026', 'February 2026', 'March 2026', 'April 2026', 'May 2026', 'June 2026',
@@ -4713,7 +4713,7 @@ const AdminDashboard = () => {
               value={paymentForm.paymentMethod}
               onChange={e => setPaymentForm({ ...paymentForm, paymentMethod: e.target.value })}
               className="form-input"
-              style={{ background: 'white' }}
+              style={{ background: 'var(--white)' }}
             >
               {['Cash', 'UPI', 'Card', 'Bank Transfer'].map(method => (
                 <option key={method} value={method}>{method}</option>

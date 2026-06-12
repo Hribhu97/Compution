@@ -458,7 +458,7 @@ const Attendance = () => {
           </motion.div>
 
           {/* Config card */}
-          <motion.div variants={item} className="card card-p" style={{ padding: '20px 24px', background: 'white', display: 'flex', gap: '16px', flexWrap: 'wrap', alignItems: 'center' }}>
+          <motion.div variants={item} className="card card-p" style={{ padding: '20px 24px', background: 'var(--white)', display: 'flex', gap: '16px', flexWrap: 'wrap', alignItems: 'center' }}>
             
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: '220px' }}>
               <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-muted)' }}>Class Date:</span>
@@ -518,7 +518,7 @@ const Attendance = () => {
             {loading ? (
               <div style={{ height: '200px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Loader2 className="spinning" size={24} /></div>
             ) : filteredStudents.length === 0 ? (
-              <div style={{ padding: '40px', background: 'white', borderRadius: '16px', textAlign: 'center', color: 'var(--text-light)' }}>No matching students.</div>
+              <div style={{ padding: '40px', background: 'var(--white)', borderRadius: '16px', textAlign: 'center', color: 'var(--text-light)' }}>No matching students.</div>
             ) : (
               <div className="grid-auto-cards-sm" style={{ gap: '20px' }}>
                 {filteredStudents.map(student => {
@@ -526,7 +526,7 @@ const Attendance = () => {
                   const initials = student.displayName?.split(' ').map(n=>n[0]).join('').slice(0,2).toUpperCase() || 'ST';
                   
                   return (
-                    <div key={student.id} className="card card-p" style={{ background: 'white', display: 'flex', flexDirection: 'column', gap: '14px', border: status === 'present' ? '1.5px solid var(--success)' : status === 'absent' ? '1.5px solid var(--danger)' : status === 'late' ? '1.5px solid var(--warning)' : '1px solid var(--border)' }}>
+                    <div key={student.id} className="card card-p" style={{ background: 'var(--white)', display: 'flex', flexDirection: 'column', gap: '14px', border: status === 'present' ? '1.5px solid var(--success)' : status === 'absent' ? '1.5px solid var(--danger)' : status === 'late' ? '1.5px solid var(--warning)' : '1px solid var(--border)' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                         <div style={{ width: 38, height: 38, borderRadius: '50%', background: 'var(--surface)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: '0.85rem' }}>{initials}</div>
                         <div>
@@ -586,7 +586,7 @@ const Attendance = () => {
           </motion.div>
 
           {/* Today's Class Check-In Card */}
-          <motion.div variants={item} className="card card-p" style={{ background: 'white', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <motion.div variants={item} className="card card-p" style={{ background: 'var(--white)', display: 'flex', flexDirection: 'column', gap: '16px' }}>
             <h3 style={{ fontSize: '1.25rem', fontWeight: 800 }}>Today's Class Attendance Check-In</h3>
             {todayClasses.length === 0 ? (
               <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)', border: '1.5px dashed var(--border)', borderRadius: '12px', fontSize: '0.88rem' }}>
@@ -649,7 +649,7 @@ const Attendance = () => {
               { label: 'Classes Absent', value: studentStats.absent, icon: <UserX size={24} />, color: 'var(--danger)', bg: 'rgba(239,83,80,0.08)' },
               { label: 'Attendance Score', value: `${studentStats.percentage}%`, icon: <CalendarCheck size={24} />, color: studentStats.percentage >= 80 ? 'var(--success)' : 'var(--primary)', bg: 'rgba(83,109,254,0.08)' },
             ].map((stat, i) => (
-              <motion.div key={i} variants={item} className="card card-p" style={{ display: 'flex', alignItems: 'center', gap: '16px', background: 'white' }}>
+              <motion.div key={i} variants={item} className="card card-p" style={{ display: 'flex', alignItems: 'center', gap: '16px', background: 'var(--white)' }}>
                 <div style={{ width: 52, height: 52, borderRadius: '16px', background: stat.bg, color: stat.color, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   {stat.icon}
                 </div>
@@ -666,7 +666,7 @@ const Attendance = () => {
           <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: '24px' }} className="grid-2-col-mobile">
             
             {/* Timeline Bar Chart */}
-            <motion.div variants={item} className="card card-p" style={{ background: 'white', height: '320px', display: 'flex', flexDirection: 'column' }}>
+            <motion.div variants={item} className="card card-p" style={{ background: 'var(--white)', height: '320px', display: 'flex', flexDirection: 'column' }}>
               <h3 style={{ fontSize: '1.1rem', fontWeight: 700, marginBottom: '20px' }}>Recent Attendance Activity Timeline</h3>
               <div style={{ flex: 1, minHeight: 0 }}>
                 {loading ? <div style={{ height: '100%', background: 'var(--surface)', borderRadius: 12, animation: 'pulse 1.5s infinite' }} /> :
@@ -700,7 +700,7 @@ const Attendance = () => {
             </motion.div>
 
             {/* Distribution Pie Chart */}
-            <motion.div variants={item} className="card card-p" style={{ background: 'white', height: '320px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+            <motion.div variants={item} className="card card-p" style={{ background: 'var(--white)', height: '320px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
               <h3 style={{ fontSize: '1.1rem', fontWeight: 700, marginBottom: '16px', alignSelf: 'flex-start' }}>Status Share</h3>
               <div style={{ flex: 1, minHeight: 0, width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 {loading ? <div style={{ width: 140, height: 140, borderRadius: '50%', background: 'var(--surface)', animation: 'pulse 1.5s infinite' }} /> :
@@ -737,7 +737,7 @@ const Attendance = () => {
           </div>
 
           {/* Logs table list */}
-          <motion.div variants={item} className="card" style={{ background: 'white', overflow: 'hidden' }}>
+          <motion.div variants={item} className="card" style={{ background: 'var(--white)', overflow: 'hidden' }}>
             <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border)' }}>
               <h3 style={{ fontSize: '1.1rem', fontWeight: 700 }}>Detailed Attendance Logs</h3>
             </div>
@@ -769,7 +769,7 @@ const Attendance = () => {
 
       {/* ==================== 3. RESTRICTED VIEW FOR FACULTY/MEMBERS ==================== */}
       {user?.role?.toLowerCase() !== 'admin' && user?.role?.toLowerCase() !== 'student' && (
-        <motion.div variants={item} className="card card-p" style={{ padding: '48px', textAlign: 'center', background: 'white', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
+        <motion.div variants={item} className="card card-p" style={{ padding: '48px', textAlign: 'center', background: 'var(--white)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
           <AlertCircle size={48} style={{ color: 'var(--primary)' }} />
           <h2 style={{ fontSize: '1.25rem', fontWeight: 800 }}>Access Restricted</h2>
           <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem', maxWidth: '400px', margin: '0 auto' }}>
