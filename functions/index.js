@@ -354,3 +354,93 @@ exports.checkUpcomingClasses = functions.pubsub
     await Promise.all(promises);
     return null;
   });
+
+exports.onCommunityPostCreated = functions.firestore
+  .document('community/{postId}')
+  .onCreate(async (snap, context) => {
+    const data = snap.data();
+    const message = data.message || '';
+    const author = data.author || 'Anonymous';
+    const authorRole = data.authorRole || 'User';
+
+    const alertMessage = `New Notice posted by ${author} (${authorRole}) on Compution Board:\n\n"${message}"`;
+
+    const studentsSnap = await db.collection('users').where('role', '==', 'student').get();
+    const promises = [];
+
+    studentsSnap.forEach(docSnap => {
+      const student = docSnap.data();
+      const studentId = docSnap.id;
+      const contactPhone = student.phone || student.guardianPhone || '';
+      const parentName = student.guardianName || `${student.name || 'Student'} Parent`;
+
+      if (!contactPhone) return;
+
+      const logId = `notice_${context.params.postId}_${studentId}`;
+      const notificationRef = db.collection('notificationHistory').doc(logId);
+
+      promises.push((async () => {
+        const logSnap = await notificationRef.get();
+        if (logSnap.exists) return;
+
+        const notificationLog = {
+          studentId,
+          studentName: student.name || student.displayName || 'Student',
+          parentName: parentName,
+          parentPhone: contactPhone,
+          message: alertMessage,
+          timestamp: admin.firestore.FieldValue.serverTimestamp(),
+          status: 'pending',
+          type: 'whatsapp_notice',
+          subject: 'New Announcement'
+        };
+
+        try {
+          const formattedPhone = contactPhone.startsWith('+') ? contactPhone : `+91${contactPhone}`;
+
+          if (twilioClient && twilioPhone) {
+            // 1. Send SMS to the provided contact number
+            await twilioClient.messages.create({
+              body: alertMessage,
+              to: formattedPhone,
+              from: twilioPhone
+            });
+            console.log(`SMS Notice sent to student ${student.name || studentId} at ${formattedPhone}`);
+
+            // 2. Also attempt to send WhatsApp to the same contact number
+            try {
+              const fromWhatsApp = twilioPhone.startsWith('whatsapp:') ? twilioPhone : `whatsapp:${twilioPhone}`;
+              const toWhatsApp = formattedPhone.startsWith('whatsapp:') ? formattedPhone : `whatsapp:${formattedPhone}`;
+              
+              await twilioClient.messages.create({
+                body: alertMessage,
+                to: toWhatsApp,
+                from: fromWhatsApp
+              });
+              console.log(`WhatsApp Notice sent to student ${student.name || studentId} at ${formattedPhone}`);
+              notificationLog.status = 'sent_whatsapp';
+            } catch (waErr) {
+              console.error(`WhatsApp send failed, sent via SMS:`, waErr);
+              notificationLog.status = 'sent_sms';
+            }
+
+            notificationLog.provider = 'twilio';
+          } else {
+            notificationLog.status = 'failed_missing_config';
+            notificationLog.error = 'Twilio config missing. Run: firebase functions:config:set twilio.sid="YOUR_SID" twilio.token="YOUR_TOKEN" twilio.phone="YOUR_PHONE"';
+            console.warn(`Twilio config missing. Could not send notification to ${formattedPhone}`);
+          }
+        } catch (err) {
+          console.error(`Error sending notice to ${studentId}:`, err);
+          notificationLog.status = 'failed';
+          notificationLog.error = err.message;
+        }
+
+        await notificationRef.set(notificationLog);
+      })());
+    });
+
+    await Promise.all(promises);
+    return null;
+  });
+

@@ -3430,8 +3430,12 @@ const AdminDashboard = () => {
                     <td style={{ padding: '12px' }}>
                       <span style={{
                         padding: '3px 8px', borderRadius: '100px', fontSize: '0.72rem', fontWeight: 800, textTransform: 'uppercase',
-                        background: n.status === 'sent_sms' ? 'rgba(102,187,106,0.1)' : 'rgba(83,109,254,0.1)',
-                        color: n.status === 'sent_sms' ? 'var(--success)' : 'var(--primary)'
+                        background: n.status === 'sent_sms' ? 'rgba(102,187,106,0.1)' : 
+                                    n.status?.includes('fail') ? 'rgba(239,83,80,0.1)' :
+                                    n.status?.includes('whatsapp') ? 'rgba(37,211,102,0.1)' : 'rgba(83,109,254,0.1)',
+                        color: n.status === 'sent_sms' ? 'var(--success)' : 
+                               n.status?.includes('fail') ? '#EF5350' :
+                               n.status?.includes('whatsapp') ? '#25D366' : 'var(--primary)'
                       }}>{n.status}</span>
                     </td>
                   </tr>
