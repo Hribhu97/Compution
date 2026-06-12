@@ -55,6 +55,10 @@ service cloud.firestore {
           (request.resource.data.role == 'admin' && request.resource.data.email.lower() in ['tapadarhribhu@gmail.com', 'biswa.maity2011@gmail.com']) ||
           (request.resource.data.role == 'faculty' && request.resource.data.email.lower() in ['sharmisthaghosh855@gmail.com', 'tapadarhribhu350@gmail.com']) ||
           (request.resource.data.role == 'member' && request.resource.data.email.lower() in ['piyali0903@gmail.com'])
+        ) &&
+        (
+          (request.resource.data.keys().hasAll(['role']) && request.resource.data.role == 'student') ||
+          !request.resource.data.keys().hasAny(['studentId', 'studentGroup', 'feeStatus', 'feesAmount', 'paidAmount', 'pendingAmount', 'assignedStudentIds'])
         );
 
       allow update:
@@ -72,6 +76,10 @@ service cloud.firestore {
               request.resource.data.studentGroup == resource.data.studentGroup
             )
           )
+        ) &&
+        (
+          (request.resource.data.keys().hasAll(['role']) && request.resource.data.role == 'student') ||
+          !request.resource.data.keys().hasAny(['studentId', 'studentGroup', 'feeStatus', 'feesAmount', 'paidAmount', 'pendingAmount', 'assignedStudentIds'])
         );
 
       allow delete:
@@ -108,6 +116,15 @@ service cloud.firestore {
 
       allow write:
         if isAdmin() || isFaculty();
+    }
+
+    match /facultyStudentRoster/{facultyUid} {
+      allow read, write:
+        if signedIn() &&
+        (
+          isAdmin() ||
+          (isFaculty() && request.auth.uid == facultyUid)
+        );
     }
 
     match /calendarEvents/{eventId} {
@@ -297,33 +314,6 @@ service cloud.firestore {
 
     match /attendanceNotifications/{id} {
       allow read, write:
-        if isAdmin() || isFaculty();
-    }
-
-    match /facultyRoster/{facultyId} {
-      allow read, write:
-        if isAdmin() || isFaculty();
-      match /{allPaths=**} {
-        allow read, write:
-          if isAdmin() || isFaculty();
-      }
-    }
-
-    match /auditLogs/{logId} {
-      allow read:
-        if isAdmin();
-      allow create:
-        if signedIn() && (isAdmin() || isFaculty() || isMember());
-    }
-
-    match /progressReports/{studentId} {
-      allow read:
-        if signedIn() && (
-          request.auth.uid == studentId
-          || isAdmin()
-          || isFaculty()
-        );
-      allow write:
         if isAdmin() || isFaculty();
     }
   }

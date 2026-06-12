@@ -2,35 +2,86 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
 import { db, firebaseConfig } from '../firebase';
-import { collection, onSnapshot, query, orderBy, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, onSnapshot, query, orderBy, addDoc, serverTimestamp, doc, updateDoc } from 'firebase/firestore';
 import { MessageCircle, X, Send } from 'lucide-react';
 import { format } from 'date-fns';
 
-const FAQ_DATA = [
-  { q: ["courses", "offer", "what do you teach"], a: "We offer Computer Science classes for XI, XII, B.Sc, B.Tech and programming courses." },
-  { q: ["timing", "class time", "when are classes"], a: "Classes run from 8AM to 8PM depending on batch." },
-  { q: ["pay", "fees", "payment"], a: "You can pay from the Fees section or contact administration." },
-  { q: ["location", "address", "where is"], a: "20, J.K. Mitra Road, Kolkata 700037." },
-  { q: ["tests", "exam", "assessment"], a: "Tests are conducted weekly and monthly." },
-  { q: ["contact", "support", "help"], a: "Contact administration or use the help section." }
-];
+const KNOWLEDGE_BASE = {
+  greetings: "Hello! Welcome to Compution. How can I help you today?",
+  fees: "You can contact our administration team regarding fees and payment details.",
+  courses: "We provide structured coaching and learning support for students. Please contact us for current course details.",
+  faculty: "Our faculty members are available to guide students academically and personally.",
+  contact: "You can reach us through WhatsApp or the contact details provided on our website.",
+  admissions: "For admission assistance, please contact our support team and we will guide you through the process.",
+  schedules: "Class schedules and batch timings can be viewed in the schedule section or obtained by contacting administration.",
+  attendance: "Attendance is recorded regularly. You can track your attendance records in the student dashboard.",
+  tests: "Tests and weekly/monthly assessments are conducted regularly to track student performance.",
+  study_materials: "Study materials and learning resources are uploaded by mentors. You can view them in the dashboard under study materials.",
+  default: "Sorry, I'm having trouble connecting right now, but I can still help with admissions, courses, fees, schedules, attendance, and study materials."
+};
 
-const matchFAQ = (input) => {
-  const text = input.toLowerCase();
-  for (let faq of FAQ_DATA) {
-    if (faq.q.some(keyword => text.includes(keyword))) {
-      return faq.a;
-    }
+const matchKnowledgeBase = (input) => {
+  const text = input.toLowerCase().trim();
+  
+  if (/\b(hi|hello|hey|greetings|hola)\b/.test(text)) {
+    return KNOWLEDGE_BASE.greetings;
   }
-  return "I'm unable to find that information. Please contact administration.";
+  if (/\b(fee|fees|pay|payment|paid|pending|due|dues)\b/.test(text)) {
+    return KNOWLEDGE_BASE.fees;
+  }
+  if (/\b(course|courses|subject|subjects|class|classes|batch|batches|teach|learn|programming|coding)\b/.test(text)) {
+    return KNOWLEDGE_BASE.courses;
+  }
+  if (/\b(faculty|faculties|mentor|mentors|teacher|teachers|staff)\b/.test(text)) {
+    return KNOWLEDGE_BASE.faculty;
+  }
+  if (/\b(admission|admissions|admission assistance|enrol|enroll|enrollment|register|registration|join)\b/.test(text)) {
+    return KNOWLEDGE_BASE.admissions;
+  }
+  if (/\b(schedule|schedules|timing|timings|time|batch timing|routine|routines)\b/.test(text)) {
+    return KNOWLEDGE_BASE.schedules;
+  }
+  if (/\b(attendance|absent|present|late|leave)\b/.test(text)) {
+    return KNOWLEDGE_BASE.attendance;
+  }
+  if (/\b(test|tests|exam|exams|examination|examinations|assessment|assessments|score|scores|mark|marks)\b/.test(text)) {
+    return KNOWLEDGE_BASE.tests;
+  }
+  if (/\b(material|materials|note|notes|study|study materials|book|books|pdf|resource|resources)\b/.test(text)) {
+    return KNOWLEDGE_BASE.study_materials;
+  }
+  if (/\b(contact|support|help|whatsapp|phone|number|reach|email|address|location|where)\b/.test(text)) {
+    return KNOWLEDGE_BASE.contact;
+  }
+  
+  return KNOWLEDGE_BASE.default;
+};
+
+const formatMessageTime = (createdAt) => {
+  if (!createdAt) return 'now';
+  try {
+    if (typeof createdAt.toDate === 'function') {
+      return format(createdAt.toDate(), 'h:mm a');
+    }
+    if (createdAt instanceof Date) {
+      return format(createdAt, 'h:mm a');
+    }
+    if (typeof createdAt === 'string' || typeof createdAt === 'number') {
+      return format(new Date(createdAt), 'h:mm a');
+    }
+    return 'now';
+  } catch (e) {
+    console.error("Error formatting date:", e);
+    return 'now';
+  }
 };
 
 const fetchGeminiReply = async (userMessage, chatHistory = []) => {
   try {
-    const apiKey = firebaseConfig.apiKey;
+    const apiKey = import.meta.env.VITE_GEMINI_API_KEY || firebaseConfig.apiKey;
     if (!apiKey) throw new Error("No API key configured");
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
 
     const contents = chatHistory.map(m => ({
       role: m.sender === 'bot' ? 'model' : 'user',
@@ -124,6 +175,20 @@ const ChatAssistant = () => {
     const last = messages[messages.length - 1];
     if (last.prompt && !last.response) {
       if (last.status?.state === 'ERRORED') return false;
+      
+      // Safety check: if message is older than 30s, don't show typing indicator
+      if (last.createdAt) {
+        try {
+          const createdTime = typeof last.createdAt.toDate === 'function' 
+            ? last.createdAt.toDate().getTime() 
+            : new Date(last.createdAt).getTime();
+          if (Date.now() - createdTime > 30000) {
+            return false;
+          }
+        } catch (e) {
+          console.warn("Error checking message age:", e);
+        }
+      }
       return true;
     }
     return false;
@@ -159,13 +224,40 @@ const ChatAssistant = () => {
     setInput('');
     
     if (user?.uid) {
-      await addDoc(collection(db, `users/${user.uid}/chatHistory`), {
-        prompt: userMsg,
-        message: userMsg,
-        sender: 'user',
-        createdAt: serverTimestamp()
-      });
+      try {
+        // 1. Add user prompt to Firestore
+        const docRef = await addDoc(collection(db, `users/${user.uid}/chatHistory`), {
+          prompt: userMsg,
+          message: userMsg,
+          sender: 'user',
+          createdAt: serverTimestamp()
+        });
+
+        // 2. Set typing state locally to show immediate indicator
+        setIsTyping(true);
+
+        // 3. Fetch reply from Gemini or local Knowledge Base fallback
+        let botReply = "";
+        try {
+          botReply = await fetchGeminiReply(userMsg, getChatBubbles(messages).slice(-10));
+        } catch (err) {
+          console.warn("Gemini API failed, falling back to local Knowledge Base:", err);
+          botReply = matchKnowledgeBase(userMsg);
+        }
+
+        // 4. Update the document in Firestore with the bot's response
+        await updateDoc(doc(db, `users/${user.uid}/chatHistory`, docRef.id), {
+          response: botReply,
+          status: { state: 'COMPLETED' },
+          updatedAt: serverTimestamp()
+        });
+      } catch (error) {
+        console.error("Error in chat send flow for logged-in user:", error);
+      } finally {
+        setIsTyping(false);
+      }
     } else {
+      // Guest/Anonymous user flow (Local state only)
       const newMsg = {
         id: 'temp-' + Date.now(),
         message: userMsg,
@@ -180,8 +272,8 @@ const ChatAssistant = () => {
       try {
         botReply = await fetchGeminiReply(userMsg, messages.slice(-10));
       } catch (err) {
-        console.warn("Falling back to local FAQ matching.");
-        botReply = matchFAQ(userMsg);
+        console.warn("Gemini API failed, falling back to local Knowledge Base:", err);
+        botReply = matchKnowledgeBase(userMsg);
       }
 
       const newBotMsg = {
@@ -293,7 +385,7 @@ const ChatAssistant = () => {
                           {m.message}
                         </div>
                         <span style={{ fontSize: '0.65rem', color: 'var(--text-light)' }}>
-                          {m.createdAt ? format(m.createdAt.toDate(), 'h:mm a') : 'now'}
+                          {formatMessageTime(m.createdAt)}
                         </span>
                       </div>
                     </motion.div>

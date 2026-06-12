@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate, Link } from 'react-router-dom';
 import { ArrowRight, Eye, EyeOff, Code, CheckCircle, Mail, RefreshCw, UserPlus } from 'lucide-react';
@@ -12,7 +12,6 @@ import {
   sendPasswordResetEmail,
 } from 'firebase/auth';
 import { auth, googleProvider } from '../../firebase';
-import { useAuth } from '../../contexts/AuthContext';
 
 /* ── Friendly error messages ── */
 const friendlyError = (code) => {
@@ -50,7 +49,6 @@ const Spinner = ({ size = 20 }) => (
 /* ── LOGIN / REGISTER PAGE                          ── */
 /* ──────────────────────────────────────────────────── */
 const Login = () => {
-  const { user, loading: authLoading } = useAuth();
   // View: 'login' | 'register' | 'verify' | 'success'
   const [view, setView] = useState('login');
   const [form, setForm] = useState({ email: '', password: '', name: '' });
@@ -62,12 +60,6 @@ const Login = () => {
   const [resending, setResending] = useState(false);
   const [resent, setResent] = useState(false);
   const navigate = useNavigate();
-
-  useEffect(() => {
-    if (!authLoading && user) {
-      navigate('/dashboard');
-    }
-  }, [user, authLoading, navigate]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;

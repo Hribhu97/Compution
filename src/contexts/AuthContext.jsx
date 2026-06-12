@@ -44,31 +44,35 @@ export const AuthProvider = ({ children }) => {
           }
 
           if (!userSnap.exists()) {
-            const isStudent = targetRole === 'student';
             const nameVal = firebaseUser.displayName || firebaseUser.email?.split('@')[0] || (targetRole === 'admin' ? 'Admin' : targetRole === 'faculty' ? 'Faculty' : targetRole === 'member' ? 'Member' : 'Student');
-            const newProfile = {
+            let newProfile = {
               uid: firebaseUser.uid,
               name: nameVal,
               displayName: nameVal,
               email: firebaseUser.email,
               photoURL: firebaseUser.photoURL || '',
-              studentId: isStudent ? `COMP-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}` : '',
-              course: isStudent ? 'Not specified' : '',
               phone: '',
               role: targetRole,
-              assignedFacultyIds: [],
-              assignedStudentIds: [],
-              studentGroup: null,
-              classCategory: '',
-              stream: '',
-              autoGroup: '',
-              customGroupException: '',
               permissions: permissions,
-              feeStatus: isStudent ? 'Pending' : '',
-              feesAmount: isStudent ? 2400 : 0,
               createdAt: serverTimestamp(),
               updatedAt: serverTimestamp()
             };
+            
+            if (targetRole === 'student') {
+              newProfile = {
+                ...newProfile,
+                studentId: `COMP-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
+                course: 'Not specified',
+                assignedFacultyIds: [],
+                studentGroup: null,
+                classCategory: '',
+                stream: '',
+                autoGroup: '',
+                customGroupException: '',
+                feeStatus: 'Pending',
+                feesAmount: 2400
+              };
+            }
             await setDoc(userRef, newProfile);
           } else {
             const existingData = userSnap.data();
@@ -83,13 +87,15 @@ export const AuthProvider = ({ children }) => {
             }
             if (existingData.uid === undefined) updates.uid = firebaseUser.uid;
             if (existingData.name === undefined) updates.name = existingData.displayName || firebaseUser.displayName || '';
-            if (existingData.assignedFacultyIds === undefined) updates.assignedFacultyIds = [];
-            if (existingData.assignedStudentIds === undefined) updates.assignedStudentIds = [];
-            if (existingData.studentGroup === undefined) updates.studentGroup = null;
-            if (existingData.classCategory === undefined) updates.classCategory = '';
-            if (existingData.stream === undefined) updates.stream = '';
-            if (existingData.autoGroup === undefined) updates.autoGroup = '';
-            if (existingData.customGroupException === undefined) updates.customGroupException = '';
+            
+            if (targetRole === 'student') {
+              if (existingData.assignedFacultyIds === undefined) updates.assignedFacultyIds = [];
+              if (existingData.studentGroup === undefined) updates.studentGroup = null;
+              if (existingData.classCategory === undefined) updates.classCategory = '';
+              if (existingData.stream === undefined) updates.stream = '';
+              if (existingData.autoGroup === undefined) updates.autoGroup = '';
+              if (existingData.customGroupException === undefined) updates.customGroupException = '';
+            }
             
             if (Object.keys(updates).length > 0) {
               updates.updatedAt = serverTimestamp();
@@ -125,31 +131,35 @@ export const AuthProvider = ({ children }) => {
               permissions = ['limited dashboard access', 'student support tools'];
             }
 
-            const isStudent = targetRole === 'student';
             const nameVal = firebaseUser.displayName || firebaseUser.email?.split('@')[0] || (targetRole === 'admin' ? 'Admin' : targetRole === 'faculty' ? 'Faculty' : targetRole === 'member' ? 'Member' : 'Student');
-            const newProfile = {
+            let newProfile = {
               uid: firebaseUser.uid,
               name: nameVal,
               displayName: nameVal,
               email: firebaseUser.email,
               photoURL: firebaseUser.photoURL || '',
-              studentId: isStudent ? `COMP-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}` : '',
-              course: isStudent ? 'Not specified' : '',
               phone: '',
               role: targetRole,
-              assignedFacultyIds: [],
-              assignedStudentIds: [],
-              studentGroup: null,
-              classCategory: '',
-              stream: '',
-              autoGroup: '',
-              customGroupException: '',
               permissions: permissions,
-              feeStatus: isStudent ? 'Pending' : '',
-              feesAmount: isStudent ? 2400 : 0,
               createdAt: serverTimestamp(),
               updatedAt: serverTimestamp()
             };
+            
+            if (targetRole === 'student') {
+              newProfile = {
+                ...newProfile,
+                studentId: `COMP-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
+                course: 'Not specified',
+                assignedFacultyIds: [],
+                studentGroup: null,
+                classCategory: '',
+                stream: '',
+                autoGroup: '',
+                customGroupException: '',
+                feeStatus: 'Pending',
+                feesAmount: 2400
+              };
+            }
             try {
               await setDoc(userRef, newProfile);
             } catch (err) {

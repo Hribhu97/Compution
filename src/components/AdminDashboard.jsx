@@ -5,8 +5,8 @@ import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { initializeApp } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
-import { collection, collectionGroup, doc, getDoc, updateDoc, deleteDoc, getDocs, addDoc, setDoc, serverTimestamp, onSnapshot, query, where, orderBy, runTransaction, writeBatch } from 'firebase/firestore';
-import { Search, Download, Plus, MoreHorizontal, Eye, ArrowUpRight, Sparkles, ShieldCheck, Trash2, RefreshCw, CheckCircle, XCircle, AlertTriangle, Users, Bell, AlertCircle, Calendar, GraduationCap, ChevronDown, Mail, Send, Pencil, X, ShieldAlert, MessageSquare, Briefcase, UserCheck, Loader2, Check, CheckCheck, Info } from 'lucide-react';
+import { collection, collectionGroup, doc, getDoc, updateDoc, deleteDoc, getDocs, addDoc, setDoc, serverTimestamp, onSnapshot, query, where, orderBy, runTransaction, writeBatch, deleteField, arrayUnion, arrayRemove } from 'firebase/firestore';
+import { Search, Download, Plus, MoreHorizontal, Eye, ArrowUpRight, Sparkles, ShieldCheck, Trash2, RefreshCw, CheckCircle, XCircle, AlertTriangle, Users, Bell, AlertCircle, Calendar, GraduationCap, ChevronDown, Mail, Send, Pencil, X, ShieldAlert, MessageSquare, Briefcase, UserCheck, Loader2, Check, CheckCheck, Info, UserMinus } from 'lucide-react';
 import Modal from './Modal';
 import SystemHealthPanel from './SystemHealthPanel';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, PieChart, Pie } from 'recharts';
@@ -208,16 +208,15 @@ const AdminDashboard = () => {
     // 9. Faculty assignments listener (only for logged-in faculty to filter/view their students)
     let unsubAssignedStudentIds = () => {};
     if (user?.uid && user?.role?.toLowerCase() === 'faculty') {
-      const q = query(collection(db, 'assignedFaculty'), where('facultyId', '==', user.uid));
-      unsubAssignedStudentIds = onSnapshot(q, (snap) => {
-        const ids = [];
-        snap.forEach(doc => {
-          const data = doc.data();
-          if (data.studentId) ids.push(data.studentId);
-        });
-        setAssignedStudentIds(ids);
+      const docRef = doc(db, 'facultyStudentRoster', user.uid);
+      unsubAssignedStudentIds = onSnapshot(docRef, (docSnap) => {
+        if (docSnap.exists()) {
+          setAssignedStudentIds(docSnap.data().studentIds || []);
+        } else {
+          setAssignedStudentIds([]);
+        }
       }, (err) => {
-        console.error("Error subscribing to faculty assignments:", err);
+        console.error("Error subscribing to facultyStudentRoster:", err);
       });
     }
 
@@ -590,16 +589,17 @@ const AdminDashboard = () => {
     }
 
     try {
-      const [studentSnap, facultySnap, studMapSnap] = await Promise.all([
+      const [studentSnap, facultySnap, studMapSnap, rosterSnap] = await Promise.all([
         getDoc(doc(db, 'users', studentId)),
         getDoc(doc(db, 'users', facultyId)),
-        getDoc(doc(db, 'studentFacultyMap', studentId))
+        getDoc(doc(db, 'studentFacultyMap', studentId)),
+        getDoc(doc(db, 'facultyStudentRoster', facultyId))
       ]);
 
       let studentFacultyIds = studentSnap.exists() ? (studentSnap.data().assignedFacultyIds || []) : [];
       if (!studentFacultyIds.includes(facultyId)) studentFacultyIds = [...studentFacultyIds, facultyId];
 
-      let facultyStudentIds = facultySnap.exists() ? (facultySnap.data().assignedStudentIds || []) : [];
+      let facultyStudentIds = rosterSnap.exists() ? (rosterSnap.data().studentIds || []) : [];
       if (!facultyStudentIds.includes(studentId)) facultyStudentIds = [...facultyStudentIds, studentId];
 
       let currentAssigned = studentSnap.exists() ? (studentSnap.data().assignedFaculty || []) : [];
@@ -652,9 +652,10 @@ const AdminDashboard = () => {
         updatedAt: serverTimestamp()
       }, { merge: true });
 
-      // 4. Update faculty user document's assignedStudentIds array
-      batch.set(doc(db, 'users', facultyId), {
-        assignedStudentIds: facultyStudentIds,
+      // 4. Update facultyStudentRoster document (atomic union)
+      batch.set(doc(db, 'facultyStudentRoster', facultyId), {
+        facultyUid: facultyId,
+        studentIds: arrayUnion(studentId),
         updatedAt: serverTimestamp()
       }, { merge: true });
 
@@ -669,18 +670,6 @@ const AdminDashboard = () => {
       batch.set(doc(db, 'studentFacultyMap', studentId), {
         assignedFaculty: assignedFacultyList
       }, { merge: true });
-
-      // 7. Update facultyRoster
-      batch.set(doc(db, 'facultyRoster', facultyId, 'students', studentId), {
-        studentId,
-        studentName,
-        email: selectedStudentDetails.email || '',
-        phone: selectedStudentDetails.phone || '',
-        course: subjectName || selectedStudentDetails.course || 'Python Mastery',
-        assignedAt: new Date().toISOString(),
-        assignedBy: user.displayName || user.email || 'System',
-        status: 'active'
-      });
 
       // 8. Add notification to history
       const notifRef = doc(collection(db, 'notificationHistory'));
@@ -712,16 +701,17 @@ const AdminDashboard = () => {
     const docId = `${studentId}_${facultyId}`;
 
     try {
-      const [studentSnap, facultySnap, studMapSnap] = await Promise.all([
+      const [studentSnap, facultySnap, studMapSnap, rosterSnap] = await Promise.all([
         getDoc(doc(db, 'users', studentId)),
         getDoc(doc(db, 'users', facultyId)),
-        getDoc(doc(db, 'studentFacultyMap', studentId))
+        getDoc(doc(db, 'studentFacultyMap', studentId)),
+        getDoc(doc(db, 'facultyStudentRoster', facultyId))
       ]);
 
       let studentFacultyIds = studentSnap.exists() ? (studentSnap.data().assignedFacultyIds || []) : [];
       studentFacultyIds = studentFacultyIds.filter(id => id !== facultyId);
 
-      let facultyStudentIds = facultySnap.exists() ? (facultySnap.data().assignedStudentIds || []) : [];
+      let facultyStudentIds = rosterSnap.exists() ? (rosterSnap.data().studentIds || []) : [];
       facultyStudentIds = facultyStudentIds.filter(id => id !== studentId);
 
       let currentAssigned = studentSnap.exists() ? (studentSnap.data().assignedFaculty || []) : [];
@@ -736,9 +726,6 @@ const AdminDashboard = () => {
       batch.delete(doc(db, 'assignedFaculty', docId));
       batch.delete(doc(db, 'facultyAssignments', docId));
 
-      // 2. Delete roster mapping
-      batch.delete(doc(db, 'facultyRoster', facultyId, 'students', studentId));
-
       // 3. Update student user document
       batch.set(doc(db, 'users', studentId), {
         assignedFacultyIds: studentFacultyIds,
@@ -746,9 +733,10 @@ const AdminDashboard = () => {
         updatedAt: serverTimestamp()
       }, { merge: true });
 
-      // 4. Update faculty user document
-      batch.set(doc(db, 'users', facultyId), {
-        assignedStudentIds: facultyStudentIds,
+      // 4. Update facultyStudentRoster document (atomic remove)
+      batch.set(doc(db, 'facultyStudentRoster', facultyId), {
+        facultyUid: facultyId,
+        studentIds: facultyStudentIds,
         updatedAt: serverTimestamp()
       }, { merge: true });
 
@@ -772,6 +760,61 @@ const AdminDashboard = () => {
     } catch (err) {
       console.error("Error unassigning faculty:", err);
       triggerToast('❌ Failed to unassign faculty', 'danger');
+    }
+  };
+
+  const handleRemoveStudentFromRoster = async (studentId) => {
+    try {
+      const studentSnap = await getDoc(doc(db, 'users', studentId));
+      if (!studentSnap.exists()) {
+        triggerToast('❌ Student not found.', 'error');
+        return;
+      }
+      
+      const studentData = studentSnap.data();
+      let studentFacultyIds = studentData.assignedFacultyIds || [];
+      studentFacultyIds = studentFacultyIds.filter(id => id !== user.uid);
+      
+      let currentAssigned = studentData.assignedFaculty || [];
+      const updatedAssignedFaculty = currentAssigned.filter(item => typeof item === 'object' && item !== null && item.facultyId !== user.uid);
+      
+      const studMapRef = doc(db, 'studentFacultyMap', studentId);
+      const studMapSnap = await getDoc(studMapRef);
+      let assignedFacultyList = studMapSnap.exists() ? (studMapSnap.data().assignedFaculty || []) : [];
+      assignedFacultyList = assignedFacultyList.filter(f => f.facultyId !== user.uid);
+      
+      const docId = `${studentId}_${user.uid}`;
+      const batch = writeBatch(db);
+      
+      // 1. Delete legacy assignment records
+      batch.delete(doc(db, 'assignedFaculty', docId));
+      batch.delete(doc(db, 'facultyAssignments', docId));
+      
+      // 2. Update facultyStudentRoster document (atomic remove)
+      batch.set(doc(db, 'facultyStudentRoster', user.uid), {
+        studentIds: arrayRemove(studentId),
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+      
+      // 3. Update student user document
+      batch.set(doc(db, 'users', studentId), {
+        assignedFacultyIds: studentFacultyIds,
+        assignedFaculty: updatedAssignedFaculty,
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+      
+      // 4. Update studentFacultyMap
+      batch.set(studMapRef, {
+        assignedFaculty: assignedFacultyList
+      }, { merge: true });
+      
+      await batch.commit();
+      
+      await logAdminAction('faculty_student_roster_remove', studentId, { facultyId: user.uid });
+      triggerToast('✅ Student removed from roster successfully!', 'success');
+    } catch (err) {
+      console.error("Error removing student from roster:", err);
+      triggerToast('❌ Failed to remove student from roster.', 'error');
     }
   };
 
@@ -1006,25 +1049,67 @@ const AdminDashboard = () => {
         };
       }
 
-      await setDoc(doc(db, 'users', newUserId), {
-        uid: newUserId,
-        name: displayName,
-        displayName,
-        email: email.toLowerCase(),
-        role,
-        assignedFacultyIds: [],
-        assignedStudentIds: [],
-        studentGroup: '',
-        classCategory: '',
-        stream: '',
-        autoGroup: '',
-        customGroupException: '',
-        permissions,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        ...groupFields,
-        ...extraFields
-      });
+      let userDocPayload = {};
+      if (role === 'student') {
+        userDocPayload = {
+          uid: newUserId,
+          name: displayName,
+          displayName,
+          email: email.toLowerCase(),
+          role,
+          assignedFacultyIds: [],
+          studentGroup: '',
+          classCategory: '',
+          stream: '',
+          autoGroup: '',
+          customGroupException: '',
+          permissions,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          ...groupFields,
+          ...extraFields
+        };
+        if (userDocPayload.studentId === undefined) {
+          userDocPayload.studentId = `COMP-2026-${Math.floor(1000 + Math.random() * 9000)}`;
+        }
+        if (userDocPayload.feeStatus === undefined) userDocPayload.feeStatus = 'Pending';
+        if (userDocPayload.feesAmount === undefined) userDocPayload.feesAmount = 2400;
+      } else if (role === 'faculty') {
+        userDocPayload = {
+          uid: newUserId,
+          name: displayName,
+          email: email.toLowerCase(),
+          phone: extraFields.phone || '',
+          role,
+          permissions,
+          photoURL: extraFields.photoURL || '',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        };
+        if (extraFields.assignedFacultyIds) {
+          userDocPayload.assignedFacultyIds = extraFields.assignedFacultyIds;
+        }
+      } else { // admin or member
+        userDocPayload = {
+          uid: newUserId,
+          name: displayName,
+          displayName,
+          email: email.toLowerCase(),
+          phone: extraFields.phone || '',
+          role,
+          permissions,
+          photoURL: extraFields.photoURL || '',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          ...extraFields
+        };
+        const prohibitedFields = ['studentId', 'studentGroup', 'feeStatus', 'feesAmount', 'paidAmount', 'pendingAmount', 'assignedStudentIds', 'classCategory', 'stream', 'autoGroup', 'customGroupException'];
+        prohibitedFields.forEach(f => {
+          delete userDocPayload[f];
+        });
+      }
+
+      await setDoc(doc(db, 'users', newUserId), userDocPayload);
 
       await logAdminAction('account_create', newUserId, { email, displayName, role });
       triggerToast(`Account created for ${displayName}! Password: ${defaultPassword}`, 'success');
@@ -1135,16 +1220,17 @@ const AdminDashboard = () => {
       }
 
       // Fetch snapshot data for atomic consistency
-      const [studentSnap, facultySnap, studMapSnap] = await Promise.all([
+      const [studentSnap, facultySnap, studMapSnap, rosterSnap] = await Promise.all([
         getDoc(doc(db, 'users', studentId)),
         getDoc(doc(db, 'users', facultyId)),
-        getDoc(doc(db, 'studentFacultyMap', studentId))
+        getDoc(doc(db, 'studentFacultyMap', studentId)),
+        getDoc(doc(db, 'facultyStudentRoster', facultyId))
       ]);
 
       let studentFacultyIds = studentSnap.exists() ? (studentSnap.data().assignedFacultyIds || []) : [];
       if (!studentFacultyIds.includes(facultyId)) studentFacultyIds = [...studentFacultyIds, facultyId];
 
-      let facultyStudentIds = facultySnap.exists() ? (facultySnap.data().assignedStudentIds || []) : [];
+      let facultyStudentIds = rosterSnap.exists() ? (rosterSnap.data().studentIds || []) : [];
       if (!facultyStudentIds.includes(studentId)) facultyStudentIds = [...facultyStudentIds, studentId];
 
       let currentAssigned = studentSnap.exists() ? (studentSnap.data().assignedFaculty || []) : [];
@@ -1172,17 +1258,12 @@ const AdminDashboard = () => {
 
       const batch = writeBatch(db);
 
-      // 1. Write to facultyRoster/{facultyId}/students/{studentId}
-      batch.set(doc(db, 'facultyRoster', facultyId, 'students', studentId), {
-        studentId,
-        studentName: displayName,
-        email,
-        phone,
-        course,
-        assignedAt: new Date().toISOString(),
-        assignedBy: user.displayName || user.email || 'System',
-        status: 'active'
-      });
+      // 1. Update facultyStudentRoster document (atomic union)
+      batch.set(doc(db, 'facultyStudentRoster', facultyId), {
+        facultyUid: facultyId,
+        studentIds: arrayUnion(studentId),
+        updatedAt: serverTimestamp()
+      }, { merge: true });
 
       // 2. Write to assignedFaculty (legacy compatibility)
       batch.set(doc(db, 'assignedFaculty', docId), {
@@ -1209,20 +1290,14 @@ const AdminDashboard = () => {
         updatedAt: serverTimestamp()
       }, { merge: true });
 
-      // 5. Update faculty user document
-      batch.set(doc(db, 'users', facultyId), {
-        assignedStudentIds: facultyStudentIds,
-        updatedAt: serverTimestamp()
-      }, { merge: true });
-
-      // 6. Update facultyAssignments/{facultyId}
+      // 5. Update facultyAssignments/{facultyId}
       batch.set(doc(db, 'facultyAssignments', facultyId), {
         assignedStudents: facultyStudentIds,
         totalStudents: facultyStudentIds.length,
         updatedAt: serverTimestamp()
       }, { merge: true });
 
-      // 7. Update studentFacultyMap/{studentId}
+      // 6. Update studentFacultyMap/{studentId}
       batch.set(doc(db, 'studentFacultyMap', studentId), {
         assignedFaculty: assignedFacultyList
       }, { merge: true });
@@ -1517,28 +1592,20 @@ const AdminDashboard = () => {
             assignedFaculty: assignedFacultyList
           }, { merge: true });
           
-          await setDoc(doc(db, 'facultyRoster', fallbackFaculty.id, 'students', student.id), {
-            studentId: student.id,
-            studentName: student.displayName,
-            email: student.email || '',
-            phone: student.phone || '',
-            course: student.course || 'Python Mastery',
-            assignedAt: new Date().toISOString(),
-            assignedBy: 'System Doctor Auto-Repair',
-            status: 'active'
-          });
-          
           updatePayload.assignedFacultyIds = [fallbackFaculty.id];
           updatePayload.assignedFaculty = [newAssignment];
           
-          // Update fallback faculty student roster
-          let fallbackStudentIds = fallbackFaculty.assignedStudentIds || [];
+          // Update fallback faculty student roster document
+          const rosterRef = doc(db, 'facultyStudentRoster', fallbackFaculty.id);
+          const rosterSnap = await getDoc(rosterRef);
+          let fallbackStudentIds = rosterSnap.exists() ? (rosterSnap.data().studentIds || []) : [];
           if (!fallbackStudentIds.includes(student.id)) {
             fallbackStudentIds = [...fallbackStudentIds, student.id];
-            await updateDoc(doc(db, 'users', fallbackFaculty.id), {
-              assignedStudentIds: fallbackStudentIds,
+            await setDoc(rosterRef, {
+              facultyUid: fallbackFaculty.id,
+              studentIds: fallbackStudentIds,
               updatedAt: serverTimestamp()
-            });
+            }, { merge: true });
           }
           
           logs.push(`🔧 [Repair] Assigned Student ${student.displayName} to faculty mentor ${fallbackFaculty.displayName}`);
@@ -1623,6 +1690,54 @@ const AdminDashboard = () => {
         logs.push("👍 No orphaned fee records found.");
       }
       
+      // 5. Scan faculty accounts and remove student-specific/invalid fields
+      logs.push("🔍 Scanning faculty accounts for student-specific fields and migrating rosters...");
+      for (const fac of facultyList) {
+        let facIssues = 0;
+        let updateFields = {};
+        
+        // Check for student-only fields
+        const prohibitedFields = ['studentId', 'studentGroup', 'feeStatus', 'feesAmount', 'paidAmount', 'pendingAmount', 'assignedStudentIds', 'classCategory', 'stream', 'autoGroup', 'customGroupException'];
+        prohibitedFields.forEach(field => {
+          if (fac[field] !== undefined) {
+            facIssues++;
+            updateFields[field] = deleteField();
+          }
+        });
+
+        // Migrate assignedStudentIds to facultyStudentRoster if present
+        if (fac.assignedStudentIds && fac.assignedStudentIds.length > 0) {
+          const rosterRef = doc(db, 'facultyStudentRoster', fac.id);
+          const rosterSnap = await getDoc(rosterRef);
+          let studentIds = rosterSnap.exists() ? (rosterSnap.data().studentIds || []) : [];
+          
+          let modified = false;
+          fac.assignedStudentIds.forEach(sid => {
+            if (!studentIds.includes(sid)) {
+              studentIds.push(sid);
+              modified = true;
+            }
+          });
+          
+          if (modified || !rosterSnap.exists()) {
+            await setDoc(rosterRef, {
+              facultyUid: fac.id,
+              studentIds,
+              updatedAt: serverTimestamp()
+            }, { merge: true });
+            logs.push(`🔧 [Repair] Migrated roster for faculty ${fac.displayName || fac.name}: ${studentIds.length} students.`);
+            repairedCount++;
+          }
+        }
+        
+        if (facIssues > 0) {
+          issuesFound += facIssues;
+          await updateDoc(doc(db, 'users', fac.id), updateFields);
+          repairedCount += facIssues;
+          logs.push(`✅ Sanitized faculty profile: ${fac.displayName || fac.name} (removed student-specific fields)`);
+        }
+      }
+
       logs.push("🎉 Integrity sweep complete.");
       logs.push(`📊 Summary: Scanned ${scannedCount} accounts. Found ${issuesFound} issues. Repaired ${repairedCount} issues.`);
       
@@ -1685,16 +1800,19 @@ const AdminDashboard = () => {
           );
           const otherFacultyList = allUsers.filter(u => u.role?.toLowerCase() === 'faculty' && u.id !== userId);
           
-          for (const student of assignedStudents) {
-            if (otherFacultyList.length > 0) {
-              const newFaculty = otherFacultyList[0];
+          if (otherFacultyList.length > 0) {
+            const newFaculty = otherFacultyList[0];
+            const rosterRef = doc(db, 'facultyStudentRoster', newFaculty.id);
+            const rosterSnap = await getDoc(rosterRef);
+            let facultyStudentIds = rosterSnap.exists() ? (rosterSnap.data().studentIds || []) : [];
+
+            for (const student of assignedStudents) {
               const docId = `${student.id}_${newFaculty.id}`;
               
               let studentFacultyIds = student.assignedFacultyIds || [];
               studentFacultyIds = studentFacultyIds.filter(id => id !== userId);
               if (!studentFacultyIds.includes(newFaculty.id)) studentFacultyIds.push(newFaculty.id);
 
-              let facultyStudentIds = newFaculty.assignedStudentIds || [];
               if (!facultyStudentIds.includes(student.id)) facultyStudentIds.push(student.id);
 
               let currentAssigned = student.assignedFaculty || [];
@@ -1737,27 +1855,19 @@ const AdminDashboard = () => {
                 updatedAt: serverTimestamp()
               }, { merge: true }));
 
-              deletePromises.push(setDoc(doc(db, 'users', newFaculty.id), {
-                assignedStudentIds: facultyStudentIds,
-                updatedAt: serverTimestamp()
-              }, { merge: true }));
-
               deletePromises.push(setDoc(doc(db, 'studentFacultyMap', student.id), {
                 assignedFaculty: assignedFacultyList
               }, { merge: true }));
-
-              deletePromises.push(setDoc(doc(db, 'facultyRoster', newFaculty.id, 'students', student.id), {
-                studentId: student.id,
-                studentName: student.displayName,
-                email: student.email || '',
-                phone: student.phone || '',
-                course: student.course || 'Python Mastery',
-                assignedAt: new Date().toISOString(),
-                assignedBy: 'System Auto-Reassignment',
-                status: 'active'
-              }));
             }
+
+            deletePromises.push(setDoc(rosterRef, {
+              facultyUid: newFaculty.id,
+              studentIds: facultyStudentIds,
+              updatedAt: serverTimestamp()
+            }, { merge: true }));
           }
+
+          deletePromises.push(deleteDoc(doc(db, 'facultyStudentRoster', userId)));
         }
 
         // 1. Delete top-level user doc
@@ -2122,7 +2232,7 @@ const AdminDashboard = () => {
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '250px', overflowY: 'auto', paddingRight: '4px' }}>
               {facultyList.map(fac => {
-                const studentCount = allUsers.filter(u => u.role?.toLowerCase() === 'student' && (u.assignedStudentIds?.includes(fac.id) || u.assignedFaculty?.includes(fac.id))).length;
+                const studentCount = allUsers.filter(u => u.role?.toLowerCase() === 'student' && (u.assignedFacultyIds?.includes(fac.id) || (u.assignedFaculty && u.assignedFaculty.some(f => f.facultyId === fac.id)))).length;
                 const ratio = totalStudents > 0 ? Math.round((studentCount / totalStudents) * 100) : 0;
                 
                 return (
@@ -2778,7 +2888,7 @@ const AdminDashboard = () => {
                       <td style={{ padding: '12px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                           {(() => {
-                            const assignedIds = [...(student.assignedFaculty || [])];
+                            const assignedIds = [...(student.assignedFacultyIds || [])];
                             if (user?.role?.toLowerCase() === 'faculty' && !assignedIds.includes(user.uid) && assignedStudentIds.includes(student.id)) {
                               assignedIds.push(user.uid);
                             }
@@ -2952,6 +3062,21 @@ const AdminDashboard = () => {
                           <button onClick={() => setSelectedStudentDetails({ ...student, joined: 'Jan 2026', roll: 'Roll #COMP' })} className="btn btn-secondary" style={{ padding: '6px', borderRadius: '6px' }} title="View Detail"><Eye size={14} /></button>
                           {user?.role === 'admin' && (
                             <button onClick={() => handleDeleteUser(student.id, student.displayName)} className="btn btn-ghost" style={{ padding: '6px', color: 'var(--danger)', borderRadius: '6px' }} title="Delete Roster"><Trash2 size={14} /></button>
+                          )}
+                          {user?.role?.toLowerCase() === 'faculty' && (
+                            <button
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                if (window.confirm(`Remove student "${student.displayName}" from your roster?`)) {
+                                  await handleRemoveStudentFromRoster(student.id);
+                                }
+                              }}
+                              className="btn btn-ghost"
+                              style={{ padding: '6px', color: 'var(--danger)', borderRadius: '6px' }}
+                              title="Remove from Roster"
+                            >
+                              <UserMinus size={14} />
+                            </button>
                           )}
                         </div>
                       </td>
