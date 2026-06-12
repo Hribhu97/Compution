@@ -17,7 +17,8 @@ const COURSE_METADATA = {
   'Class XI & XII Computer Application': { subject: 'Academic', color: '#0097A7', emoji: '📙', nextLesson: 'Lesson 1: Office Tools', totalLessons: 22, schedule: 'Mon–Sat · 3 PM' },
   'Basic Coding': { subject: 'Programming', color: '#66BB6A', emoji: '💻', nextLesson: 'First Program & Variables', totalLessons: 24, schedule: 'Mon, Wed · 5 PM' },
   'Advance Coding': { subject: 'Programming', color: '#ED8B00', emoji: '🚀', nextLesson: 'OOP & Code Design Patterns', totalLessons: 30, schedule: 'Tue, Thu · 7 PM' },
-  'Data Structures & Algorithms': { subject: 'Programming', color: '#43A047', emoji: '🧩', nextLesson: 'Binary Search Trees', totalLessons: 28, schedule: 'Tue, Thu · 6 PM' }
+  'Data Structures & Algorithms': { subject: 'Programming', color: '#43A047', emoji: '🧩', nextLesson: 'Binary Search Trees', totalLessons: 28, schedule: 'Tue, Thu · 6 PM' },
+  'Python Mastery': { subject: 'Programming', color: '#4F46E5', emoji: '🐍', nextLesson: 'Intro to Python & Syntax', totalLessons: 24, schedule: 'Mon, Wed · 5 PM' }
 };
 
 const Courses = () => {
@@ -395,7 +396,7 @@ const Courses = () => {
   const getCourseDetails = (title) => {
     const found = activeCourses.find(c => c.title === title);
     if (found) return found;
-    return COURSE_METADATA[title] || COURSE_METADATA['Python Mastery'];
+    return COURSE_METADATA[title] || COURSE_METADATA['Python Mastery'] || { subject: 'Programming', color: '#536DFE', emoji: '💻', nextLesson: 'Introduction & Setup', totalLessons: 24, schedule: 'Mon, Wed · 5 PM' };
   };
 
   const primaryMeta = getCourseDetails(userCourse);
