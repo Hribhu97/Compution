@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate, Link } from 'react-router-dom';
-import { ArrowRight, Eye, EyeOff, Code, CheckCircle, Mail, RefreshCw, UserPlus } from 'lucide-react';
+import { ArrowRight, Eye, EyeOff, Code, CheckCircle, Mail, RefreshCw, UserPlus, Gamepad2 } from 'lucide-react';
 import {
   signInWithPopup,
   signInWithEmailAndPassword,
@@ -469,6 +469,21 @@ const Login = () => {
                     {googleLoading ? <Spinner size={18} /> : <><GoogleLogo /> Continue with Google</>}
                   </motion.button>
 
+                  {/* Google Play Games */}
+                  <motion.button onClick={handleGoogleSignIn} whileHover={{ scale: 1.015 }} whileTap={{ scale: 0.97 }}
+                    disabled={googleLoading || loading}
+                    style={{
+                      width: '100%', padding: '14px', borderRadius: 'var(--radius-md)',
+                      border: '1.5px solid #10B981', background: '#ECFDF5',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px',
+                      fontSize: '1rem', fontWeight: 600, fontFamily: 'var(--font-heading)',
+                      color: '#065F46', cursor: googleLoading ? 'wait' : 'pointer',
+                      transition: 'var(--transition)', boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+                      marginTop: '12px'
+                    }}>
+                    {googleLoading ? <Spinner size={18} /> : <><Gamepad2 size={20} color="#10B981" /> Continue with Google Play Games</>}
+                  </motion.button>
+
                   {/* Switch to Register */}
                   <p style={{ textAlign: 'center', marginTop: '28px', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
                     Don't have an account?{' '}
@@ -574,6 +589,21 @@ const Login = () => {
                       transition: 'var(--transition)', boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
                     }}>
                     {googleLoading ? <Spinner size={18} /> : <><GoogleLogo /> Continue with Google</>}
+                  </motion.button>
+
+                  {/* Google Play Games */}
+                  <motion.button onClick={handleGoogleSignIn} whileHover={{ scale: 1.015 }} whileTap={{ scale: 0.97 }}
+                    disabled={googleLoading || loading}
+                    style={{
+                      width: '100%', padding: '14px', borderRadius: 'var(--radius-md)',
+                      border: '1.5px solid #10B981', background: '#ECFDF5',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px',
+                      fontSize: '1rem', fontWeight: 600, fontFamily: 'var(--font-heading)',
+                      color: '#065F46', cursor: googleLoading ? 'wait' : 'pointer',
+                      transition: 'var(--transition)', boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+                      marginTop: '12px'
+                    }}>
+                    {googleLoading ? <Spinner size={18} /> : <><Gamepad2 size={20} color="#10B981" /> Continue with Google Play Games</>}
                   </motion.button>
 
                   {/* Switch to Login */}

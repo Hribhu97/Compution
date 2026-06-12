@@ -443,7 +443,7 @@ html.lenis, html.lenis body { height: auto; }
 .lenis.lenis-smooth { scroll-behavior: auto !important; }
 .lenis.lenis-stopped { overflow: hidden; }
 
-@media (max-width: 600px) {
+@media (max-width: 1024px) {
   .grid-2-col-mobile {
     grid-template-columns: 1fr !important;
   }
@@ -500,3 +500,75 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 input[type="date"]::-webkit-calendar-picker-indicator:hover {
   opacity: 1;
 }
+
+/* Responsive Grid Helper Classes */
+.grid-3-col-responsive {
+  display: grid !important;
+  grid-template-columns: 1fr 1fr 1.05fr !important;
+  gap: 24px !important;
+}
+@media (max-width: 1024px) {
+  .grid-3-col-responsive {
+    grid-template-columns: 1fr 1fr !important;
+  }
+}
+@media (max-width: 600px) {
+  .grid-3-col-responsive {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+.grid-3-col-equal-responsive {
+  display: grid !important;
+  grid-template-columns: 1fr 1fr 1fr !important;
+  gap: 24px !important;
+}
+@media (max-width: 1024px) {
+  .grid-3-col-equal-responsive {
+    grid-template-columns: 1fr 1fr !important;
+  }
+}
+@media (max-width: 600px) {
+  .grid-3-col-equal-responsive {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* Modal Responsiveness Helpers */
+.modal-responsive-card {
+  padding: 20px !important;
+  border-radius: 28px !important;
+}
+@media (min-width: 600px) {
+  .modal-responsive-card {
+    padding: 36px !important;
+    border-radius: 36px !important;
+  }
+}
+
+.modal-question-box {
+  padding: 18px !important;
+  font-size: 1.05rem !important;
+  border-radius: 18px !important;
+}
+@media (min-width: 600px) {
+  .modal-question-box {
+    padding: 28px !important;
+    font-size: 1.2rem !important;
+    border-radius: 24px !important;
+  }
+}
+
+.modal-option-btn {
+  padding: 12px 18px !important;
+  font-size: 0.88rem !important;
+  border-radius: 16px !important;
+}
+@media (min-width: 600px) {
+  .modal-option-btn {
+    padding: 16px 24px !important;
+    font-size: 0.95rem !important;
+    border-radius: 20px !important;
+  }
+}
+
