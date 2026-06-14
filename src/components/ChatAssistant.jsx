@@ -377,7 +377,7 @@ const ChatAssistant = () => {
                       {isBot && <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--primary)', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: '0.7rem', fontWeight: 800 }}>C</div>}
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: isBot ? 'flex-start' : 'flex-end' }}>
                         <div style={{
-                          background: isBot ? 'white' : 'var(--primary)',
+                          background: isBot ? 'var(--white)' : 'var(--primary)',
                           color: isBot ? 'var(--dark)' : 'white',
                           padding: '12px 16px', borderRadius: isBot ? '16px 16px 16px 4px' : '16px 16px 4px 16px',
                           fontSize: '0.9rem', lineHeight: 1.4, boxShadow: '0 2px 8px rgba(0,0,0,0.04)'

@@ -4,7 +4,6 @@ import { Link } from 'react-router-dom';
 import { collection, onSnapshot } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { Search, ChevronDown, User, BookOpen, GraduationCap, Award, Clock, HelpCircle, ArrowLeft, Mail, Compass } from 'lucide-react';
-import { ReactLenis } from '@studio-freight/react-lenis';
 
 const fadeUp = {
   hidden: { opacity: 0, y: 20 },
@@ -27,7 +26,7 @@ const SEED_STAFF = [
     intro: 'Your point of contact for onboarding assistance, doubt alignment, and administrative resolutions. Helping students navigate their learning journey stress-free.',
     specializations: ['Student Onboarding', 'Conflict Resolution', 'Parent Consultations'],
     availability: 'Available',
-    photoURL: 'https://scontent.fccu27-3.fna.fbcdn.net/v/t39.30808-6/508593946_10239544347887915_1212037328863608577_n.jpg?_nc_cat=100&ccb=1-7&_nc_sid=a5f93a&_nc_ohc=wd2cj4cbesEQ7kNvwEbkNKV&_nc_oc=AdqnZNF2cgiW_1djwMhc88zGPElUMQUMqtJA3_aZhe9uRIvDnWt9LeijOAPBgKGEGesXMAsXI7s-6Ng1z_mpvGcy&_nc_zt=23&_nc_ht=scontent.fccu27-3.fna&_nc_gid=gk0nRpxDOn3N2lmqi_h7AA&_nc_ss=7b2a8&oh=00_Af6Rtq1qZfCFf2ybVlmFaorfXjOgUSalEqOTTpSZM-n07Q&oe=6A192016'
+    photoURL: '/team/biswajit.jpg'
   },
   {
     id: 'seed-hribhu',
@@ -40,7 +39,7 @@ const SEED_STAFF = [
     intro: 'Helping students bridge the gap between classroom theory and industry requirements. Specializing in advanced algorithms, memory management, and competitive programming.',
     specializations: ['Algorithm Analysis', 'System Design', 'Web Architecture'],
     availability: 'Available',
-    photoURL: 'https://scontent.fccu27-3.fna.fbcdn.net/v/t39.30808-6/592307032_4056042398041073_1654794913448512222_n.jpg?_nc_cat=100&ccb=1-7&_nc_sid=a5f93a&_nc_ohc=p7FZkqsE73wQ7kNvwFqucXI&_nc_oc=AdoYKZOvOGOz8M47rLP_KBDncypKlpA3mCPgyRadzdYMyHqKSKfmg_6kCE2-PBcFJ0MZdghGxG4z14JKuePDiz5K&_nc_zt=23&_nc_ht=scontent.fccu27-3.fna&_nc_gid=CO9EEkkEDeozV6u9GWy90A&_nc_ss=7b2a8&oh=00_Af4lotL8-DHyeXXvC-Xl9RyovLOFpFPkR3_9hpEzsDATPg&oe=6A190293'
+    photoURL: '/team/hribhu.jpg'
   },
   {
     id: 'seed-sharmistha',
@@ -53,7 +52,7 @@ const SEED_STAFF = [
     intro: 'Passionate about coding education and structural logic. I focus on making fundamental programming concepts easy and intuitive for school and college learners.',
     specializations: ['Python Syntax', 'Logic Building', 'File Handling'],
     availability: 'Available',
-    photoURL: 'https://www.instagram.com/p/C0_PBLsrkvVrMdnbr3WvGLa-OUUySxfofxIVQI0/?igsh=dGgxOTBycXFjbnVs'
+    photoURL: '/team/sharmistha.jpeg'
   },
   {
     id: 'seed-piyali',
@@ -66,7 +65,7 @@ const SEED_STAFF = [
     intro: 'Overseeing daily institute activities and coordinating schedules. Dedicated to ensuring a seamless and distraction-free learning ecosystem for all students.',
     specializations: ['Resource Allocation', 'Batch Coordination', 'Student Care'],
     availability: 'Available',
-    photoURL: 'https://scontent.fccu27-3.fna.fbcdn.net/v/t39.30808-6/566210624_2245690732534661_3459990525323434036_n.jpg?_nc_cat=105&ccb=1-7&_nc_sid=a5f93a&_nc_ohc=he3sUs2-NgkQ7kNvwEixpPx&_nc_oc=AdpjMB5tuQiMOCHgxwwMsnrl5Mhv3sNlCDJkCn5FV9hmHezwaJwrJxNVVCoB-7W4iwm9O-Y9OotAbYAuLq-mljH_&_nc_zt=23&_nc_ht=scontent.fccu27-3.fna&_nc_gid=ber_C6Y4Ze7FXDtY41LC2g&_nc_ss=7b2a8&oh=00_Af4tl8gOfOTaeAFDtcDOg56l4-pNRx-HjCqVdkUbGEZrwA&oe=6A191591'
+    photoURL: '/team/piyali.jpg'
   },
   {
     id: 'seed-support-ram',
@@ -79,7 +78,7 @@ const SEED_STAFF = [
     intro: 'Managing computer laboratory maintenance, offline seat planning, and technical hardware troubleshooting so that classes face zero downtime.',
     specializations: ['Lab Systems Setup', 'Network Troubleshooting', 'Hardware Care'],
     availability: 'Available',
-    photoURL: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&q=80&w=300'
+    photoURL: '/team/rajdeep.jpg'
   }
 ];
 
@@ -117,8 +116,7 @@ const Staff = () => {
   });
 
   return (
-    <ReactLenis root options={{ lerp: 0.06, smoothWheel: true, syncTouch: true }}>
-      <div style={{ background: 'var(--bg)', minHeight: '100vh', padding: '40px 0 80px' }}>
+    <div style={{ background: 'var(--bg)', minHeight: '100vh', padding: '40px 0 80px' }}>
         
         {/* Header navigation bar */}
         <div className="container" style={{ marginBottom: '40px' }}>
@@ -189,7 +187,7 @@ const Staff = () => {
                   padding: '12px 16px 12px 46px',
                   borderRadius: '100px',
                   border: '1.5px solid rgba(83,109,254,0.2)',
-                  background: 'white',
+                  background: 'var(--white)',
                   fontSize: '0.9rem',
                   outline: 'none',
                   color: 'var(--dark)',
@@ -208,11 +206,11 @@ const Staff = () => {
           {loading ? (
             <div className="grid-auto-cards" style={{ gap: '28px' }}>
               {[1, 2, 3].map(i => (
-                <div key={i} style={{ height: '320px', background: 'white', borderRadius: '24px', animation: 'pulse 1.5s infinite' }} />
+                <div key={i} style={{ height: '320px', background: 'var(--white)', borderRadius: '24px', animation: 'pulse 1.5s infinite' }} />
               ))}
             </div>
           ) : filteredStaff.length === 0 ? (
-            <div className="card card-p" style={{ textAlign: 'center', padding: '64px 32px', border: '1px dashed var(--border-strong)', background: 'white' }}>
+            <div className="card card-p" style={{ textAlign: 'center', padding: '64px 32px', border: '1px dashed var(--border-strong)', background: 'var(--white)' }}>
               <HelpCircle size={48} style={{ margin: '0 auto 16px', color: 'var(--text-light)', opacity: 0.7 }} />
               <h3 style={{ fontSize: '1.25rem', marginBottom: '8px' }}>No staff found</h3>
               <p style={{ color: 'var(--text-muted)' }}>Try resetting filters or searching with a different term.</p>
@@ -236,7 +234,7 @@ const Staff = () => {
                       style={{
                         overflow: 'hidden',
                         cursor: 'pointer',
-                        background: 'white',
+                        background: 'var(--white)',
                         border: isExpanded ? '1.5px solid var(--primary)' : '1px solid var(--border)',
                         borderRadius: '24px',
                         boxShadow: isExpanded ? 'var(--shadow-lg)' : 'var(--shadow-sm)',
@@ -344,8 +342,7 @@ const Staff = () => {
           )}
         </div>
       </div>
-    </ReactLenis>
-  );
+    );
 };
 
 export default Staff;

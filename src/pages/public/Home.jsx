@@ -5,7 +5,7 @@ import {
   BookOpen, Terminal, Code, Trophy, Users, Clock,
   ArrowRight, CheckCircle, Star, ChevronRight,
   Zap, Target, TrendingUp, Award, MapPin, Phone, Mail,
-  Menu, X, Loader2
+  Menu, X, Loader2, Sun, Moon
 } from 'lucide-react';
 import Modal from '../../components/Modal';
 import { useAuth } from '../../contexts/AuthContext';
@@ -236,7 +236,7 @@ const NAV_LINKS = [
   { label: 'Contact', href: '#stories' },
 ];
 
-const Navbar = ({ onOpenAdmission }) => {
+const Navbar = ({ onOpenAdmission, isDarkMode, toggleTheme }) => {
   const [scrolled, setScrolled] = React.useState(false);
   const [menuOpen, setMenuOpen] = React.useState(false);
 
@@ -262,9 +262,9 @@ const Navbar = ({ onOpenAdmission }) => {
         style={{
           position: 'fixed', top: 0, left: 0, right: 0, zIndex: 100,
           padding: scrolled ? '12px 0' : '20px 0',
-          background: scrolled || menuOpen ? 'rgba(247,246,243,0.92)' : 'transparent',
+          background: scrolled || menuOpen ? 'var(--navbar-bg)' : 'transparent',
           backdropFilter: scrolled || menuOpen ? 'blur(16px)' : 'none',
-          borderBottom: scrolled || menuOpen ? '1px solid rgba(0,0,0,0.06)' : 'none',
+          borderBottom: scrolled || menuOpen ? '1px solid var(--navbar-border)' : 'none',
           transition: 'all 0.35s ease',
         }}
       >
@@ -290,18 +290,56 @@ const Navbar = ({ onOpenAdmission }) => {
             ))}
           </div>
           <div className="hide-mobile" style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+            <button
+              onClick={toggleTheme}
+              style={{
+                padding: '8px',
+                borderRadius: '50%',
+                color: 'var(--text-main)',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transition: 'var(--transition)',
+                background: 'var(--surface)',
+                border: '1px solid var(--border)'
+              }}
+              onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.08)'}
+              onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
+              title={isDarkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+            >
+              {isDarkMode ? <Sun size={18} /> : <Moon size={18} />}
+            </button>
             <Link to="/login" className="btn btn-ghost" style={{ padding: '10px 20px' }}>Login</Link>
             <button type="button" className="btn btn-primary" style={{ padding: '10px 20px' }} onClick={onOpenAdmission}>Enroll Now</button>
           </div>
-          <button
-            type="button"
-            className="hide-desktop hide-desktop--flex"
-            onClick={() => setMenuOpen(v => !v)}
-            aria-label={menuOpen ? 'Close menu' : 'Open menu'}
-            style={{ padding: '10px', borderRadius: 'var(--radius-sm)', color: 'var(--dark)', flexShrink: 0 }}
-          >
-            {menuOpen ? <X size={24} /> : <Menu size={24} />}
-          </button>
+          <div className="hide-desktop hide-desktop--flex" style={{ gap: '8px', alignItems: 'center' }}>
+            <button
+              onClick={toggleTheme}
+              style={{
+                padding: '8px',
+                borderRadius: '50%',
+                color: 'var(--text-main)',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transition: 'var(--transition)',
+                background: 'var(--surface)',
+                border: '1px solid var(--border)'
+              }}
+            >
+              {isDarkMode ? <Sun size={18} /> : <Moon size={18} />}
+            </button>
+            <button
+              type="button"
+              onClick={() => setMenuOpen(v => !v)}
+              aria-label={menuOpen ? 'Close menu' : 'Open menu'}
+              style={{ padding: '10px', borderRadius: 'var(--radius-sm)', color: 'var(--dark)', flexShrink: 0 }}
+            >
+              {menuOpen ? <X size={24} /> : <Menu size={24} />}
+            </button>
+          </div>
         </div>
       </motion.nav>
 
@@ -325,6 +363,25 @@ const Navbar = ({ onOpenAdmission }) => {
                   <a key={item.label} href={item.href} onClick={closeMenu}>{item.label}</a>
                 )
               ))}
+              <div className="divider" style={{ margin: '12px 0' }} />
+              <button
+                onClick={() => { toggleTheme(); }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px',
+                  padding: '14px 16px',
+                  borderRadius: 'var(--radius-md)',
+                  color: 'var(--text-main)',
+                  fontWeight: 600,
+                  fontSize: '1rem',
+                  width: '100%',
+                  background: 'var(--surface)'
+                }}
+              >
+                {isDarkMode ? <Sun size={18} /> : <Moon size={18} />}
+                <span>{isDarkMode ? 'Light Mode' : 'Dark Mode'}</span>
+              </button>
               <div className="divider" style={{ margin: '12px 0' }} />
               <Link to="/login" className="btn btn-ghost" style={{ width: '100%' }} onClick={closeMenu}>Login</Link>
               <button type="button" className="btn btn-primary" style={{ width: '100%' }} onClick={() => { closeMenu(); onOpenAdmission(); }}>Enroll Now</button>
@@ -387,7 +444,7 @@ const Hero = ({ onOpenAdmission }) => (
         {/* Main editor card */}
         <div className="card" style={{ padding: 0, overflow: 'hidden', borderRadius: 'var(--radius-xl)' }}>
           {/* Editor topbar */}
-          <div style={{ background: 'var(--dark)', padding: '14px 20px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div style={{ background: '#1A1D24', padding: '14px 20px', display: 'flex', alignItems: 'center', gap: '8px' }}>
             {['#EF5350','#FFA726','#66BB6A'].map(c => (
               <div key={c} style={{ width: 12, height: 12, borderRadius: '50%', background: c }} />
             ))}
@@ -822,7 +879,7 @@ const OurStories = ({ onOpenAdmission }) => {
                 fontSize: '0.9rem',
                 border: '1.5px solid rgba(83,109,254,0.15)',
                 cursor: 'pointer',
-                background: activeFilter === f ? 'var(--primary)' : 'white',
+                background: activeFilter === f ? 'var(--primary)' : 'var(--white)',
                 color: activeFilter === f ? 'white' : 'var(--text-main)',
                 transition: 'all 0.2s ease-in-out'
               }}
@@ -964,7 +1021,7 @@ const OurStories = ({ onOpenAdmission }) => {
 
 /* ── FOOTER ────────────────────────────────────────── */
 const Footer = ({ onOpenAdmission }) => (
-  <footer style={{ background: 'var(--dark)', color: 'rgba(255,255,255,0.6)', padding: '60px 0 40px' }}>
+  <footer style={{ background: 'var(--footer-bg)', color: 'rgba(255,255,255,0.6)', padding: '60px 0 40px' }}>
     <div className="container">
       <div className="grid-footer" style={{ marginBottom: '48px' }}>
         <div>
@@ -1082,6 +1139,44 @@ const Home = () => {
   const [selectedCourse, setSelectedCourse] = useState('');
   const [toast, setToast] = useState(null);
 
+  const [isDarkMode, setIsDarkMode] = useState(() => {
+    const systemDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    let hasSavedPref = false;
+    let savedVal = false;
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.indexOf('isDarkMode_') === 0) {
+        hasSavedPref = true;
+        if (localStorage.getItem(key) === 'true') {
+          savedVal = true;
+        }
+      }
+    }
+    return hasSavedPref ? savedVal : systemDark;
+  });
+
+  const toggleTheme = () => {
+    const nextVal = !isDarkMode;
+    setIsDarkMode(nextVal);
+    const key = user ? `isDarkMode_${user.uid}` : 'isDarkMode_public';
+    localStorage.setItem(key, String(nextVal));
+    document.documentElement.classList.toggle('dark-theme', nextVal);
+    document.body.classList.toggle('dark-theme', nextVal);
+    window.dispatchEvent(new Event('themechange'));
+  };
+
+  useEffect(() => {
+    const observer = new MutationObserver(() => {
+      const isDark = document.documentElement.classList.contains('dark-theme') || document.body.classList.contains('dark-theme');
+      if (isDark !== isDarkMode) {
+        setIsDarkMode(isDark);
+      }
+    });
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+    observer.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+    return () => observer.disconnect();
+  }, [isDarkMode]);
+
   const openAdmission = (courseName = '') => {
     setSelectedCourse(courseName);
     setAdmissionOpen(true);
@@ -1101,7 +1196,7 @@ const Home = () => {
 
   return (
     <>
-      <Navbar onOpenAdmission={openAdmission} />
+      <Navbar onOpenAdmission={openAdmission} isDarkMode={isDarkMode} toggleTheme={toggleTheme} />
       <Hero onOpenAdmission={openAdmission} />
       <WhyCompution />
       <CoursesSection onOpenAdmission={openAdmission} />

@@ -20,7 +20,7 @@ import Profile from './pages/dashboard/Profile';
 import NotFound from './pages/public/NotFound';
 
 const PublicLayout = () => (
-  <ReactLenis root options={{ lerp: 0.06, smoothWheel: true, syncTouch: true }}>
+  <ReactLenis root options={{ lerp: 0.08, smoothWheel: true }}>
     <Outlet />
   </ReactLenis>
 );

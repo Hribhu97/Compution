@@ -32,11 +32,14 @@
   --font-support: 'Satoshi', sans-serif;
   --transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
   --child-padding: 24px;
+  --navbar-bg: rgba(247, 246, 243, 0.92);
+  --navbar-border: rgba(0, 0, 0, 0.06);
+  --footer-bg: #22252B;
 }
 
 /* =================== RESET =================== */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-html { scroll-behavior: smooth; }
+html { scroll-behavior: auto; }
 body {
   background: var(--bg);
   color: var(--text-main);
@@ -601,11 +604,19 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover {
   --text-light: #64748B;
   --border: rgba(255, 255, 255, 0.08);
   --border-strong: rgba(255, 255, 255, 0.15);
+  --navbar-bg: rgba(11, 15, 25, 0.92);
+  --navbar-border: rgba(255, 255, 255, 0.08);
+  --footer-bg: #080C14;
 }
 
 body.dark-theme, .dark-theme body {
   background: var(--bg) !important;
   color: var(--text-main) !important;
+}
+
+body.dark-theme .admissions-cta {
+  background: linear-gradient(135deg, #151F32 0%, #080C14 100%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 body.dark-theme .dash-shell {

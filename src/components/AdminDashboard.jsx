@@ -247,6 +247,61 @@ const AdminDashboard = () => {
     };
   }, [user?.uid, user?.role]);
 
+  // Sync users and staff avatar URLs to local assets if they contain expired external links
+  useEffect(() => {
+    if (user?.role !== 'admin') return;
+
+    const avatarMap = [
+      { match: 'biswajit', photoURL: '/team/biswajit.jpg' },
+      { match: 'hribhu', photoURL: '/team/hribhu.jpg' },
+      { match: 'sharmistha', photoURL: '/team/sharmistha.jpeg' },
+      { match: 'piyali', photoURL: '/team/piyali.jpg' },
+      { match: 'rajdeep', photoURL: '/team/rajdeep.jpg' }
+    ];
+
+    // 1. Sync users collection
+    if (allUsers.length > 0) {
+      allUsers.forEach(async (usr) => {
+        const name = (usr.displayName || usr.name || '').toLowerCase();
+        const matched = avatarMap.find(item => name.includes(item.match));
+        if (matched && usr.photoURL !== matched.photoURL) {
+          const isExternal = !usr.photoURL || usr.photoURL.startsWith('http');
+          if (isExternal) {
+            try {
+              console.log(`Auto-syncing user avatar for ${usr.displayName}:`, matched.photoURL);
+              const userRef = doc(db, 'users', usr.id);
+              await updateDoc(userRef, { photoURL: matched.photoURL });
+            } catch (err) {
+              console.error("Failed to sync user avatar:", err);
+            }
+          }
+        }
+      });
+    }
+
+    // 2. Sync staff collection
+    const unsubStaff = onSnapshot(collection(db, 'staff'), (snap) => {
+      snap.forEach(async (dDoc) => {
+        const data = dDoc.data();
+        const name = (data.name || '').toLowerCase();
+        const matched = avatarMap.find(item => name.includes(item.match));
+        if (matched && data.photoURL !== matched.photoURL) {
+          const isExternal = !data.photoURL || data.photoURL.startsWith('http');
+          if (isExternal) {
+            try {
+              console.log(`Auto-syncing staff avatar for ${data.name}:`, matched.photoURL);
+              await updateDoc(dDoc.ref, { photoURL: matched.photoURL });
+            } catch (err) {
+              console.error("Failed to sync staff avatar:", err);
+            }
+          }
+        }
+      });
+    });
+
+    return () => unsubStaff();
+  }, [allUsers, user]);
+
   // Sync and listen to selected student fees, assigned faculty, and progress report
   useEffect(() => {
     if (!selectedStudentDetails?.id) {
