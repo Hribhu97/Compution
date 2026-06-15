@@ -614,6 +614,18 @@ body.dark-theme, .dark-theme body {
   color: var(--text-main) !important;
 }
 
+body.dark-theme select,
+body.dark-theme option,
+body.dark-theme input,
+body.dark-theme textarea {
+  color: var(--text-main) !important;
+}
+
+body.dark-theme select,
+body.dark-theme option {
+  background-color: var(--white) !important;
+}
+
 body.dark-theme .admissions-cta {
   background: linear-gradient(135deg, #151F32 0%, #080C14 100%);
   border: 1px solid rgba(255, 255, 255, 0.08);

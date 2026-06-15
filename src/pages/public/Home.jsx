@@ -38,7 +38,7 @@ const AdmissionApplicationModal = ({ isOpen, onClose, triggerToast, initialSubje
   useEffect(() => {
     if (isOpen) {
       let matchedSubject = ADMISSION_SUBJECTS[0];
-      if (initialSubject) {
+      if (initialSubject && typeof initialSubject === 'string') {
         const found = ADMISSION_SUBJECTS.find(s => 
           s.toLowerCase().startsWith(initialSubject.toLowerCase()) || 
           initialSubject.toLowerCase().startsWith(s.toLowerCase())
@@ -1178,7 +1178,8 @@ const Home = () => {
   }, [isDarkMode]);
 
   const openAdmission = (courseName = '') => {
-    setSelectedCourse(courseName);
+    const course = typeof courseName === 'string' ? courseName : '';
+    setSelectedCourse(course);
     setAdmissionOpen(true);
   };
   const closeAdmission = () => setAdmissionOpen(false);
