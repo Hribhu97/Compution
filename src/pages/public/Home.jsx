@@ -211,7 +211,7 @@ const AdmissionApplicationModal = ({ isOpen, onClose, triggerToast, initialSubje
                     fontSize: '1rem', 
                     marginTop: '4px',
                     background: 'var(--success)',
-                    color: 'white',
+                    color: 'var(--text-on-primary)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
@@ -645,7 +645,7 @@ const CoursesSection = ({ onOpenAdmission }) => {
                       onClick={() => onOpenAdmission(course.title)}
                       style={{
                         background: `linear-gradient(135deg, ${course.color} 0%, #7C4DFF 100%)`,
-                        color: 'white',
+                        color: 'var(--text-on-primary)',
                         fontWeight: 700,
                         fontSize: '0.8rem',
                         display: 'flex',
@@ -717,7 +717,7 @@ const LearningJourney = () => {
             >
               <div style={{
                 width: '80px', height: '80px', borderRadius: '50%',
-                background: step.color, color: 'white',
+                background: step.color, color: 'var(--text-on-primary)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 marginBottom: '20px', boxShadow: `0 8px 24px ${step.color}40`,
                 border: '4px solid var(--white)'
@@ -823,7 +823,7 @@ const VideoPlayer = ({ src, duration, name }) => {
             <span style={{
               fontSize: '0.7rem',
               fontWeight: 700,
-              color: 'white',
+              color: 'var(--text-on-primary)',
               background: 'rgba(0,0,0,0.6)',
               padding: '3px 8px',
               borderRadius: '6px'
@@ -846,7 +846,7 @@ const VideoPlayer = ({ src, duration, name }) => {
                 alignItems: 'center',
                 justifyContent: 'center',
                 boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
-                color: 'white'
+                color: 'var(--text-on-primary)'
               }}
             >
               <Play size={20} fill="white" style={{ marginLeft: 2 }} />
@@ -927,7 +927,7 @@ const StudentStories = () => {
                   width: 44, height: 44, borderRadius: '50%',
                   background: 'linear-gradient(135deg, var(--primary), var(--accent))',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  color: 'white', fontWeight: 800, fontSize: '0.9rem'
+                  color: 'var(--text-on-primary)', fontWeight: 800, fontSize: '0.9rem'
                 }}>{s.avatar}</div>
                 <div>
                   <div style={{ fontWeight: 700 }}>{s.name}</div>
@@ -1003,7 +1003,7 @@ const Testimonials = () => {
                 <div style={{
                   width: '44px', height: '44px', borderRadius: '50%',
                   background: 'linear-gradient(135deg, var(--primary), var(--accent))',
-                  color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  color: 'var(--text-on-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center',
                   fontWeight: 800, fontSize: '0.95rem'
                 }}>
                   {t.name.split(' ').map(n => n[0]).join('')}
@@ -1255,7 +1255,7 @@ const OurStories = ({ onOpenAdmission }) => {
           className="admissions-cta"
         >
           <div>
-            <h2 style={{ color: 'white', marginBottom: '16px', fontSize: '2.25rem' }}>Start your story with us</h2>
+            <h2 style={{ color: 'var(--text-on-primary)', marginBottom: '16px', fontSize: '2.25rem' }}>Start your story with us</h2>
             <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: '1.1rem', maxWidth: '480px', lineHeight: 1.7 }}>
               New batches starting soon. Limited seats. Walk in or call us to secure your place.
             </p>
@@ -1282,7 +1282,7 @@ const OurStories = ({ onOpenAdmission }) => {
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', minWidth: '220px' }}>
             <button type="button" className="btn btn-primary btn-lg" onClick={onOpenAdmission}>Apply for Admission</button>
-            <Link to="/login" className="btn" style={{ background: 'rgba(255,255,255,0.1)', color: 'white', padding: '14px 28px', borderRadius: 'var(--radius-lg)', fontWeight: 700, textAlign: 'center' }}>
+            <Link to="/login" className="btn" style={{ background: 'rgba(255,255,255,0.1)', color: 'var(--text-on-primary)', padding: '14px 28px', borderRadius: 'var(--radius-lg)', fontWeight: 700, textAlign: 'center' }}>
               Login
             </Link>
           </div>
@@ -1298,7 +1298,7 @@ const Footer = ({ onOpenAdmission }) => (
     <div className="container">
       <div className="grid-footer" style={{ marginBottom: '48px' }}>
         <div>
-          <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 900, fontSize: '1.5rem', color: 'white', marginBottom: '16px', letterSpacing: '-0.04em' }}>
+          <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 900, fontSize: '1.5rem', color: 'var(--text-on-primary)', marginBottom: '16px', letterSpacing: '-0.04em' }}>
             COMP<span style={{ color: 'var(--accent)' }}>UTION</span>
           </div>
           <p style={{ lineHeight: 1.8, maxWidth: '300px', fontSize: '0.9rem' }}>
@@ -1309,7 +1309,7 @@ const Footer = ({ onOpenAdmission }) => (
           </div>
         </div>
         <div>
-          <div style={{ color: 'white', fontWeight: 700, marginBottom: '20px' }}>Programs</div>
+          <div style={{ color: 'var(--text-on-primary)', fontWeight: 700, marginBottom: '20px' }}>Programs</div>
           {['Class XI CS', 'Class XII CS', 'Python', 'Java', 'C & C++', 'Web Dev', 'DSA', 'B.Sc/BCA Support'].map(item => (
             <div key={item} style={{ marginBottom: '10px', fontSize: '0.9rem', cursor: 'pointer', transition: 'var(--transition)' }}
               onMouseEnter={e => e.target.style.color = 'white'}
@@ -1318,7 +1318,7 @@ const Footer = ({ onOpenAdmission }) => (
           ))}
         </div>
         <div>
-          <div style={{ color: 'white', fontWeight: 700, marginBottom: '20px' }}>Quick Links</div>
+          <div style={{ color: 'var(--text-on-primary)', fontWeight: 700, marginBottom: '20px' }}>Quick Links</div>
           {[
             { label: 'About Us', href: '#about' },
             { label: 'Faculty', href: '#about' },
@@ -1396,7 +1396,7 @@ const Toast = ({ message, onClose }) => {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        color: 'white',
+        color: 'var(--text-on-primary)',
       }}>
         <CheckCircle size={14} />
       </div>
@@ -1429,7 +1429,7 @@ const ContactSection = ({ onOpenAdmission }) => {
           }}
         >
           <div style={{ flex: '1 1 500px' }}>
-            <h2 style={{ color: 'white', marginBottom: '12px', fontSize: '2.25rem', fontWeight: 800 }}>
+            <h2 style={{ color: 'var(--text-on-primary)', marginBottom: '12px', fontSize: '2.25rem', fontWeight: 800 }}>
               Start your story with us
             </h2>
             <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: '1rem', maxWidth: '520px', lineHeight: 1.6, marginBottom: '24px' }}>
@@ -1462,7 +1462,7 @@ const ContactSection = ({ onOpenAdmission }) => {
               onClick={onOpenAdmission}
               style={{ 
                 background: '#4c6ef5', 
-                color: 'white', 
+                color: 'var(--text-on-primary)', 
                 padding: '14px 28px', 
                 borderRadius: '12px', 
                 fontWeight: 700, 
@@ -1488,7 +1488,7 @@ const ContactSection = ({ onOpenAdmission }) => {
               to="/login" 
               style={{ 
                 background: '#1c1f26', 
-                color: 'white', 
+                color: 'var(--text-on-primary)', 
                 padding: '14px 28px', 
                 borderRadius: '12px', 
                 fontWeight: 700, 

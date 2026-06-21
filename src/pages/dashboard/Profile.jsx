@@ -80,7 +80,7 @@ const Toast = ({ message, onClose }) => {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        color: 'white',
+        color: 'var(--text-on-primary)',
       }}>
         <ShieldCheck size={14} />
       </div>
@@ -275,7 +275,7 @@ const Profile = () => {
               ) : (
                 <div style={{
                   width: '100%', height: '100%', borderRadius: '50%', background: 'linear-gradient(135deg, var(--primary), var(--accent))',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 800, fontSize: '2rem',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-on-primary)', fontWeight: 800, fontSize: '2rem',
                   border: '3px solid var(--surface)'
                 }}>{initials}</div>
               )}

@@ -118,7 +118,7 @@ class ErrorBoundary extends Component {
                   borderRadius: '12px',
                   background: 'linear-gradient(135deg, #4f46e5, #6366f1)',
                   border: 'none',
-                  color: 'white',
+                  color: 'var(--text-on-primary)',
                   fontWeight: 600,
                   fontSize: '0.9rem',
                   cursor: 'pointer',

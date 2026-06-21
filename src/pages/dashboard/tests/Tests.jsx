@@ -298,7 +298,7 @@ const Tests = () => {
                 <h3 style={{ fontSize: '1.25rem', fontWeight: 800, margin: 0 }}>{activeTest.title}</h3>
                 <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{activeTest.subject} • {activeTest.difficulty}</span>
               </div>
-              <div style={{ background: quizTimeRemaining < 60 ? 'rgba(239,68,68,0.1)' : '#FFFFFF', color: quizTimeRemaining < 60 ? '#EF4444' : '#1A1A1A', border: '1px solid var(--border)', padding: '10px 20px', borderRadius: '12px', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 700 }}>
+              <div style={{ background: quizTimeRemaining < 60 ? 'var(--danger-light)' : 'var(--surface)', color: quizTimeRemaining < 60 ? 'var(--danger)' : 'var(--text-primary)', border: '1px solid var(--border)', padding: '10px 20px', borderRadius: '12px', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 700 }}>
                 <Clock size={16} /> {formatTime(quizTimeRemaining)}
               </div>
             </div>
@@ -309,8 +309,8 @@ const Tests = () => {
                 <span>Progress</span>
                 <span>Question {quizQIdx + 1} of {activeTest.questions.length}</span>
               </div>
-              <div className="progress-track" style={{ background: '#E2E8F0', height: '6px' }}>
-                <div className="progress-fill" style={{ width: `${progressPercent}%`, background: '#2563EB' }} />
+              <div className="progress-track" style={{ background: 'var(--border)', height: '6px' }}>
+                <div className="progress-fill" style={{ width: `${progressPercent}%`, background: 'var(--primary)' }} />
               </div>
             </div>
 
@@ -330,8 +330,8 @@ const Tests = () => {
                       onClick={() => setQuizAnswers({ ...quizAnswers, [quizQIdx]: oIdx })}
                       style={{
                         textAlign: 'left', padding: '16px 20px', borderRadius: '12px',
-                        background: isSelected ? 'rgba(37,99,235,0.06)' : '#FFFFFF',
-                        border: isSelected ? '2px solid #2563EB' : '1px solid var(--border)',
+                        background: isSelected ? 'var(--primary-light)' : 'var(--surface-card)',
+                        border: isSelected ? '2px solid var(--primary)' : '1px solid var(--border)',
                         fontWeight: 600, fontSize: '0.95rem', cursor: 'pointer', transition: 'all 0.15s'
                       }}
                     >

@@ -323,7 +323,7 @@ const ChatAssistant = () => {
           width: 60, height: 60, borderRadius: '50%',
           background: 'linear-gradient(135deg, var(--primary) 0%, #7C4DFF 100%)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          color: 'white', border: 'none', cursor: 'pointer',
+          color: 'var(--text-on-primary)', border: 'none', cursor: 'pointer',
           boxShadow: '0 8px 24px rgba(83,109,254,0.35)',
         }}
       >
@@ -345,7 +345,7 @@ const ChatAssistant = () => {
               transition={{ type: 'spring', damping: 25, stiffness: 200 }}
               className="chat-widget-panel"
             >
-              <div style={{ background: 'linear-gradient(180deg, #536DFE 0%, #667FFF 100%)', padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: 'white' }}>
+              <div style={{ background: 'linear-gradient(180deg, #536DFE 0%, #667FFF 100%)', padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: 'var(--text-on-primary)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                   <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'var(--white)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--primary)', fontWeight: 800, fontSize: '1rem' }}>C</div>
                   <div>
@@ -361,7 +361,7 @@ const ChatAssistant = () => {
                       rel="noopener noreferrer"
                       title="Contact Support on WhatsApp"
                       style={{
-                        color: 'white',
+                        color: 'var(--text-on-primary)',
                         background: 'rgba(255,255,255,0.15)',
                         padding: '6px 12px',
                         borderRadius: '20px',
@@ -379,7 +379,7 @@ const ChatAssistant = () => {
                       <span>WhatsApp Support</span>
                     </a>
                   )}
-                  <button onClick={() => setIsOpen(false)} style={{ color: 'white', background: 'rgba(255,255,255,0.2)', width: 32, height: 32, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <button onClick={() => setIsOpen(false)} style={{ color: 'var(--text-on-primary)', background: 'rgba(255,255,255,0.2)', width: 32, height: 32, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                     <X size={16} />
                   </button>
                 </div>
@@ -396,11 +396,11 @@ const ChatAssistant = () => {
                   return (
                     <motion.div key={m.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
                       style={{ display: 'flex', gap: '10px', alignItems: 'flex-end', alignSelf: isBot ? 'flex-start' : 'flex-end', maxWidth: '85%' }}>
-                      {isBot && <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--primary)', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: '0.7rem', fontWeight: 800 }}>C</div>}
+                      {isBot && <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--primary)', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-on-primary)', fontSize: '0.7rem', fontWeight: 800 }}>C</div>}
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: isBot ? 'flex-start' : 'flex-end' }}>
                         <div style={{
-                          background: isBot ? 'var(--white)' : 'var(--primary)',
-                          color: isBot ? 'var(--dark)' : 'white',
+                          background: isBot ? 'var(--surface-elevated)' : 'var(--primary)',
+                          color: isBot ? 'var(--text-primary)' : 'var(--text-on-primary)',
                           padding: '12px 16px', borderRadius: isBot ? '16px 16px 16px 4px' : '16px 16px 4px 16px',
                           fontSize: '0.9rem', lineHeight: 1.4, boxShadow: '0 2px 8px rgba(0,0,0,0.04)'
                         }}>
@@ -415,7 +415,7 @@ const ChatAssistant = () => {
                 })}
                 {showTyping && (
                   <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} style={{ display: 'flex', gap: '10px', alignItems: 'flex-end' }}>
-                    <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--primary)', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontSize: '0.7rem', fontWeight: 800 }}>C</div>
+                    <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--primary)', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-on-primary)', fontSize: '0.7rem', fontWeight: 800 }}>C</div>
                     <div style={{ background: 'var(--white)', padding: '12px 16px', borderRadius: '16px 16px 16px 4px', display: 'flex', gap: '4px', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}>
                       <motion.div animate={{ y: [0, -4, 0] }} transition={{ duration: 0.6, repeat: Infinity, delay: 0 }} style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--text-light)' }} />
                       <motion.div animate={{ y: [0, -4, 0] }} transition={{ duration: 0.6, repeat: Infinity, delay: 0.2 }} style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--text-light)' }} />
@@ -433,7 +433,7 @@ const ChatAssistant = () => {
                     placeholder="Type a message..."
                     style={{ flex: 1, background: 'var(--surface)', border: 'none', borderRadius: '100px', padding: '12px 20px', fontSize: '0.9rem', outline: 'none' }}
                   />
-                  <button type="submit" disabled={!input.trim()} style={{ width: 42, height: 42, borderRadius: '50%', background: input.trim() ? 'var(--primary)' : 'var(--surface)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: '0.2s', opacity: input.trim() ? 1 : 0.5 }}>
+                  <button type="submit" disabled={!input.trim()} style={{ width: 42, height: 42, borderRadius: '50%', background: input.trim() ? 'var(--primary)' : 'var(--surface)', color: 'var(--text-on-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: '0.2s', opacity: input.trim() ? 1 : 0.5 }}>
                     <Send size={18} style={{ marginLeft: 2 }} />
                   </button>
                 </form>
@@ -445,7 +445,7 @@ const ChatAssistant = () => {
       {toast && (
         <div style={{
           position: 'fixed', bottom: '24px', right: '24px', padding: '12px 24px',
-          background: 'rgba(239,83,80,0.95)', color: 'white', borderRadius: '8px',
+          background: 'rgba(239,83,80,0.95)', color: 'var(--text-on-primary)', borderRadius: '8px',
           boxShadow: '0 4px 12px rgba(0,0,0,0.15)', zIndex: 1000, display: 'flex', alignItems: 'center', gap: '8px'
         }}>
           <span>⚠️ {toast}</span>

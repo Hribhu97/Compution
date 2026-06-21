@@ -481,7 +481,7 @@ const Courses = () => {
       {toast && (
         <div style={{
           position: 'fixed', bottom: '24px', right: '24px', padding: '12px 24px',
-          background: 'rgba(239,83,80,0.95)', color: 'white', borderRadius: '8px',
+          background: 'var(--danger)', color: 'var(--text-on-primary)', borderRadius: '8px',
           boxShadow: '0 4px 12px rgba(0,0,0,0.15)', zIndex: 1000, display: 'flex', alignItems: 'center', gap: '8px'
         }}>
           <span>⚠️ {toast}</span>

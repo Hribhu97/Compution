@@ -478,7 +478,7 @@ const Attendance = () => {
       {/* Toast Alert */}
       <AnimatePresence>
         {toast && (
-          <motion.div initial={{ opacity: 0, y: -20, x: '-50%' }} animate={{ opacity: 1, y: 0, x: '-50%' }} exit={{ opacity: 0, y: -20, x: '-50%' }} style={{ position: 'fixed', top: 32, left: '50%', zIndex: 9999, background: 'rgba(34,37,43,0.95)', color: 'white', padding: '12px 24px', borderRadius: '12px', boxShadow: 'var(--shadow-lg)', fontWeight: 600, fontSize: '0.9rem' }}>
+          <motion.div initial={{ opacity: 0, y: -20, x: '-50%' }} animate={{ opacity: 1, y: 0, x: '-50%' }} exit={{ opacity: 0, y: -20, x: '-50%' }} style={{ position: 'fixed', top: 32, left: '50%', zIndex: 9999, background: 'var(--surface-elevated)', color: 'var(--text-primary)', padding: '12px 24px', borderRadius: '12px', boxShadow: 'var(--shadow-lg)', fontWeight: 600, fontSize: '0.9rem' }}>
             {toast}
           </motion.div>
         )}
@@ -717,9 +717,9 @@ const Attendance = () => {
                         if (active && payload && payload.length) {
                           const itemData = payload[0].payload;
                           return (
-                            <div style={{ background: 'var(--dark)', color: 'white', padding: '8px 12px', borderRadius: '8px', fontSize: '0.8rem' }}>
+                            <div style={{ background: 'var(--surface-elevated)', color: 'var(--text-primary)', padding: '8px 12px', border: '1px solid var(--border)', borderRadius: '8px', fontSize: '0.8rem' }}>
                               <div style={{ fontWeight: 700 }}>{itemData.date}</div>
-                              <div style={{ textTransform: 'capitalize', color: itemData.status === 'present' ? '#66BB6A' : itemData.status === 'absent' ? '#EF5350' : '#FFA726', marginTop: '2px', fontWeight: 700 }}>{itemData.status}</div>
+                              <div style={{ textTransform: 'capitalize', color: itemData.status === 'present' ? 'var(--success)' : itemData.status === 'absent' ? 'var(--danger)' : 'var(--warning)', marginTop: '2px', fontWeight: 700 }}>{itemData.status}</div>
                             </div>
                           );
                         }
@@ -727,7 +727,7 @@ const Attendance = () => {
                       }} />
                       <Bar dataKey="val" radius={[4, 4, 4, 4]}>
                         {chartTimeline.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={entry.status === 'present' ? '#66BB6A' : entry.status === 'absent' ? '#EF5350' : '#FFA726'} />
+                          <Cell key={`cell-${index}`} fill={entry.status === 'present' ? 'var(--success)' : entry.status === 'absent' ? 'var(--danger)' : 'var(--warning)'} />
                         ))}
                       </Bar>
                     </BarChart>

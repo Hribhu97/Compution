@@ -250,7 +250,7 @@ const Schedule = () => {
       {/* Toast */}
       <AnimatePresence>
         {toast && (
-          <motion.div initial={{ opacity: 0, y: -20, x: '-50%' }} animate={{ opacity: 1, y: 0, x: '-50%' }} exit={{ opacity: 0, y: -20, x: '-50%' }} style={{ position: 'fixed', top: 32, left: '50%', zIndex: 9999, background: 'rgba(34,37,43,0.95)', color: 'white', padding: '12px 24px', borderRadius: '12px', boxShadow: 'var(--shadow-lg)', fontWeight: 600, fontSize: '0.9rem' }}>
+          <motion.div initial={{ opacity: 0, y: -20, x: '-50%' }} animate={{ opacity: 1, y: 0, x: '-50%' }} exit={{ opacity: 0, y: -20, x: '-50%' }} style={{ position: 'fixed', top: 32, left: '50%', zIndex: 9999, background: 'rgba(34,37,43,0.95)', color: 'var(--text-on-primary)', padding: '12px 24px', borderRadius: '12px', boxShadow: 'var(--shadow-lg)', fontWeight: 600, fontSize: '0.9rem' }}>
             {toast}
           </motion.div>
         )}
@@ -351,7 +351,7 @@ const Schedule = () => {
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <CalendarIcon size={14} style={{ color: 'var(--primary)' }} />
                     <span>{format(parseISO(item.date), 'PPPP')}</span>
-                    {isToday && <span style={{ marginLeft: 'auto', background: 'var(--success)', color: 'white', fontSize: '0.7rem', fontWeight: 800, padding: '2px 8px', borderRadius: '100px' }}>TODAY</span>}
+                    {isToday && <span style={{ marginLeft: 'auto', background: 'var(--success)', color: 'var(--text-on-primary)', fontSize: '0.7rem', fontWeight: 800, padding: '2px 8px', borderRadius: '100px' }}>TODAY</span>}
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <Clock size={14} style={{ color: 'var(--primary)' }} />

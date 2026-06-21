@@ -666,7 +666,7 @@ const Community = () => {
                         {post.authorPhoto ? (
                           <img src={post.authorPhoto} alt={post.author} style={{ width: 38, height: 38, borderRadius: '50%', objectFit: 'cover' }} />
                         ) : (
-                          <div style={{ width: 38, height: 38, borderRadius: '50%', background: 'linear-gradient(135deg, var(--primary), var(--accent))', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 700, fontSize: '0.8rem' }}>
+                          <div style={{ width: 38, height: 38, borderRadius: '50%', background: 'linear-gradient(135deg, var(--primary), var(--accent))', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-on-primary)', fontWeight: 700, fontSize: '0.8rem' }}>
                             {getInitials(post.author)}
                           </div>
                         )}
@@ -728,7 +728,7 @@ const Community = () => {
           <div style={{ height: '100%', display: 'flex' }}>
             
             {/* Left pane: chats and directory list */}
-            <div style={{ width: '320px', borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column', background: '#F9FAFB' }}>
+            <div style={{ width: '320px', borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column', background: 'var(--surface)' }}>
               
               {/* Search Bar */}
               <div style={{ padding: '16px', borderBottom: '1px solid var(--border)' }}>
@@ -776,7 +776,7 @@ const Community = () => {
                         >
                           <div style={{ position: 'relative' }}>
                             <img src={itemUser.photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=100'} alt={itemUser.displayName} style={{ width: 40, height: 40, borderRadius: '50%', objectFit: 'cover' }} />
-                            <span style={{ position: 'absolute', bottom: 0, right: 0, width: 10, height: 10, borderRadius: '50%', background: itemUser.availability === 'Busy' ? 'var(--warning)' : 'var(--success)', border: '2px solid white' }} />
+                            <span style={{ position: 'absolute', bottom: 0, right: 0, width: 10, height: 10, borderRadius: '50%', background: itemUser.availability === 'Busy' ? 'var(--warning)' : 'var(--success)', border: '2px solid var(--surface)' }} />
                           </div>
                           <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
@@ -785,7 +785,7 @@ const Community = () => {
                                 {renderRoleBadge(itemUser.role)}
                               </h4>
                               {isUnread && (
-                                <span style={{ background: 'var(--primary)', color: 'white', fontSize: '0.65rem', fontWeight: 800, minWidth: '16px', height: '16px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2px' }}>
+                                <span style={{ background: 'var(--primary)', color: 'var(--text-on-primary)', fontSize: '0.65rem', fontWeight: 800, minWidth: '16px', height: '16px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2px' }}>
                                   {unreadCount}
                                 </span>
                               )}
@@ -803,7 +803,7 @@ const Community = () => {
             </div>
 
             {/* Right pane: message window */}
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: isDarkMode ? '#0B0F19' : '#F8FAFC' }}>
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'var(--bg)' }}>
               {activeRoom ? (
                 <>
                   {/* Chat header */}
@@ -848,8 +848,8 @@ const Community = () => {
                                 )}
                                 <div style={{
                                   padding: '12px 16px', borderRadius: isMe ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
-                                  background: isMe ? 'var(--primary)' : (isDarkMode ? '#1E2D4A' : 'white'),
-                                  color: isMe ? 'white' : 'var(--dark)',
+                                  background: isMe ? 'var(--primary)' : 'var(--surface-elevated)',
+                                  color: isMe ? 'var(--text-on-primary)' : 'var(--text-primary)',
                                   boxShadow: 'var(--shadow-sm)',
                                   border: isMe ? 'none' : '1px solid var(--border)'
                                 }}>
@@ -1000,7 +1000,7 @@ const Community = () => {
                   onClick={() => setPostAttachment(null)}
                   style={{
                     position: 'absolute', top: '8px', right: '8px',
-                    background: 'rgba(239,83,80,0.9)', color: 'white',
+                    background: 'var(--danger)', color: 'var(--text-on-primary)',
                     border: 'none', borderRadius: '50%', width: '24px', height: '24px',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     cursor: 'pointer', fontWeight: 800, fontSize: '0.8rem'

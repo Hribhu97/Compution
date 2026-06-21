@@ -2,37 +2,39 @@
 
 /* =================== DESIGN TOKENS =================== */
 :root {
-  /* Core brand tokens */
-  --primary: #536DFE;
-  --primary-dark: #3D52D5;
-  --primary-light: rgba(83, 109, 254, 0.08);
+  /* Semantic Tokens: Light Mode */
+  --bg: #F6F7FB;
+  --surface: #FFFFFF;
+  --surface-elevated: #F0F2F7;
+  --text-primary: #1D2433;
+  --text-secondary: #5B6475;
+  --border: #D9DFEA;
+  --primary: #5B6CFF;
+  --success: #4CAF78;
+  --warning: #F0B24A;
+  --danger: #E46868;
+  
+  /* Semantic helper tokens */
+  --text-on-primary: #FFFFFF;
+  --text-on-primary-muted: rgba(255, 255, 255, 0.6);
+  --text-on-primary-active-bg: rgba(255, 255, 255, 0.2);
+  --surface-card: var(--surface);
+  --surface-input: var(--surface);
+  --surface-table: var(--surface);
+  
+  /* Core brand tokens & backward compatibility mappings */
+  --primary-dark: #4050E0;
+  --primary-light: rgba(91, 108, 255, 0.08);
   --accent: #7EC8FF;
+  --border-strong: var(--border);
+  --text-muted: var(--text-secondary);
+  --text-light: #8E99A8;
+  --primary-blue: var(--primary);
+  --accent-green: #4CAF78;
   
-  /* System mode tokens: Light Mode */
-  --bg: #F7F6F3;
-  --surface-primary: #FFFFFF;
-  --surface-secondary: #EAEFF8;
-  --surface-elevated: #FFFFFF;
-  --surface-card: #FFFFFF;
-  --border: rgba(0, 0, 0, 0.06);
-  --border-strong: rgba(0, 0, 0, 0.12);
-  --text-primary: #22252B;
-  --text-secondary: #4B5563;
-  --text-muted: #6B7280;
-  --text-light: #9CA3AF;
-  
-  --success: #66BB6A;
-  --warning: #FFA726;
-  --danger: #EF5350;
-  
-  --primary-blue: #536DFE;
-  --accent-green: #74C69D;
-
-  /* Backward Compatibility Mappings */
-  --white: #FFFFFF;
-  --dark: #22252B;
-  --text-main: #22252B;
-  --surface: #EAEFF8;
+  --white: var(--surface);
+  --dark: var(--text-primary);
+  --text-main: var(--text-primary);
   
   /* Layout, Shadows, Typography */
   --shadow-sm: 0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.04);
@@ -297,8 +299,8 @@ h3 { font-size: clamp(1.25rem, 2.5vw, 1.75rem); }
 .login-panel { flex: 1; display: flex; flex-direction: column; padding: 40px; max-width: 560px; }
 .login-visual { flex: 1; background: var(--surface); display: flex; align-items: center; justify-content: center; padding: 40px; position: relative; overflow: hidden; }
 
-.dash-shell { display: flex; height: 100vh; background: #F0F4FF; overflow: hidden; padding: 20px; gap: 24px; }
-.dash-sidebar-panel { width: 200px; background: linear-gradient(180deg, #536DFE 0%, #667FFF 100%); border-radius: 24px; display: flex; flex-direction: column; padding: 28px 16px 20px; flex-shrink: 0; box-shadow: 0 8px 32px rgba(83, 109, 254, 0.25); }
+.dash-shell { display: flex; height: 100vh; background: var(--bg); overflow: hidden; padding: 20px; gap: 24px; }
+.dash-sidebar-panel { width: 200px; background: linear-gradient(180deg, var(--primary) 0%, var(--primary-dark) 100%); border-radius: 24px; display: flex; flex-direction: column; padding: 28px 16px 20px; flex-shrink: 0; box-shadow: 0 8px 32px var(--primary-light); }
 .dash-main { flex: 1; display: flex; flex-direction: column; overflow: hidden; gap: 0; min-width: 0; }
 .dash-header-bar { display: flex; align-items: center; gap: 16px; padding-bottom: 20px; flex-shrink: 0; flex-wrap: wrap; }
 .dash-search-wrap { position: relative; flex: 1; max-width: 420px; min-width: 0; }
@@ -615,37 +617,41 @@ html.dark-theme,
 body.dark-theme,
 [data-theme="dark"] {
   /* System mode tokens: Dark Mode */
-  --bg: #121212;
-  --surface-primary: #1B1B1B;
-  --surface-secondary: #242424;
-  --surface-elevated: #2D2D2D;
-  --surface-card: #2A2A2A;
-  --border: #3B3B3B;
-  --border-strong: #3B3B3B;
-  --text-primary: #FAFAFA;
-  --text-secondary: #D6D6D6;
-  --text-muted: #A5A5A5;
-  --text-light: #A5A5A5;
+  --bg: #121417;
+  --surface: #1A1D22;
+  --surface-elevated: #242932;
+  --text-primary: #F5F7FA;
+  --text-secondary: #A9B3C4;
+  --border: #343A46;
+  --primary: #7B88FF;
+  --success: #67C587;
+  --warning: #F2C05B;
+  --danger: #FF7A7A;
   
-  --success: #6EBF8B;
-  --warning: #D6A85A;
-  --danger: #D96C6C;
+  /* Semantic helper tokens */
+  --text-on-primary: #FFFFFF;
+  --text-on-primary-muted: rgba(255, 255, 255, 0.6);
+  --text-on-primary-active-bg: rgba(255, 255, 255, 0.2);
+  --surface-card: var(--surface-elevated);
+  --surface-input: var(--surface-elevated);
+  --surface-table: var(--surface-elevated);
   
-  --primary-blue: #6D8EFF;
-  --accent-green: #74C69D;
+  /* Core brand tokens & backward compatibility mappings */
+  --primary-dark: #5C6AFF;
+  --primary-light: rgba(123, 136, 255, 0.08);
+  --accent: #7B88FF;
+  --border-strong: var(--border);
+  --text-muted: var(--text-secondary);
+  --text-light: #A9B3C4;
+  --primary-blue: var(--primary);
+  --accent-green: var(--success);
 
-  /* Backward Compatibility Mappings */
-  --white: #2A2A2A;       /* Maps legacy cards to elevated dark cards */
-  --dark: #FAFAFA;        /* Maps default headings/text to primary light text */
-  --text-main: #FAFAFA;   /* Maps body texts to primary light text */
-  --text-muted: #D6D6D6;
-  --surface: #242424;     /* Maps secondary surfaces/panels to secondary dark surface */
-  --primary: #6D8EFF;
-  --primary-dark: #5073E5;
-  --primary-light: rgba(109, 142, 255, 0.08);
-  --navbar-bg: rgba(18, 18, 18, 0.92);
-  --navbar-border: #3B3B3B;
-  --footer-bg: #1B1B1B;
+  --white: var(--surface-elevated);       /* Maps legacy cards to elevated dark cards */
+  --dark: var(--text-primary);            /* Maps default headings/text to primary light text */
+  --text-main: var(--text-primary);       /* Maps body texts to primary light text */
+  --navbar-bg: rgba(26, 29, 34, 0.92);
+  --navbar-border: var(--border);
+  --footer-bg: var(--surface);
   --shadow-sm: none;
   --shadow-md: none;
   --shadow-lg: none;

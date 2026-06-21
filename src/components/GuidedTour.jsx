@@ -285,7 +285,7 @@ const GuidedTour = ({ userId, role, onComplete }) => {
     position: 'fixed',
     zIndex: 999999,
     width: '320px',
-    background: 'var(--surface-elevated, #FFFFFF)',
+    background: 'var(--surface-elevated)',
     border: '1.5px solid var(--border)',
     borderRadius: '16px',
     padding: '20px',

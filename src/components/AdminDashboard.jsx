@@ -2270,7 +2270,7 @@ const AdminDashboard = () => {
         {/* Welcome Hero Banner */}
         <div style={{
           background: 'linear-gradient(135deg, #4f46e5, #7c3aed)',
-          color: 'white',
+          color: 'var(--text-on-primary)',
           padding: '28px',
           borderRadius: '16px',
           display: 'flex',
@@ -2288,7 +2288,7 @@ const AdminDashboard = () => {
             <span style={{ background: 'rgba(255,255,255,0.2)', padding: '4px 12px', borderRadius: '100px', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Executive Panel</span>
             <span style={{ fontSize: '0.8rem', opacity: 0.8 }}>System Administrator</span>
           </div>
-          <h2 style={{ color: 'white', margin: 0, fontSize: '1.75rem', fontWeight: 800 }}>Welcome to Admin Control, {user?.displayName || 'Administrator'}</h2>
+          <h2 style={{ color: 'var(--text-on-primary)', margin: 0, fontSize: '1.75rem', fontWeight: 800 }}>Welcome to Admin Control, {user?.displayName || 'Administrator'}</h2>
           <p style={{ margin: 0, opacity: 0.9, fontSize: '0.9rem', maxWidth: '600px' }}>
             Monitor institutional performance, manage faculty workload, analyze student demographic batches, and track billing collections.
           </p>
@@ -2456,9 +2456,9 @@ const AdminDashboard = () => {
                             outline: 'none'
                           }}
                         >
-                          <option value="new" style={{ color: '#121212', background: '#FFFFFF' }}>New</option>
-                          <option value="contacted" style={{ color: '#121212', background: '#FFFFFF' }}>Contacted</option>
-                          <option value="converted" style={{ color: '#121212', background: '#FFFFFF' }}>Converted</option>
+                          <option value="new" style={{ color: 'var(--text-primary)', background: 'var(--surface-elevated)' }}>New</option>
+                          <option value="contacted" style={{ color: 'var(--text-primary)', background: 'var(--surface-elevated)' }}>Contacted</option>
+                          <option value="converted" style={{ color: 'var(--text-primary)', background: 'var(--surface-elevated)' }}>Converted</option>
                         </select>
                       </td>
                     </tr>
@@ -2506,7 +2506,7 @@ const AdminDashboard = () => {
         {/* Welcome Hero Banner */}
         <div style={{
           background: 'linear-gradient(135deg, #10b981, #047857)',
-          color: 'white',
+          color: 'var(--text-on-primary)',
           padding: '28px',
           borderRadius: '16px',
           display: 'flex',
@@ -2524,7 +2524,7 @@ const AdminDashboard = () => {
             <span style={{ background: 'rgba(255,255,255,0.2)', padding: '4px 12px', borderRadius: '100px', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Faculty Portal</span>
             <span style={{ fontSize: '0.8rem', opacity: 0.8 }}>Academic Mentor</span>
           </div>
-          <h2 style={{ color: 'white', margin: 0, fontSize: '1.75rem', fontWeight: 800 }}>Welcome, Mentor {user?.displayName}!</h2>
+          <h2 style={{ color: 'var(--text-on-primary)', margin: 0, fontSize: '1.75rem', fontWeight: 800 }}>Welcome, Mentor {user?.displayName}!</h2>
           <p style={{ margin: 0, opacity: 0.9, fontSize: '0.9rem', maxWidth: '600px' }}>
             Review student progress reports, respond to doubt queries instantly, and check your class schedule for the day.
           </p>
@@ -2764,7 +2764,7 @@ const AdminDashboard = () => {
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                           <span style={{ fontWeight: 800, fontSize: '0.88rem', color: 'var(--dark)' }}>{rm.studentName}</span>
                           {hasUnreads && (
-                            <span style={{ background: 'var(--danger)', color: 'white', fontSize: '0.65rem', fontWeight: 800, padding: '2px 6px', borderRadius: '100px' }}>
+                            <span style={{ background: 'var(--danger)', color: 'var(--text-on-primary)', fontSize: '0.65rem', fontWeight: 800, padding: '2px 6px', borderRadius: '100px' }}>
                               {rm.facultyUnreadCount} New
                             </span>
                           )}
@@ -2857,7 +2857,7 @@ const AdminDashboard = () => {
         {/* Hero Card */}
         <div style={{
           background: 'linear-gradient(135deg, #6200EE, #3700B3)',
-          color: 'white',
+          color: 'var(--text-on-primary)',
           padding: '24px',
           borderRadius: '16px',
           display: 'flex',
@@ -2874,7 +2874,7 @@ const AdminDashboard = () => {
             <span style={{ background: 'rgba(255,255,255,0.2)', padding: '2px 10px', borderRadius: '100px', fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase' }}>Management Control</span>
             <span style={{ fontSize: '0.8rem', opacity: 0.8 }}>Logged in as Member</span>
           </div>
-          <h2 style={{ color: 'white', margin: 0, fontSize: '1.6rem', fontWeight: 800 }}>Welcome back, {user?.displayName || 'Management Member'}!</h2>
+          <h2 style={{ color: 'var(--text-on-primary)', margin: 0, fontSize: '1.6rem', fontWeight: 800 }}>Welcome back, {user?.displayName || 'Management Member'}!</h2>
           <p style={{ margin: 0, opacity: 0.9, fontSize: '0.88rem', maxWidth: '600px' }}>
             Manage online class schedules, initiate instant Google Meet sessions, and check recent notification reminders sent to parents.
           </p>
@@ -3134,7 +3134,7 @@ const AdminDashboard = () => {
                     fontSize: '0.82rem',
                     borderRadius: '8px',
                     background: 'var(--success)',
-                    color: 'white',
+                    color: 'var(--text-on-primary)',
                     display: 'flex',
                     alignItems: 'center',
                     gap: '6px',
@@ -3165,7 +3165,7 @@ const AdminDashboard = () => {
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                 {user?.role?.toLowerCase() === 'faculty' && (
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px', marginBottom: '8px' }}>
-                    <div style={{ padding: '20px', background: 'linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%)', borderRadius: '16px', color: 'white', boxShadow: 'var(--shadow-sm)' }}>
+                    <div style={{ padding: '20px', background: 'linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%)', borderRadius: '16px', color: 'var(--text-on-primary)', boxShadow: 'var(--shadow-sm)' }}>
                       <div style={{ fontSize: '0.8rem', opacity: 0.85, fontWeight: 600, marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>My Allotted Students</div>
                       <div style={{ fontSize: '1.75rem', fontWeight: 800 }}>{studentsList.length} Students</div>
                       <div style={{ fontSize: '0.72rem', opacity: 0.8, marginTop: '8px' }}>You are currently assigned as their primary mentor for doubt-solving & schedule tracking.</div>
@@ -3241,8 +3241,8 @@ const AdminDashboard = () => {
                           editingStudentId === student.id ? (
                             <div style={{ display: 'flex', gap: '4px' }}>
                               <input type="number" value={editingAmount} onChange={e => setEditingAmount(e.target.value)} style={{ width: '80px', padding: '4px' }} autoFocus />
-                              <button onClick={() => handleSaveFeesAmount(student.id)} style={{ background: 'var(--success)', color: 'white', padding: '2px 6px', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Save</button>
-                              <button onClick={() => setEditingStudentId(null)} style={{ background: 'var(--danger)', color: 'white', padding: '2px 6px', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Cancel</button>
+                              <button onClick={() => handleSaveFeesAmount(student.id)} style={{ background: 'var(--success)', color: 'var(--text-on-primary)', padding: '2px 6px', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Save</button>
+                              <button onClick={() => setEditingStudentId(null)} style={{ background: 'var(--danger)', color: 'var(--text-on-primary)', padding: '2px 6px', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Cancel</button>
                             </div>
                           ) : (
                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }} onClick={() => { setEditingStudentId(student.id); setEditingAmount(currentFeesAmount); }}>
@@ -4464,7 +4464,7 @@ const AdminDashboard = () => {
                           onClick={() => setIsAddFeeOpen(true)}
                           style={{
                             display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px',
-                            background: 'var(--primary)', color: 'white', border: 'none', borderRadius: '6px',
+                            background: 'var(--primary)', color: 'var(--text-on-primary)', border: 'none', borderRadius: '6px',
                             fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer'
                           }}
                         >
@@ -4792,8 +4792,8 @@ const AdminDashboard = () => {
                                 <div style={{
                                   padding: '10px 14px',
                                   borderRadius: isMe ? '14px 14px 4px 14px' : '14px 14px 14px 4px',
-                                  background: isMe ? 'var(--primary)' : 'white',
-                                  color: isMe ? 'white' : 'var(--dark)',
+                                  background: isMe ? 'var(--primary)' : 'var(--surface-elevated)',
+                                  color: isMe ? 'var(--text-on-primary)' : 'var(--text-primary)',
                                   boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
                                   border: isMe ? 'none' : '1px solid var(--border)'
                                 }}>

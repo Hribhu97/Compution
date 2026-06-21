@@ -392,10 +392,10 @@ const DashboardLayout = () => {
       <aside className="dash-sidebar-panel hide-mobile">
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', paddingLeft: '8px', marginBottom: '40px' }}>
           <div style={{
-            width: '32px', height: '32px', borderRadius: '50%', border: '2px solid rgba(255,255,255,0.6)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.9rem', fontWeight: 900, color: 'white',
+            width: '32px', height: '32px', borderRadius: '50%', border: '2px solid var(--text-on-primary-muted)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.9rem', fontWeight: 900, color: 'var(--text-on-primary)',
           }}>C</div>
-          <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: '1.1rem', color: 'white', letterSpacing: '-0.02em' }}>Compution</span>
+          <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: '1.1rem', color: 'var(--text-on-primary)', letterSpacing: '-0.02em' }}>Compution</span>
         </div>
 
         <nav style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '6px' }}>
@@ -410,7 +410,7 @@ const DashboardLayout = () => {
               {({ isActive }) => (
                 <div style={{
                   display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 16px', borderRadius: '12px',
-                  background: isActive ? 'rgba(255,255,255,0.22)' : 'transparent', color: 'white',
+                  background: isActive ? 'var(--text-on-primary-active-bg)' : 'transparent', color: 'var(--text-on-primary)',
                   fontWeight: isActive ? 700 : 500, fontSize: '0.92rem', transition: 'all 0.2s', cursor: 'pointer',
                 }}>
                   <Icon size={18} /> {label}
@@ -427,11 +427,11 @@ const DashboardLayout = () => {
             >
               <div style={{
                 display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 16px', borderRadius: '12px',
-                background: 'transparent', color: 'white',
+                background: 'transparent', color: 'var(--text-on-primary)',
                 fontWeight: 500, fontSize: '0.92rem', transition: 'all 0.2s', cursor: 'pointer',
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.background = 'rgba(255,255,255,0.12)';
+                e.currentTarget.style.background = 'var(--text-on-primary-active-bg)';
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.background = 'transparent';
@@ -443,10 +443,10 @@ const DashboardLayout = () => {
           )}
         </nav>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', borderTop: '1px solid rgba(255,255,255,0.15)', paddingTop: '16px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', borderTop: '1px solid var(--text-on-primary-active-bg)', paddingTop: '16px' }}>
           <button onClick={handleLogout} style={{
             display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 16px', borderRadius: '12px', width: '100%', textAlign: 'left',
-            color: 'rgba(255,255,255,0.8)', fontWeight: 500, fontSize: '0.92rem', cursor: 'pointer', transition: 'all 0.2s', background: 'none', border: 'none',
+            color: 'var(--text-on-primary-muted)', fontWeight: 500, fontSize: '0.92rem', cursor: 'pointer', transition: 'all 0.2s', background: 'none', border: 'none',
           }}>
             <LogOut size={18} /> Logout
           </button>
@@ -597,7 +597,7 @@ const DashboardLayout = () => {
                 ) : (
                   <div style={{
                     width: 36, height: 36, borderRadius: '50%', background: 'linear-gradient(135deg, var(--primary), var(--accent))',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 800, fontSize: '0.9rem',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-on-primary)', fontWeight: 800, fontSize: '0.9rem',
                   }}>
                     {(user?.displayName || 'S')[0].toUpperCase()}
                   </div>
@@ -815,7 +815,7 @@ const DashboardLayout = () => {
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center',
-                          color: 'white',
+                          color: 'var(--text-on-primary)',
                           fontWeight: 800,
                           fontSize: '1.8rem'
                         }}
@@ -833,13 +833,13 @@ const DashboardLayout = () => {
                         height: '28px',
                         borderRadius: '50%',
                         background: 'var(--primary)',
-                        color: 'white',
+                        color: 'var(--text-on-primary)',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
                         cursor: 'pointer',
                         boxShadow: 'var(--shadow-sm)',
-                        border: '2px solid white'
+                        border: '2px solid var(--surface)'
                       }}
                     >
                       <Sparkles size={12} />

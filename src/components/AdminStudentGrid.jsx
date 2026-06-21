@@ -165,7 +165,7 @@ const AdminStudentGrid = () => {
                     {student.photoURL ? (
                       <img src={student.photoURL} alt={student.displayName} style={{ width: 48, height: 48, borderRadius: '50%', objectFit: 'cover' }} />
                     ) : (
-                      <div style={{ width: 48, height: 48, borderRadius: '50%', background: 'linear-gradient(135deg, var(--primary), var(--accent))', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 800 }}>{initials}</div>
+                      <div style={{ width: 48, height: 48, borderRadius: '50%', background: 'linear-gradient(135deg, var(--primary), var(--accent))', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-on-primary)', fontWeight: 800 }}>{initials}</div>
                     )}
                     <div style={{ flex: 1, overflow: 'hidden' }}>
                       <div style={{ fontWeight: 700, fontSize: '1.05rem', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>{student.displayName}</div>
@@ -330,7 +330,7 @@ const AdminStudentGrid = () => {
       {toast && (
         <div style={{
           position: 'fixed', bottom: '24px', right: '24px', padding: '12px 24px',
-          background: 'rgba(239,83,80,0.95)', color: 'white', borderRadius: '8px',
+          background: 'rgba(239,83,80,0.95)', color: 'var(--text-on-primary)', borderRadius: '8px',
           boxShadow: '0 4px 12px rgba(0,0,0,0.15)', zIndex: 1000, display: 'flex', alignItems: 'center', gap: '8px'
         }}>
           <span>⚠️ {toast}</span>

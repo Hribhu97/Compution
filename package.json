@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "sync-tests": "node sync-tests.cjs"
   },
   "dependencies": {
     "@studio-freight/react-lenis": "^0.0.47",

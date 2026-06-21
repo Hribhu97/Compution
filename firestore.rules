@@ -316,5 +316,83 @@ service cloud.firestore {
       allow read, write:
         if isAdmin() || isFaculty();
     }
+
+    match /testAttempts/{attemptId} {
+      allow read:
+        if signedIn();
+
+      allow create:
+        if signedIn() && request.auth.uid == request.resource.data.studentId;
+
+      allow update:
+        if signedIn();
+
+      allow delete:
+        if isAdmin() || isFaculty();
+    }
+
+    match /leaderboards/{leaderboardId} {
+      allow read:
+        if signedIn();
+
+      allow write:
+        if signedIn();
+    }
+
+    match /games/{gameId} {
+      allow read:
+        if signedIn();
+
+      allow write:
+        if isAdmin();
+    }
+
+    match /gameAttempts/{attemptId} {
+      allow read:
+        if signedIn();
+
+      allow create:
+        if signedIn() && request.auth.uid == request.resource.data.userId;
+
+      allow update, delete:
+        if isAdmin() || isFaculty();
+    }
+
+    match /userPreferences/{userId} {
+      allow read, write:
+        if signedIn() && request.auth.uid == userId;
+    }
+
+    match /leadCaptures/{leadId} {
+      allow create:
+        if true;
+      allow read, update, delete:
+        if isAdmin() || isMember();
+    }
+
+    match /testimonials/{testimonialId} {
+      allow read:
+        if true;
+      allow write:
+        if isAdmin();
+    }
+
+    match /facultyQueries/{queryId} {
+      allow read:
+        if signedIn();
+      allow create:
+        if signedIn() && request.resource.data.studentId == request.auth.uid;
+      allow update:
+        if signedIn() && (request.auth.uid == resource.data.facultyId || request.auth.uid == resource.data.studentId || isAdmin());
+      allow delete:
+        if isAdmin();
+    }
+
+    match /mail/{mailId} {
+      allow create:
+        if signedIn();
+      allow read, update, delete:
+        if isAdmin();
+    }
   }
 }

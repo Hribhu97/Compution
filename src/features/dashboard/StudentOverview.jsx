@@ -239,8 +239,8 @@ const StudentOverview = ({ isDarkMode }) => {
         
         {/* Welcome Hero Card */}
         <div style={{
-          background: 'linear-gradient(135deg, #2563EB, #1D4ED8)',
-          color: 'white',
+          background: 'linear-gradient(135deg, var(--primary), var(--primary-dark))',
+          color: 'var(--text-on-primary)',
           borderRadius: '24px',
           padding: '32px',
           display: 'flex',
@@ -249,17 +249,17 @@ const StudentOverview = ({ isDarkMode }) => {
           boxShadow: 'var(--shadow-md)'
         }}>
           <div>
-            <span style={{ fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase', color: 'rgba(255,255,255,0.7)', letterSpacing: '0.05em' }}>
+            <span style={{ fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase', color: 'var(--text-on-primary)', opacity: 0.7, letterSpacing: '0.05em' }}>
               Academic Workspace
             </span>
-            <h2 style={{ color: 'white', margin: '4px 0 8px 0', fontSize: '1.75rem', fontWeight: 800 }}>
+            <h2 style={{ color: 'var(--text-on-primary)', margin: '4px 0 8px 0', fontSize: '1.75rem', fontWeight: 800 }}>
               Welcome back, {user?.displayName || 'Student'}!
             </h2>
             <p style={{ margin: 0, opacity: 0.9, fontSize: '0.92rem' }}>
               Level {user?.level || 1} • {user?.xp || 0} XP • Total Game Score: {totalGamePoints} pts
             </p>
           </div>
-          <Award size={64} style={{ color: 'white', opacity: 0.8 }} />
+          <Award size={64} style={{ color: 'var(--text-on-primary)', opacity: 0.8 }} />
         </div>
 
         {/* Metrics Grid */}
@@ -397,7 +397,7 @@ const StudentOverview = ({ isDarkMode }) => {
         {/* Assigned Mentors */}
         <div style={{ background: 'var(--surface-card)', padding: '24px', borderRadius: '20px', border: '1px solid var(--border)' }}>
           <h3 style={{ fontSize: '1.05rem', fontWeight: 800, margin: '0 0 16px 0', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <Users size={18} style={{ color: '#2563EB' }} /> My Faculty Mentors
+            <Users size={18} style={{ color: 'var(--primary)' }} /> My Faculty Mentors
           </h3>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             {assignedFaculty.length === 0 ? (
@@ -405,7 +405,7 @@ const StudentOverview = ({ isDarkMode }) => {
             ) : (
               assignedFaculty.map((mentor, idx) => (
                 <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '12px', paddingBottom: idx + 1 === assignedFaculty.length ? 0 : '12px', borderBottom: idx + 1 === assignedFaculty.length ? 'none' : '1px solid var(--border)' }}>
-                  <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: '#2563EB', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800 }}>
+                  <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'var(--primary)', color: 'var(--text-on-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800 }}>
                     {mentor.facultyName.slice(0, 2).toUpperCase()}
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>

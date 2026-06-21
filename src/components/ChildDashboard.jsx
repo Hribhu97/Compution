@@ -248,14 +248,14 @@ const ChildDashboard = ({
   );
 
   // Styling properties depending on Dark Mode
-  const bgMain = isDarkMode ? '#0B0F19' : 'transparent';
-  const cardBg = isDarkMode ? '#151F32' : '#FFFFFF';
-  const cardBorder = isDarkMode ? '1px solid rgba(255, 255, 255, 0.05)' : '1px solid rgba(0, 0, 0, 0.04)';
-  const textPrimary = isDarkMode ? '#F1F5F9' : 'var(--dark)';
-  const textSecondary = isDarkMode ? '#94A3B8' : 'var(--text-muted)';
-  const friendRowBg = isDarkMode ? '#18253E' : '#F8FAFC';
-  const searchInputBg = isDarkMode ? '#18253E' : '#F8FAFC';
-  const searchInputBorder = isDarkMode ? '1.5px solid rgba(255, 255, 255, 0.08)' : '1.5px solid rgba(0,0,0,0.08)';
+  const bgMain = 'transparent';
+  const cardBg = 'var(--surface-card)';
+  const cardBorder = '1px solid var(--border)';
+  const textPrimary = 'var(--text-primary)';
+  const textSecondary = 'var(--text-secondary)';
+  const friendRowBg = 'var(--surface-elevated)';
+  const searchInputBg = 'var(--surface-input)';
+  const searchInputBorder = '1.5px solid var(--border)';
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '2.1fr 0.9fr', gap: '32px', background: bgMain, padding: isDarkMode ? 'var(--child-padding)' : '0', borderRadius: '32px', transition: 'all 0.3s ease' }} className="grid-2-col-mobile">
@@ -313,7 +313,7 @@ const ChildDashboard = ({
           border: 1px solid transparent;
         }
         .friend-row:hover {
-          background: ${isDarkMode ? '#1E2E4E' : '#FFFFFF'};
+          background: var(--surface);
           border-color: rgba(83, 109, 254, 0.3);
           box-shadow: 0 8px 24px rgba(83, 109, 254, 0.08);
           transform: scale(1.01);
@@ -399,12 +399,12 @@ const ChildDashboard = ({
           
           <div style={{ zIndex: 2, display: 'flex', flexDirection: 'column', gap: '14px', flex: 1, marginRight: '20px' }}>
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-              <span style={{ fontSize: '0.78rem', fontWeight: 900, background: 'rgba(255,255,255,0.22)', color: 'white', padding: '3px 10px', borderRadius: '8px', letterSpacing: '0.04em' }}>
+              <span style={{ fontSize: '0.78rem', fontWeight: 900, background: 'rgba(255,255,255,0.22)', color: 'var(--text-on-primary)', padding: '3px 10px', borderRadius: '8px', letterSpacing: '0.04em' }}>
                 STUDENT ID: {referralCode}
               </span>
               {studentHasCrown && <span style={{ fontSize: '1.2rem' }} title="Duel Champion Crown! 👑">👑</span>}
             </div>
-            <h2 style={{ color: '#FFFFFF', fontSize: '2.4rem', fontWeight: 900, margin: 0, letterSpacing: '-0.02em', textShadow: '0 3px 6px rgba(0,0,0,0.12)', lineHeight: 1.25 }}>
+            <h2 style={{ color: 'var(--text-on-primary)', fontSize: '2.4rem', fontWeight: 900, margin: 0, letterSpacing: '-0.02em', textShadow: '0 3px 6px rgba(0,0,0,0.12)', lineHeight: 1.25 }}>
               Learn, Play and <br/>Earn Free Gifts!
             </h2>
             <p style={{ color: '#F1F5F9', margin: 0, opacity: 0.95, fontSize: '1rem', maxWidth: '440px', lineHeight: 1.6, fontWeight: 500 }}>
@@ -415,7 +415,7 @@ const ChildDashboard = ({
                 onClick={() => showToast("Shop Coming Soon! 🎁 Earn more points to redeem toys & books.", "info")}
                 style={{ 
                   padding: '13px 26px', borderRadius: '18px', border: '2.5px solid rgba(255,255,255,0.6)', 
-                  background: 'rgba(255,255,255,0.12)', color: '#FFFFFF', fontWeight: 800, fontSize: '0.92rem', 
+                  background: 'rgba(255,255,255,0.12)', color: 'var(--text-on-primary)', fontWeight: 800, fontSize: '0.92rem', 
                   cursor: 'pointer', backdropFilter: 'blur(8px)', transition: 'all 0.2s', display: 'inline-flex', alignItems: 'center', gap: '8px'
                 }}
               >
@@ -483,7 +483,7 @@ const ChildDashboard = ({
                   <svg width="46" height="46" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
                     <path d="M50 10L80 25V55C80 72 67 87 50 92C33 87 20 72 20 55V25L50 10Z" fill="url(#shieldGrad)" stroke="#AB47BC" strokeWidth="2.5" />
                     <path d="M50 18L74 30V55C74 69 64 81 50 85C36 81 26 69 26 55V30L50 18Z" fill="rgba(255, 255, 255, 0.15)" />
-                    <path d="M50 32L55 42L66 43.5L58 51L60 62L50 56.5L40 62L42 51L34 43.5L45 42L50 32Z" fill="#FFF" stroke="#FFD700" strokeWidth="1" />
+                    <path d="M50 32L55 42L66 43.5L58 51L60 62L50 56.5L40 62L42 51L34 43.5L45 42L50 32Z" fill="var(--text-on-primary)" stroke="#FFD700" strokeWidth="1" />
                     <defs>
                       <linearGradient id="shieldGrad" x1="20" y1="10" x2="80" y2="92">
                         <stop offset="0%" stopColor="#E040FB" />
@@ -508,7 +508,7 @@ const ChildDashboard = ({
                   onClick={() => startLanguageGame(null, '')}
                   style={{ 
                     padding: '8px 16px', borderRadius: '12px', border: 'none', background: '#9C27B0', 
-                    color: 'white', fontSize: '0.78rem', fontWeight: 800, cursor: 'pointer',
+                    color: 'var(--text-on-primary)', fontSize: '0.78rem', fontWeight: 800, cursor: 'pointer',
                     boxShadow: '0 4px 12px rgba(156, 39, 176, 0.25)'
                   }}
                 >
@@ -642,7 +642,7 @@ const ChildDashboard = ({
                     <div className="text-offwhite-override" style={{ fontSize: '0.85rem', fontWeight: 800 }}>Daily Streak Quiz</div>
                     <span style={{ fontSize: '0.72rem', color: '#FF9800', fontWeight: 800 }}>+250 XP bonus</span>
                   </div>
-                  <button onClick={startDailyStreakQuiz} style={{ padding: '6px 12px', background: 'var(--primary)', border: 'none', color: 'white', borderRadius: '10px', fontSize: '0.75rem', fontWeight: 800, cursor: 'pointer' }}>Start</button>
+                  <button onClick={startDailyStreakQuiz} style={{ padding: '6px 12px', background: 'var(--primary)', border: 'none', color: 'var(--text-on-primary)', borderRadius: '10px', fontSize: '0.75rem', fontWeight: 800, cursor: 'pointer' }}>Start</button>
                 </div>
                 <div className="text-slate-muted-override" style={{ fontSize: '0.72rem', lineHeight: 1.4 }}>
                   Maintain your daily streak by answering fundamental computer questions!
@@ -683,7 +683,7 @@ const ChildDashboard = ({
                   
                   <div style={{ display: 'flex', gap: '10px' }}>
                     <button onClick={() => handleDuelAction(d.id, 'decline', d.friendId, d.challenger)} style={{ flex: 1, padding: '6px 10px', border: '1.5px solid rgba(255,255,255,0.08)', background: 'transparent', color: textSecondary, borderRadius: '10px', fontSize: '0.75rem', fontWeight: 800, cursor: 'pointer' }}>Decline</button>
-                    <button onClick={() => handleDuelAction(d.id, 'accept', d.friendId, d.challenger)} style={{ flex: 1, padding: '6px 10px', border: 'none', background: 'var(--success)', color: 'white', borderRadius: '10px', fontSize: '0.75rem', fontWeight: 800, cursor: 'pointer' }}>Accept</button>
+                    <button onClick={() => handleDuelAction(d.id, 'accept', d.friendId, d.challenger)} style={{ flex: 1, padding: '6px 10px', border: 'none', background: 'var(--success)', color: 'var(--text-on-primary)', borderRadius: '10px', fontSize: '0.75rem', fontWeight: 800, cursor: 'pointer' }}>Accept</button>
                   </div>
                 </div>
               ))}
@@ -730,7 +730,7 @@ const ChildDashboard = ({
             <button 
               type="submit"
               style={{ 
-                background: 'var(--primary)', color: 'white', border: 'none', 
+                background: 'var(--primary)', color: 'var(--text-on-primary)', border: 'none', 
                 padding: '8px 14px', borderRadius: '10px', fontSize: '0.75rem', fontWeight: 800, cursor: 'pointer'
               }}
             >
@@ -769,7 +769,7 @@ const ChildDashboard = ({
                         width: 38, height: 38, borderRadius: '50%', 
                         background: 'linear-gradient(135deg, #FF5E62 0%, #00B4D8 100%)', 
                         display: 'flex', alignItems: 'center', justifyContent: 'center', 
-                        color: 'white', fontWeight: 800, fontSize: '0.78rem'
+                        color: 'var(--text-on-primary)', fontWeight: 800, fontSize: '0.78rem'
                       }}>
                         {f.name.split(' ').map(n=>n[0]).join('').slice(0,2)}
                       </div>
@@ -824,7 +824,7 @@ const ChildDashboard = ({
                 </h3>
                 <button 
                   onClick={() => setActiveGame(null)}
-                  style={{ background: isDarkMode ? '#1E2E4E' : '#E2E8F0', border: 'none', color: isDarkMode ? '#94A3B8' : '#475569', width: '32px', height: '32px', borderRadius: '50%', cursor: 'pointer' }}
+                  style={{ background: 'var(--surface-elevated)', border: 'none', color: 'var(--text-secondary)', width: '32px', height: '32px', borderRadius: '50%', cursor: 'pointer' }}
                 >
                   <X size={16} />
                 </button>
@@ -885,7 +885,7 @@ const ChildDashboard = ({
                       onClick={handleNextQuestion}
                       style={{
                         width: '100%', padding: '16px', border: 'none', background: 'var(--primary)',
-                        color: 'white', fontWeight: 800, fontSize: '0.95rem', borderRadius: '20px',
+                        color: 'var(--text-on-primary)', fontWeight: 800, fontSize: '0.95rem', borderRadius: '20px',
                         cursor: 'pointer', marginTop: '28px', boxShadow: '0 8px 20px rgba(83,109,254,0.3)'
                       }}
                     >
@@ -914,7 +914,7 @@ const ChildDashboard = ({
                     onClick={() => setActiveGame(null)}
                     style={{
                       width: '100%', padding: '16px', border: 'none', background: 'var(--primary)',
-                      color: 'white', fontWeight: 800, fontSize: '0.95rem', borderRadius: '20px',
+                      color: 'var(--text-on-primary)', fontWeight: 800, fontSize: '0.95rem', borderRadius: '20px',
                       cursor: 'pointer'
                     }}
                   >
@@ -952,7 +952,7 @@ const ChildDashboard = ({
                 </h3>
                 <button 
                   onClick={() => setIsStreakQuizOpen(false)}
-                  style={{ background: isDarkMode ? '#1E2E4E' : '#E2E8F0', border: 'none', color: isDarkMode ? '#94A3B8' : '#475569', width: '32px', height: '32px', borderRadius: '50%', cursor: 'pointer' }}
+                  style={{ background: 'var(--surface-elevated)', border: 'none', color: 'var(--text-secondary)', width: '32px', height: '32px', borderRadius: '50%', cursor: 'pointer' }}
                 >
                   <X size={16} />
                 </button>
@@ -1013,7 +1013,7 @@ const ChildDashboard = ({
                       onClick={handleStreakNext}
                       style={{
                         width: '100%', padding: '16px', border: 'none', background: '#FF9800',
-                        color: '#000', fontWeight: 900, fontSize: '0.95rem', borderRadius: '20px',
+                        color: 'var(--text-primary)', fontWeight: 900, fontSize: '0.95rem', borderRadius: '20px',
                         cursor: 'pointer', marginTop: '28px', boxShadow: '0 8px 20px rgba(255,152,0,0.3)'
                       }}
                     >
@@ -1042,7 +1042,7 @@ const ChildDashboard = ({
                     onClick={() => setIsStreakQuizOpen(false)}
                     style={{
                       width: '100%', padding: '16px', border: 'none', background: 'var(--primary)',
-                      color: 'white', fontWeight: 800, fontSize: '0.95rem', borderRadius: '20px',
+                      color: 'var(--text-on-primary)', fontWeight: 800, fontSize: '0.95rem', borderRadius: '20px',
                       cursor: 'pointer', marginTop: '24px'
                     }}
                   >
@@ -1070,7 +1070,7 @@ const ChildDashboard = ({
                     onClick={() => setIsStreakQuizOpen(false)}
                     style={{
                       width: '100%', padding: '16px', border: 'none', background: 'var(--primary)',
-                      color: 'white', fontWeight: 800, fontSize: '0.95rem', borderRadius: '20px',
+                      color: 'var(--text-on-primary)', fontWeight: 800, fontSize: '0.95rem', borderRadius: '20px',
                       cursor: 'pointer'
                     }}
                   >

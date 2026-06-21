@@ -270,7 +270,7 @@ const Staff = () => {
                             position: 'absolute', bottom: 12, right: 12,
                             padding: '4px 10px', borderRadius: '100px',
                             background: 'rgba(34, 37, 43, 0.85)', backdropFilter: 'blur(4px)',
-                            color: 'white', fontSize: '0.72rem', fontWeight: 700,
+                            color: 'var(--text-on-primary)', fontSize: '0.72rem', fontWeight: 700,
                             display: 'flex', alignItems: 'center', gap: '4px'
                           }}>
                             <span style={{ width: 6, height: 6, borderRadius: '50%', background: staff.availability === 'Available' ? 'var(--success)' : 'var(--warning)' }} />

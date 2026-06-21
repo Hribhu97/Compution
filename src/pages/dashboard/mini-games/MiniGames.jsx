@@ -179,11 +179,11 @@ const MiniGames = () => {
                     }}
                   >
                     {/* Header Banner */}
-                    <div style={{ background: game.bg, padding: '24px', color: 'white', position: 'relative' }}>
+                    <div style={{ background: game.bg, padding: '24px', color: 'var(--text-on-primary)', position: 'relative' }}>
                       <div style={{ fontSize: '0.72rem', textTransform: 'uppercase', fontWeight: 800, opacity: 0.8, letterSpacing: '0.05em' }}>
                         {game.category} • {game.difficulty}
                       </div>
-                      <h3 style={{ margin: '4px 0 0 0', fontSize: '1.15rem', color: 'white', fontWeight: 800 }}>{game.title}</h3>
+                      <h3 style={{ margin: '4px 0 0 0', fontSize: '1.15rem', color: 'var(--text-on-primary)', fontWeight: 800 }}>{game.title}</h3>
                       <div style={{ position: 'absolute', right: '20px', top: '50%', transform: 'translateY(-50%)', opacity: 0.25 }}>
                         <IconComp size={48} />
                       </div>
@@ -218,8 +218,8 @@ const MiniGames = () => {
                           onClick={() => handleLaunchGame(game.id)}
                           style={{ 
                             marginTop: 'auto', 
-                            background: '#2563EB', 
-                            color: 'white', 
+                            background: 'var(--primary)', 
+                            color: 'var(--text-on-primary)', 
                             border: 'none', 
                             borderRadius: '10px', 
                             padding: '12px', 
@@ -341,26 +341,26 @@ const QuizGame = ({ title, questions, onComplete, maxPoints }) => {
         <span>Score: {score}</span>
       </div>
 
-      <div style={{ padding: '24px', background: '#F8F7F4', borderRadius: '16px', fontWeight: 700, fontSize: '1.05rem', lineHeight: 1.5 }}>
+      <div style={{ padding: '24px', background: 'var(--surface-elevated)', border: '1px solid var(--border)', borderRadius: '16px', fontWeight: 700, fontSize: '1.05rem', lineHeight: 1.5 }}>
         {currentQ.q}
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
         {currentQ.options.map((opt, i) => {
-          let optBg = '#FFFFFF';
+          let optBg = 'var(--surface-card)';
           let optBorder = '1px solid var(--border)';
           
           if (selectedOpt === opt) {
-            optBg = 'rgba(37,99,235,0.06)';
-            optBorder = '2px solid #2563EB';
+            optBg = 'var(--primary-light)';
+            optBorder = '2px solid var(--primary)';
           }
           if (submitted) {
             if (opt === currentQ.a) {
-              optBg = 'rgba(34,197,94,0.08)';
-              optBorder = '2px solid #22C55E';
+              optBg = 'var(--success-light)';
+              optBorder = '2px solid var(--success)';
             } else if (selectedOpt === opt) {
-              optBg = 'rgba(239,68,68,0.08)';
-              optBorder = '2px solid #EF4444';
+              optBg = 'var(--danger-light)';
+              optBorder = '2px solid var(--danger)';
             }
           }
 
@@ -385,7 +385,7 @@ const QuizGame = ({ title, questions, onComplete, maxPoints }) => {
           disabled={!selectedOpt}
           onClick={() => setSubmitted(true)}
           style={{
-            background: '#1A1A1A', color: 'white', border: 'none', borderRadius: '10px', padding: '14px',
+            background: 'var(--text-primary)', color: 'var(--bg)', border: 'none', borderRadius: '10px', padding: '14px',
             fontWeight: 700, cursor: selectedOpt ? 'pointer' : 'not-allowed', marginTop: '10px', opacity: selectedOpt ? 1 : 0.5
           }}
         >
@@ -395,7 +395,7 @@ const QuizGame = ({ title, questions, onComplete, maxPoints }) => {
         <button
           onClick={handleNext}
           style={{
-            background: '#2563EB', color: 'white', border: 'none', borderRadius: '10px', padding: '14px',
+            background: 'var(--primary)', color: 'var(--text-on-primary)', border: 'none', borderRadius: '10px', padding: '14px',
             fontWeight: 700, cursor: 'pointer', marginTop: '10px'
           }}
         >
@@ -433,7 +433,7 @@ const TypingChallenge = ({ paragraphs, onComplete, maxPoints }) => {
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
       <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>Type the paragraph below as accurately as possible. The score is calculated based on matching words accuracy.</p>
       
-      <div style={{ padding: '24px', background: '#F8F7F4', borderRadius: '16px', fontSize: '1rem', lineHeight: 1.6, select: 'none', userSelect: 'none' }}>
+      <div style={{ padding: '24px', background: 'var(--surface-elevated)', border: '1px solid var(--border)', borderRadius: '16px', fontSize: '1rem', lineHeight: 1.6, select: 'none', userSelect: 'none' }}>
         {targetText}
       </div>
 
@@ -449,7 +449,7 @@ const TypingChallenge = ({ paragraphs, onComplete, maxPoints }) => {
       <button
         onClick={calculateScore}
         style={{
-          background: '#2563EB', color: 'white', border: 'none', borderRadius: '10px', padding: '14px',
+          background: 'var(--primary)', color: 'var(--text-on-primary)', border: 'none', borderRadius: '10px', padding: '14px',
           fontWeight: 700, cursor: 'pointer', marginTop: '10px'
         }}
       >
@@ -621,7 +621,7 @@ const BinaryConversion = ({ challenges, onComplete, maxPoints }) => {
       <button
         onClick={handleSubmitValue}
         style={{
-          width: '100%', background: '#2563EB', color: 'white', border: 'none', borderRadius: '10px', padding: '14px',
+          width: '100%', background: 'var(--primary)', color: 'var(--text-on-primary)', border: 'none', borderRadius: '10px', padding: '14px',
           fontWeight: 700, cursor: 'pointer', marginTop: '10px'
         }}
       >
@@ -750,7 +750,7 @@ const PythonPuzzle = ({ puzzles, onComplete, maxPoints }) => {
         <span>Score: {pointsTotal}</span>
       </div>
 
-      <div style={{ padding: '16px 20px', background: '#F8F7F4', borderRadius: '12px', fontWeight: 700, fontSize: '0.95rem' }}>
+      <div style={{ padding: '16px 20px', background: 'var(--surface-elevated)', border: '1px solid var(--border)', borderRadius: '12px', fontWeight: 700, fontSize: '0.95rem' }}>
         💡 Target Task: {activePuzzle.title}
       </div>
 
@@ -776,14 +776,14 @@ const PythonPuzzle = ({ puzzles, onComplete, maxPoints }) => {
               <button 
                 onClick={() => handleMoveUp(idx)} 
                 disabled={idx === 0}
-                style={{ background: '#4A5568', border: 'none', color: 'white', padding: '4px 8px', borderRadius: '4px', cursor: idx === 0 ? 'not-allowed' : 'pointer', fontSize: '0.72rem' }}
+                style={{ background: 'var(--surface-elevated)', border: '1px solid var(--border)', color: 'var(--text-primary)', padding: '4px 8px', borderRadius: '4px', cursor: idx === 0 ? 'not-allowed' : 'pointer', fontSize: '0.72rem' }}
               >
                 ▲
               </button>
               <button 
                 onClick={() => handleMoveDown(idx)} 
                 disabled={idx === currentLines.length - 1}
-                style={{ background: '#4A5568', border: 'none', color: 'white', padding: '4px 8px', borderRadius: '4px', cursor: idx === currentLines.length - 1 ? 'not-allowed' : 'pointer', fontSize: '0.72rem' }}
+                style={{ background: 'var(--surface-elevated)', border: '1px solid var(--border)', color: 'var(--text-primary)', padding: '4px 8px', borderRadius: '4px', cursor: idx === currentLines.length - 1 ? 'not-allowed' : 'pointer', fontSize: '0.72rem' }}
               >
                 ▼
               </button>
@@ -795,7 +795,7 @@ const PythonPuzzle = ({ puzzles, onComplete, maxPoints }) => {
       <button
         onClick={handleVerifyPuzzle}
         style={{
-          background: '#2563EB', color: 'white', border: 'none', borderRadius: '10px', padding: '14px',
+          background: 'var(--primary)', color: 'var(--text-on-primary)', border: 'none', borderRadius: '10px', padding: '14px',
           fontWeight: 700, cursor: 'pointer', marginTop: '10px'
         }}
       >
