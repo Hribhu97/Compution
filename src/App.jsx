@@ -12,7 +12,8 @@ import DashboardLayout from './pages/dashboard/DashboardLayout';
 import Overview from './pages/dashboard/Overview';
 import Courses from './pages/dashboard/Courses';
 import Assignments from './pages/dashboard/Assignments';
-import MockTests from './pages/dashboard/MockTests';
+import Tests from './pages/dashboard/tests/Tests';
+import MiniGames from './pages/dashboard/mini-games/MiniGames';
 import Attendance from './pages/dashboard/Attendance';
 import Schedule from './pages/dashboard/Schedule';
 import Community from './pages/dashboard/Community';
@@ -26,13 +27,12 @@ const PublicLayout = () => (
 );
 
 const ProtectedRoute = ({ children }) => {
-  const { user, authReady, userProfileLoaded } = useAuth();
-  const isProfileLoading = !authReady || (authReady && user && !userProfileLoaded);
+  const { user, loading } = useAuth();
   
-  if (isProfileLoading) {
+  if (loading) {
     return (
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', width: '100vw', background: '#F0F4FF' }}>
-        <div style={{ width: '40px', height: '40px', borderRadius: '50%', border: '4px solid rgba(83,109,254,0.2)', borderTopColor: 'var(--primary)', animation: 'spin 1s linear infinite' }} />
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', width: '100vw', background: '#F8F7F4' }}>
+        <div style={{ width: '40px', height: '40px', borderRadius: '50%', border: '4px solid rgba(37,99,235,0.2)', borderTopColor: '#2563EB', animation: 'spin 1s linear infinite' }} />
         <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
       </div>
     );
@@ -62,7 +62,8 @@ function App() {
               <Route path="attendance" element={<Attendance />} />
               <Route path="schedule" element={<Schedule />} />
               <Route path="assignments" element={<Assignments />} />
-              <Route path="tests" element={<MockTests />} />
+              <Route path="tests" element={<Tests />} />
+              <Route path="mini-games" element={<MiniGames />} />
               <Route path="community" element={<Community />} />
               <Route path="profile" element={<Profile />} />
             </Route>

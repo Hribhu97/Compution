@@ -1,0 +1,32 @@
+{
+  "puzzles": [
+    {
+      "title": "Define a function that returns the square of a number",
+      "lines": [
+        "def square(x):",
+        "    result = x * x",
+        "    return result"
+      ],
+      "scrambled": [1, 2, 0]
+    },
+    {
+      "title": "Calculate the factorial of a number using loop",
+      "lines": [
+        "fact = 1",
+        "for i in range(1, n + 1):",
+        "    fact *= i",
+        "print(fact)"
+      ],
+      "scrambled": [2, 0, 3, 1]
+    },
+    {
+      "title": "Filter odd numbers out of a list",
+      "lines": [
+        "nums = [1, 2, 3, 4]",
+        "evens = [n for n in nums if n % 2 == 0]",
+        "print(evens)"
+      ],
+      "scrambled": [1, 2, 0]
+    }
+  ]
+}

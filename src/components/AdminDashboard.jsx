@@ -9,6 +9,7 @@ import { collection, collectionGroup, doc, getDoc, updateDoc, deleteDoc, getDocs
 import { Search, Download, Plus, MoreHorizontal, Eye, ArrowUpRight, Sparkles, ShieldCheck, Trash2, RefreshCw, CheckCircle, XCircle, AlertTriangle, Users, Bell, AlertCircle, Calendar, GraduationCap, ChevronDown, Mail, Send, Pencil, X, ShieldAlert, MessageSquare, Briefcase, UserCheck, Loader2, Check, CheckCheck, Info, UserMinus } from 'lucide-react';
 import Modal from './Modal';
 import SystemHealthPanel from './SystemHealthPanel';
+import { systemDoctorService } from '../services/systemDoctorService';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, PieChart, Pie } from 'recharts';
 
 const stagger = { show: { transition: { staggerChildren: 0.05 } } };
@@ -60,6 +61,7 @@ const AdminDashboard = () => {
 
   // Real-time Database lists
   const [allUsers, setAllUsers] = useState([]);
+  const [leadsList, setLeadsList] = useState([]);
   const [attendanceLogs, setAttendanceLogs] = useState([]);
   const [schedulesList, setSchedulesList] = useState([]);
   const [chatRoomsList, setChatRoomsList] = useState([]);
@@ -112,6 +114,10 @@ const AdminDashboard = () => {
   const [paymentForm, setPaymentForm] = useState({ amountPaid: '', paymentMethod: 'Cash', notes: '' });
   const [feeForm, setFeeForm] = useState({ feeName: 'Tuition', amount: '', month: 'May 2026' });
   const [assignedStudentIds, setAssignedStudentIds] = useState([]);
+  const [facultyQueries, setFacultyQueries] = useState([]);
+  const [activeReplyQueryId, setActiveReplyQueryId] = useState(null);
+  const [replyText, setReplyText] = useState('');
+  const [submittingReply, setSubmittingReply] = useState(false);
   const [rosterMode, setRosterMode] = useState('assign'); // 'assign' | 'create'
   const [isRosterSubmitting, setIsRosterSubmitting] = useState(false);
   const [rosterForm, setRosterForm] = useState({ studentId: '', facultyId: '', displayName: '', email: '', phone: '', course: '' });
@@ -129,112 +135,220 @@ const AdminDashboard = () => {
 
   // 1. DATA LISTENERS
   useEffect(() => {
-    // 1. Users real-time listener
-    const unsubUsers = onSnapshot(collection(db, 'users'), (snap) => {
-      const list = [];
-      snap.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
-      setAllUsers(list);
-      setLoading(false);
-    });
+    if (!db) {
+      console.error("AdminDashboard: Firestore not initialized");
+      return;
+    }
 
-    // 2. Attendance logs
+    let unsubLeads = () => {};
+    let unsubUsers = () => {};
     let unsubAtt = () => {};
-    if (user?.role === 'admin') {
-      unsubAtt = onSnapshot(query(collection(db, 'attendance'), orderBy('timestamp', 'desc')), (snap) => {
-        const list = [];
-        snap.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
-        setAttendanceLogs(list);
-      }, (err) => {
-        console.error("Error subscribing to attendance:", err);
-      });
-    }
-
-    // 3. Schedules
-    const unsubSched = onSnapshot(collection(db, 'studentSchedules'), (snap) => {
-      const list = [];
-      snap.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
-      setSchedulesList(list);
-    });
-
-    // 4. Chats
-    const unsubChats = onSnapshot(collection(db, 'communityThreads'), (snap) => {
-      const list = [];
-      snap.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
-      setChatRoomsList(list);
-    });
-
-    // 5. Notifications
-    const unsubNotif = onSnapshot(query(collection(db, 'notificationHistory'), orderBy('timestamp', 'desc')), (snap) => {
-      const list = [];
-      snap.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
-      setNotificationLogs(list);
-    });
-
-    // 6. Fees collectionGroup real-time listener
+    let unsubSched = () => {};
+    let unsubChats = () => {};
+    let unsubNotif = () => {};
     let unsubFees = () => {};
-    if (user?.role === 'admin') {
-      unsubFees = onSnapshot(collectionGroup(db, 'fees'), (snap) => {
-        const list = [];
-        snap.forEach(doc => {
-          const studentId = doc.ref.parent.parent.id;
-          list.push({ id: doc.id, studentId, ...doc.data() });
-        });
-        setAllFees(list);
-      }, (err) => {
-        console.error("Error subscribing to fees:", err);
-      });
-    }
-
-    // 7. Payment history real-time listener (sorted client-side)
     let unsubPaymentHist = () => {};
-    if (user?.role === 'admin') {
-      unsubPaymentHist = onSnapshot(collection(db, 'paymentHistory'), (snap) => {
-        const list = [];
-        snap.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
-        list.sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''));
-        setPaymentHistoryList(list);
-      }, (err) => {
-        console.error("Error subscribing to paymentHistory:", err);
-      });
-    }
-
-    // 8. Google Meet sessions real-time listener
-    const unsubMeets = onSnapshot(query(collection(db, 'meetSessions'), orderBy('createdAt', 'desc')), (snap) => {
-      const list = [];
-      snap.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
-      setMeetSessionsList(list);
-    });
-
-    // 9. Faculty assignments listener (only for logged-in faculty to filter/view their students)
+    let unsubMeets = () => {};
     let unsubAssignedStudentIds = () => {};
-    if (user?.uid && user?.role?.toLowerCase() === 'faculty') {
-      const docRef = doc(db, 'facultyStudentRoster', user.uid);
-      unsubAssignedStudentIds = onSnapshot(docRef, (docSnap) => {
-        if (docSnap.exists()) {
-          setAssignedStudentIds(docSnap.data().studentIds || []);
-        } else {
-          setAssignedStudentIds([]);
-        }
-      }, (err) => {
-        console.error("Error subscribing to facultyStudentRoster:", err);
-      });
-    }
-
-    // 10. Audit Logs real-time listener
     let unsubAudit = () => {};
-    if (user?.role === 'admin') {
-      const auditQuery = query(collection(db, 'auditLogs'), orderBy('timestamp', 'desc'));
-      unsubAudit = onSnapshot(auditQuery, (snap) => {
+    let unsubQueries = () => {};
+
+    // 1. Leads real-time listener
+    try {
+      unsubLeads = onSnapshot(collection(db, 'leadCaptures'), (snap) => {
         const list = [];
         snap.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
-        setAuditLogs(list);
+        list.sort((x, y) => {
+          const dateX = x.createdAt?.toDate ? x.createdAt.toDate() : new Date(x.createdAt || 0);
+          const dateY = y.createdAt?.toDate ? y.createdAt.toDate() : new Date(y.createdAt || 0);
+          return dateY - dateX;
+        });
+        setLeadsList(list);
       }, (err) => {
-        console.error("Error subscribing to auditLogs:", err);
+        console.error("AdminDashboard: leads listener error:", err);
       });
+    } catch (err) {
+      console.error("AdminDashboard: leads listener creation failed", err);
+    }
+
+    // 2. Users real-time listener
+    try {
+      unsubUsers = onSnapshot(collection(db, 'users'), (snap) => {
+        const list = [];
+        snap.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
+        setAllUsers(list);
+        setLoading(false);
+      }, (err) => {
+        console.error("AdminDashboard: users listener error:", err);
+        setLoading(false);
+      });
+    } catch (err) {
+      console.error("AdminDashboard: users listener creation failed", err);
+      setLoading(false);
+    }
+
+    // 3. Attendance logs
+    try {
+      if (user?.role === 'admin') {
+        unsubAtt = onSnapshot(query(collection(db, 'attendance'), orderBy('timestamp', 'desc')), (snap) => {
+          const list = [];
+          snap.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
+          setAttendanceLogs(list);
+        }, (err) => {
+          console.error("Error subscribing to attendance:", err);
+        });
+      }
+    } catch (err) {
+      console.error("AdminDashboard: attendance listener creation failed", err);
+    }
+
+    // 4. Schedules
+    try {
+      unsubSched = onSnapshot(collection(db, 'studentSchedules'), (snap) => {
+        const list = [];
+        snap.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
+        setSchedulesList(list);
+      }, (err) => {
+        console.error("AdminDashboard: schedules listener error:", err);
+      });
+    } catch (err) {
+      console.error("AdminDashboard: schedules listener creation failed", err);
+    }
+
+    // 5. Chats
+    try {
+      unsubChats = onSnapshot(collection(db, 'communityThreads'), (snap) => {
+        const list = [];
+        snap.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
+        setChatRoomsList(list);
+      }, (err) => {
+        console.error("AdminDashboard: chats listener error:", err);
+      });
+    } catch (err) {
+      console.error("AdminDashboard: chats listener creation failed", err);
+    }
+
+    // 6. Notifications
+    try {
+      unsubNotif = onSnapshot(query(collection(db, 'notificationHistory'), orderBy('timestamp', 'desc')), (snap) => {
+        const list = [];
+        snap.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
+        setNotificationLogs(list);
+      }, (err) => {
+        console.error("AdminDashboard: notifications listener error:", err);
+      });
+    } catch (err) {
+      console.error("AdminDashboard: notifications listener creation failed", err);
+    }
+
+    // 7. Fees collectionGroup real-time listener
+    try {
+      if (user?.role === 'admin') {
+        unsubFees = onSnapshot(collectionGroup(db, 'fees'), (snap) => {
+          const list = [];
+          snap.forEach(doc => {
+            const studentId = doc.ref.parent.parent.id;
+            list.push({ id: doc.id, studentId, ...doc.data() });
+          });
+          setAllFees(list);
+        }, (err) => {
+          console.error("Error subscribing to fees:", err);
+        });
+      }
+    } catch (err) {
+      console.error("AdminDashboard: fees listener creation failed", err);
+    }
+
+    // 8. Payment history real-time listener (sorted client-side)
+    try {
+      if (user?.role === 'admin') {
+        unsubPaymentHist = onSnapshot(collection(db, 'paymentHistory'), (snap) => {
+          const list = [];
+          snap.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
+          list.sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''));
+          setPaymentHistoryList(list);
+        }, (err) => {
+          console.error("Error subscribing to paymentHistory:", err);
+        });
+      }
+    } catch (err) {
+      console.error("AdminDashboard: payments listener creation failed", err);
+    }
+
+    // 9. Google Meet sessions real-time listener
+    try {
+      unsubMeets = onSnapshot(query(collection(db, 'meetSessions'), orderBy('createdAt', 'desc')), (snap) => {
+        const list = [];
+        snap.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
+        setMeetSessionsList(list);
+      }, (err) => {
+        console.error("AdminDashboard: meets listener error:", err);
+      });
+    } catch (err) {
+      console.error("AdminDashboard: meets listener creation failed", err);
+    }
+
+    // 10. Faculty assignments listener (only for logged-in faculty to filter/view their students)
+    try {
+      if (user?.uid && user?.role?.toLowerCase() === 'faculty') {
+        const docRef = doc(db, 'facultyStudentRoster', user.uid);
+        unsubAssignedStudentIds = onSnapshot(docRef, (docSnap) => {
+          if (docSnap.exists()) {
+            setAssignedStudentIds(docSnap.data().studentIds || []);
+          } else {
+            setAssignedStudentIds([]);
+          }
+        }, (err) => {
+          console.error("Error subscribing to facultyStudentRoster:", err);
+        });
+      }
+    } catch (err) {
+      console.error("AdminDashboard: assigned students roster listener creation failed", err);
+    }
+
+    // 11. Audit Logs real-time listener
+    try {
+      if (user?.role === 'admin') {
+        const auditQuery = query(collection(db, 'auditLogs'), orderBy('timestamp', 'desc'));
+        unsubAudit = onSnapshot(auditQuery, (snap) => {
+          const list = [];
+          snap.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
+          setAuditLogs(list);
+        }, (err) => {
+          console.error("Error subscribing to auditLogs:", err);
+        });
+      }
+    } catch (err) {
+      console.error("AdminDashboard: audit logs listener creation failed", err);
+    }
+
+    // 12. Faculty Queries real-time listener
+    try {
+      if (user?.uid) {
+        let qQuery = collection(db, 'facultyQueries');
+        if (user.role === 'faculty') {
+          qQuery = query(collection(db, 'facultyQueries'), where('facultyId', '==', user.uid));
+        }
+        unsubQueries = onSnapshot(qQuery, (snap) => {
+          const list = [];
+          snap.forEach(d => list.push({ id: d.id, ...d.data() }));
+          list.sort((x, y) => {
+            const dateX = x.createdAt?.toDate ? x.createdAt.toDate() : new Date(x.createdAt || 0);
+            const dateY = y.createdAt?.toDate ? y.createdAt.toDate() : new Date(y.createdAt || 0);
+            return dateY - dateX;
+          });
+          setFacultyQueries(list);
+        }, (err) => {
+          console.error("Error subscribing to facultyQueries:", err);
+        });
+      }
+    } catch (err) {
+      console.error("AdminDashboard: faculty queries listener creation failed", err);
     }
 
     return () => {
       unsubUsers();
+      unsubLeads();
       unsubAtt();
       unsubSched();
       unsubChats();
@@ -244,6 +358,7 @@ const AdminDashboard = () => {
       unsubMeets();
       unsubAssignedStudentIds();
       unsubAudit();
+      unsubQueries();
     };
   }, [user?.uid, user?.role]);
 
@@ -280,24 +395,32 @@ const AdminDashboard = () => {
     }
 
     // 2. Sync staff collection
-    const unsubStaff = onSnapshot(collection(db, 'staff'), (snap) => {
-      snap.forEach(async (dDoc) => {
-        const data = dDoc.data();
-        const name = (data.name || '').toLowerCase();
-        const matched = avatarMap.find(item => name.includes(item.match));
-        if (matched && data.photoURL !== matched.photoURL) {
-          const isExternal = !data.photoURL || data.photoURL.startsWith('http');
-          if (isExternal) {
-            try {
-              console.log(`Auto-syncing staff avatar for ${data.name}:`, matched.photoURL);
-              await updateDoc(dDoc.ref, { photoURL: matched.photoURL });
-            } catch (err) {
-              console.error("Failed to sync staff avatar:", err);
+    if (!db) return;
+    let unsubStaff = () => {};
+    try {
+      unsubStaff = onSnapshot(collection(db, 'staff'), (snap) => {
+        snap.forEach(async (dDoc) => {
+          const data = dDoc.data();
+          const name = (data.name || '').toLowerCase();
+          const matched = avatarMap.find(item => name.includes(item.match));
+          if (matched && data.photoURL !== matched.photoURL) {
+            const isExternal = !data.photoURL || data.photoURL.startsWith('http');
+            if (isExternal) {
+              try {
+                console.log(`Auto-syncing staff avatar for ${data.name}:`, matched.photoURL);
+                await updateDoc(dDoc.ref, { photoURL: matched.photoURL });
+              } catch (err) {
+                console.error("Failed to sync staff avatar:", err);
+              }
             }
           }
-        }
+        });
+      }, (err) => {
+        console.error("AdminDashboard: sync staff listener error:", err);
       });
-    });
+    } catch (err) {
+      console.error("AdminDashboard: sync staff listener creation failed", err);
+    }
 
     return () => unsubStaff();
   }, [allUsers, user]);
@@ -311,29 +434,56 @@ const AdminDashboard = () => {
       return;
     }
 
+    if (!db) {
+      console.error("AdminDashboard: Firestore not initialized");
+      return;
+    }
+
     // Trigger client-side fallback/sync immediately
     syncStudentFeeAggregates(selectedStudentDetails.id);
 
-    const unsubStudentFees = onSnapshot(collection(db, 'users', selectedStudentDetails.id, 'fees'), (snap) => {
-      const list = [];
-      snap.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
-      setSelectedStudentFees(list);
-    });
+    let unsubStudentFees = () => {};
+    let unsubAssignedFac = () => {};
+    let unsubProgressReport = () => {};
 
-    const facQuery = query(collection(db, 'assignedFaculty'), where('studentId', '==', selectedStudentDetails.id));
-    const unsubAssignedFac = onSnapshot(facQuery, (snap) => {
-      const list = [];
-      snap.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
-      setSelectedStudentAssignedFaculty(list);
-    });
+    try {
+      unsubStudentFees = onSnapshot(collection(db, 'users', selectedStudentDetails.id, 'fees'), (snap) => {
+        const list = [];
+        snap.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
+        setSelectedStudentFees(list);
+      }, (err) => {
+        console.error("AdminDashboard: student fees listener error:", err);
+      });
+    } catch (err) {
+      console.error("AdminDashboard: student fees listener creation failed", err);
+    }
 
-    const unsubProgressReport = onSnapshot(doc(db, 'progressReports', selectedStudentDetails.id), (docSnap) => {
-      if (docSnap.exists()) {
-        setSelectedStudentProgressReport(docSnap.data());
-      } else {
-        setSelectedStudentProgressReport(null);
-      }
-    });
+    try {
+      const facQuery = query(collection(db, 'assignedFaculty'), where('studentId', '==', selectedStudentDetails.id));
+      unsubAssignedFac = onSnapshot(facQuery, (snap) => {
+        const list = [];
+        snap.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
+        setSelectedStudentAssignedFaculty(list);
+      }, (err) => {
+        console.error("AdminDashboard: assigned faculty listener error:", err);
+      });
+    } catch (err) {
+      console.error("AdminDashboard: assigned faculty listener creation failed", err);
+    }
+
+    try {
+      unsubProgressReport = onSnapshot(doc(db, 'progressReports', selectedStudentDetails.id), (docSnap) => {
+        if (docSnap.exists()) {
+          setSelectedStudentProgressReport(docSnap.data());
+        } else {
+          setSelectedStudentProgressReport(null);
+        }
+      }, (err) => {
+        console.error("AdminDashboard: progress report listener error:", err);
+      });
+    } catch (err) {
+      console.error("AdminDashboard: progress report listener creation failed", err);
+    }
 
     return () => {
       unsubStudentFees();
@@ -366,19 +516,31 @@ const AdminDashboard = () => {
       return;
     }
 
+    if (!db) {
+      console.error("AdminDashboard: Firestore not initialized");
+      return;
+    }
+
     const studentId = selectedStudentDetails.id;
     const threadId = user.uid < studentId ? `${user.uid}_${studentId}` : `${studentId}_${user.uid}`;
 
-    const msgQuery = query(
-      collection(db, `communityThreads/${threadId}/messages`),
-      orderBy('timestamp', 'asc')
-    );
+    let unsub = () => {};
+    try {
+      const msgQuery = query(
+        collection(db, `communityThreads/${threadId}/messages`),
+        orderBy('timestamp', 'asc')
+      );
 
-    const unsub = onSnapshot(msgQuery, (snap) => {
-      const list = [];
-      snap.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
-      setDrawerMessages(list);
-    });
+      unsub = onSnapshot(msgQuery, (snap) => {
+        const list = [];
+        snap.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
+        setDrawerMessages(list);
+      }, (err) => {
+        console.error("AdminDashboard: doubt drawer messages listener error:", err);
+      });
+    } catch (err) {
+      console.error("AdminDashboard: doubt drawer messages listener creation failed", err);
+    }
 
     return () => unsub();
   }, [selectedStudentDetails?.id, user?.uid]);
@@ -1016,6 +1178,93 @@ const AdminDashboard = () => {
     }
   };
 
+  // ── FACULTY QUERY MANAGEMENT HANDLERS ──
+  const handleReplyQuery = async (queryId, studentId, studentEmail, studentName, question) => {
+    if (!replyText.trim()) {
+      triggerToast('Please write a reply', 'danger');
+      return;
+    }
+    setSubmittingReply(true);
+    try {
+      // 1. Update query document
+      await updateDoc(doc(db, 'facultyQueries', queryId), {
+        reply: replyText.trim(),
+        status: 'Replied',
+        repliedAt: serverTimestamp()
+      });
+
+      // 2. Add student dashboard notification
+      await addDoc(collection(db, 'users', studentId, 'notifications'), {
+        title: 'New Mentor Reply',
+        message: `Your mentor ${user.displayName || 'Faculty'} has replied to your query: "${replyText.slice(0, 40)}..."`,
+        createdAt: serverTimestamp(),
+        read: false
+      });
+
+      // 3. Email fallback (Trigger Email extension)
+      if (studentEmail) {
+        await addDoc(collection(db, 'mail'), {
+          to: studentEmail,
+          message: {
+            subject: `[Compution] New doubt reply from ${user.displayName || 'Faculty Mentor'}`,
+            html: `
+              <h3>New Doubt Reply</h3>
+              <p>Hello ${studentName || 'Student'},</p>
+              <p>Your mentor <b>${user.displayName || 'Faculty Mentor'}</b> has replied to your doubt query:</p>
+              <blockquote style="border-left: 3px solid #ccc; padding-left: 10px; margin-left: 0; color: #555;">
+                "${question}"
+              </blockquote>
+              <p><b>Mentor Reply:</b></p>
+              <div style="background: #eef2ff; padding: 12px; border-radius: 8px; border: 1px solid #c7d2fe; color: #1e1b4b;">
+                ${replyText.trim()}
+              </div>
+              <p>Please log in to your student dashboard to view full details.</p>
+            `
+          }
+        });
+      }
+
+      // 4. Log in notificationHistory (audit trail)
+      await addDoc(collection(db, 'notificationHistory'), {
+        studentId,
+        studentName,
+        message: `New doubt reply sent to ${studentName} by ${user.displayName || 'Faculty'}.`,
+        status: 'sent_reply',
+        type: 'doubt_reply',
+        subject: `New Doubt Reply from ${user.displayName || 'Faculty'}`,
+        timestamp: serverTimestamp()
+      });
+
+      triggerToast('Reply submitted successfully!', 'success');
+      setReplyText('');
+      setActiveReplyQueryId(null);
+    } catch (err) {
+      console.error("Error replying to query:", err);
+      triggerToast('Failed to submit reply', 'danger');
+    } finally {
+      setSubmittingReply(false);
+    }
+  };
+
+  const handleToggleQueryStatus = async (queryId, currentStatus) => {
+    let nextStatus = 'Viewed';
+    if (currentStatus === 'Viewed' || currentStatus === 'Replied') {
+      nextStatus = 'Resolved';
+    } else if (currentStatus === 'Resolved') {
+      nextStatus = 'Pending';
+    }
+
+    try {
+      await updateDoc(doc(db, 'facultyQueries', queryId), {
+        status: nextStatus
+      });
+      triggerToast(`Query status marked as ${nextStatus}!`, 'success');
+    } catch (err) {
+      console.error("Error updating query status:", err);
+      triggerToast('Failed to update status', 'danger');
+    }
+  };
+
   // ── SUBMIT ADD NEW USER ──
   const handleCreateAccount = async (email, displayName, role, extraFields) => {
     try {
@@ -1550,276 +1799,45 @@ const AdminDashboard = () => {
     if (doctorRunning) return;
     setDoctorRunning(true);
     setDoctorResults(null);
-    
-    const logs = [];
-    let scannedCount = 0;
-    let issuesFound = 0;
-    let repairedCount = 0;
-    
     try {
-      logs.push("🚀 Starting System Doctor & Database Consistency Suite...");
-      
-      const studentsToScan = allUsers.filter(u => u.role?.toLowerCase() === 'student');
-      const facultyList = allUsers.filter(u => u.role?.toLowerCase() === 'faculty');
-      
-      logs.push(`🔍 Found ${studentsToScan.length} student accounts and ${facultyList.length} faculty members to scan.`);
-      
-      // Find fallback faculty mentor
-      let fallbackFaculty = facultyList.find(f => f.email?.toLowerCase() === 'sharmisthaghosh855@gmail.com' || f.email?.toLowerCase() === 'tapadarhribhu350@gmail.com');
-      if (!fallbackFaculty && facultyList.length > 0) {
-        fallbackFaculty = facultyList[0];
-      }
-      
-      if (fallbackFaculty) {
-        logs.push(`ℹ️ Using fallback faculty mentor: ${fallbackFaculty.displayName} (${fallbackFaculty.email})`);
-      } else {
-        logs.push("⚠️ Warning: No faculty mentors found in database. Automated mentor assignment will be skipped.");
-      }
-      
-      for (const student of studentsToScan) {
-        scannedCount++;
-        let studentIssues = 0;
-        let updatePayload = {};
-        
-        // 1. Verify student grouping and category metadata
-        if (!student.classCategory || !student.studentGroup) {
-          studentIssues++;
-          issuesFound++;
-          logs.push(`❌ [Issue] Student ${student.displayName} (${student.email}) has missing class category or student group.`);
-          
-          const defaultCategory = student.classCategory || '10';
-          const defaultStream = student.stream || 'science';
-          let defaultGroup = 'class_9_10';
-          if (defaultCategory === '11' || defaultCategory === '12') {
-            defaultGroup = defaultStream === 'science' ? 'class_11_12_science' : 'class_11_12_application';
-          }
-          
-          updatePayload.classCategory = defaultCategory;
-          updatePayload.stream = defaultStream;
-          updatePayload.studentGroup = defaultGroup;
-          updatePayload.autoGroup = defaultGroup;
-          
-          logs.push(`🔧 [Repair] Queueing metadata fix: Category=${defaultCategory}, Group=${defaultGroup}`);
-        }
-        
-        // 2. Verify faculty mentor assignment
-        const hasFaculty = (student.assignedFacultyIds && student.assignedFacultyIds.length > 0) || 
-                            (student.assignedFaculty && student.assignedFaculty.length > 0);
-                            
-        if (!hasFaculty && fallbackFaculty) {
-          studentIssues++;
-          issuesFound++;
-          logs.push(`❌ [Issue] Orphan Student: ${student.displayName} has no assigned faculty mentor.`);
-          
-          // Reassign mentor
-          const docId = `${student.id}_${fallbackFaculty.id}`;
-          const newAssignment = {
-            facultyId: fallbackFaculty.id,
-            facultyName: fallbackFaculty.displayName || 'Faculty Mentor',
-            mentorName: fallbackFaculty.displayName || 'Faculty Mentor',
-            mentorEmail: fallbackFaculty.email || '',
-            mentorPhone: fallbackFaculty.phone || '',
-            assignedDate: new Date().toISOString()
-          };
-          
-          const studMapRef = doc(db, 'studentFacultyMap', student.id);
-          const studMapSnap = await getDoc(studMapRef);
-          let assignedFacultyList = studMapSnap.exists() ? (studMapSnap.data().assignedFaculty || []) : [];
-          assignedFacultyList = assignedFacultyList.filter(f => f.facultyId !== fallbackFaculty.id);
-          assignedFacultyList.push({
-            facultyId: fallbackFaculty.id,
-            facultyName: fallbackFaculty.displayName || fallbackFaculty.name || 'Faculty Mentor',
-            facultyPhoto: fallbackFaculty.photoURL || '',
-            subject: student.course || 'Python Mastery',
-            assignedAt: new Date().toISOString()
-          });
-          
-          await setDoc(doc(db, 'assignedFaculty', docId), {
-            studentId: student.id,
-            studentName: student.displayName,
-            facultyId: fallbackFaculty.id,
-            subject: student.course || 'Python Mastery',
-            role: 'Faculty Mentor',
-            priority: 1
-          });
-          
-          await setDoc(doc(db, 'studentFacultyMap', student.id), {
-            assignedFaculty: assignedFacultyList
-          }, { merge: true });
-          
-          updatePayload.assignedFacultyIds = [fallbackFaculty.id];
-          updatePayload.assignedFaculty = [newAssignment];
-          
-          // Update fallback faculty student roster document
-          const rosterRef = doc(db, 'facultyStudentRoster', fallbackFaculty.id);
-          const rosterSnap = await getDoc(rosterRef);
-          let fallbackStudentIds = rosterSnap.exists() ? (rosterSnap.data().studentIds || []) : [];
-          if (!fallbackStudentIds.includes(student.id)) {
-            fallbackStudentIds = [...fallbackStudentIds, student.id];
-            await setDoc(rosterRef, {
-              facultyUid: fallbackFaculty.id,
-              studentIds: fallbackStudentIds,
-              updatedAt: serverTimestamp()
-            }, { merge: true });
-          }
-          
-          logs.push(`🔧 [Repair] Assigned Student ${student.displayName} to faculty mentor ${fallbackFaculty.displayName}`);
-        }
-        
-        // 3. Scan fees subcollection and recalculate aggregates
-        const feesRef = collection(db, 'users', student.id, 'fees');
-        const feesSnap = await getDocs(feesRef);
-        let feesList = [];
-        feesSnap.forEach(d => {
-          feesList.push({ id: d.id, ...d.data() });
-        });
-        
-        let totalAmount = 0;
-        let totalPaid = 0;
-        
-        feesList.forEach(fee => {
-          totalAmount += Number(fee.amount) || 0;
-          totalPaid += Number(fee.paidAmount) || 0;
-        });
-        
-        const totalPending = totalAmount - totalPaid;
-        let computedStatus = 'Pending';
-        if (totalPending <= 0 && totalAmount > 0) {
-          computedStatus = 'Paid';
-        } else if (totalPaid > 0) {
-          computedStatus = 'Partially Paid';
-        }
-        
-        const finalPending = Math.max(0, totalPending);
-        
-        const feesMismatch = student.feesAmount !== totalAmount || 
-                              student.paidAmount !== totalPaid || 
-                              student.pendingAmount !== finalPending || 
-                              student.feeStatus !== computedStatus;
-                              
-        if (feesMismatch && feesList.length > 0) {
-          studentIssues++;
-          issuesFound++;
-          logs.push(`❌ [Issue] Fee aggregate mismatch for student ${student.displayName}. Profile claims Billed=${student.feesAmount || 0}, Paid=${student.paidAmount || 0}, Pending=${student.pendingAmount || 0}, Status=${student.feeStatus || 'Pending'}. Subcollection total: Billed=${totalAmount}, Paid=${totalPaid}, Pending=${finalPending}, Status=${computedStatus}.`);
-          
-          updatePayload.feesAmount = totalAmount;
-          updatePayload.paidAmount = totalPaid;
-          updatePayload.pendingAmount = finalPending;
-          updatePayload.feeStatus = computedStatus;
-          
-          logs.push(`🔧 [Repair] Syncing fee totals to: Billed=${totalAmount}, Paid=${totalPaid}, Pending=${finalPending}, Status=${computedStatus}`);
-        }
-        
-        // Apply student repairs
-        if (Object.keys(updatePayload).length > 0) {
-          updatePayload.updatedAt = serverTimestamp();
-          await updateDoc(doc(db, 'users', student.id), updatePayload);
-          repairedCount += studentIssues;
-          logs.push(`✅ Saved repairs successfully for student: ${student.displayName}`);
-        }
-      }
-
-      // 4. Orphan subcollection fees scan (deleted students whose nested fee documents still exist)
-      logs.push("🔍 Scanning for orphaned fee subcollection records...");
-      const allFeesSnap = await getDocs(collectionGroup(db, 'fees'));
-      const activeUserIds = new Set(allUsers.map(u => u.id));
-      
-      let orphanFeesCount = 0;
-      for (const feeDoc of allFeesSnap.docs) {
-        const studentId = feeDoc.ref.parent.parent.id;
-        if (!activeUserIds.has(studentId)) {
-          orphanFeesCount++;
-          issuesFound++;
-          logs.push(`❌ [Issue] Orphan Fee item found: FeeID=${feeDoc.id} belongs to deleted student ${studentId}.`);
-          
-          // Repair: Delete the orphan fee doc
-          await deleteDoc(feeDoc.ref);
-          repairedCount++;
-          logs.push(`🔧 [Repair] Deleted orphan fee record: ${feeDoc.id}`);
-        }
-      }
-      
-      if (orphanFeesCount > 0) {
-        logs.push(`✅ Cleaned up ${orphanFeesCount} orphaned fee records from the database.`);
-      } else {
-        logs.push("👍 No orphaned fee records found.");
-      }
-      
-      // 5. Scan faculty accounts and remove student-specific/invalid fields
-      logs.push("🔍 Scanning faculty accounts for student-specific fields and migrating rosters...");
-      for (const fac of facultyList) {
-        let facIssues = 0;
-        let updateFields = {};
-        
-        // Check for student-only fields
-        const prohibitedFields = ['studentId', 'studentGroup', 'feeStatus', 'feesAmount', 'paidAmount', 'pendingAmount', 'assignedStudentIds', 'classCategory', 'stream', 'autoGroup', 'customGroupException'];
-        prohibitedFields.forEach(field => {
-          if (fac[field] !== undefined) {
-            facIssues++;
-            updateFields[field] = deleteField();
-          }
-        });
-
-        // Migrate assignedStudentIds to facultyStudentRoster if present
-        if (fac.assignedStudentIds && fac.assignedStudentIds.length > 0) {
-          const rosterRef = doc(db, 'facultyStudentRoster', fac.id);
-          const rosterSnap = await getDoc(rosterRef);
-          let studentIds = rosterSnap.exists() ? (rosterSnap.data().studentIds || []) : [];
-          
-          let modified = false;
-          fac.assignedStudentIds.forEach(sid => {
-            if (!studentIds.includes(sid)) {
-              studentIds.push(sid);
-              modified = true;
-            }
-          });
-          
-          if (modified || !rosterSnap.exists()) {
-            await setDoc(rosterRef, {
-              facultyUid: fac.id,
-              studentIds,
-              updatedAt: serverTimestamp()
-            }, { merge: true });
-            logs.push(`🔧 [Repair] Migrated roster for faculty ${fac.displayName || fac.name}: ${studentIds.length} students.`);
-            repairedCount++;
-          }
-        }
-        
-        if (facIssues > 0) {
-          issuesFound += facIssues;
-          await updateDoc(doc(db, 'users', fac.id), updateFields);
-          repairedCount += facIssues;
-          logs.push(`✅ Sanitized faculty profile: ${fac.displayName || fac.name} (removed student-specific fields)`);
-        }
-      }
-
-      logs.push("🎉 Integrity sweep complete.");
-      logs.push(`📊 Summary: Scanned ${scannedCount} accounts. Found ${issuesFound} issues. Repaired ${repairedCount} issues.`);
-      
+      const results = await systemDoctorService.runFullAudit();
+      const studentsCount = allUsers.filter(u => u.role?.toLowerCase() === 'student').length;
       setDoctorResults({
-        scannedCount,
-        issuesFound,
-        repairedCount,
-        logs
+        scannedCount: studentsCount,
+        issuesFound: results.issuesFound,
+        repairedCount: results.repairedCount,
+        logs: results.logs
       });
-      
-      await logAdminAction('system_doctor_run', '', { scannedCount, issuesFound, repairedCount });
+      await logAdminAction('system_doctor_run', '', { 
+        scannedCount: studentsCount, 
+        issuesFound: results.issuesFound, 
+        repairedCount: results.repairedCount 
+      });
       triggerToast('System Doctor completed successfully!', 'success');
     } catch (e) {
       console.error("System Doctor failure:", e);
-      logs.push(`🚨 Critical Error: ${e.message}`);
       setDoctorResults({
-        scannedCount,
-        issuesFound,
-        repairedCount,
-        logs
+        scannedCount: 0,
+        issuesFound: 0,
+        repairedCount: 0,
+        logs: [`🚨 Critical Error: ${e.message}`]
       });
       triggerToast('System Doctor encountered an error', 'danger');
     } finally {
       setDoctorRunning(false);
     }
   };
-  
+
+  const handleUpdateLeadStatus = async (leadId, nextStatus) => {
+    try {
+      await updateDoc(doc(db, 'leadCaptures', leadId), { status: nextStatus });
+      triggerToast('Lead status updated successfully!', 'success');
+    } catch (err) {
+      console.error("Error updating lead status:", err);
+      triggerToast('Failed to update lead status.', 'danger');
+    }
+  };
+
   // ── REPAIR FINANCIAL RECORDS ──
   const handleRepairFinancialRecords = async () => {
     if (isRepairingFinancial) return;
@@ -2373,6 +2391,91 @@ const AdminDashboard = () => {
           </div>
 
         </div>
+
+        {/* Card 4: Lead Capture Center */}
+        <div className="card" style={{ padding: '24px', border: '1px solid var(--border)', background: 'var(--surface-card)', marginTop: '8px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
+            <div>
+              <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800, color: 'var(--text-primary)' }}>New Leads Capture Center</h3>
+              <p style={{ margin: '4px 0 0 0', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>Track parent and student consultation requests and conversion statuses.</p>
+            </div>
+            <span style={{ fontSize: '0.8rem', fontWeight: 800, color: 'var(--primary)', background: 'var(--primary-light)', padding: '6px 14px', borderRadius: '8px' }}>
+              Total Leads: {leadsList.length}
+            </span>
+          </div>
+
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', minWidth: '600px', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
+              <thead>
+                <tr style={{ borderBottom: '1px solid var(--border)', color: 'var(--text-muted)', fontWeight: 700 }}>
+                  <th style={{ padding: '12px' }}>Lead Contact</th>
+                  <th style={{ padding: '12px' }}>Class / Course of Interest</th>
+                  <th style={{ padding: '12px' }}>Capture Source</th>
+                  <th style={{ padding: '12px' }}>Submitted Date</th>
+                  <th style={{ padding: '12px' }}>Conversion Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {leadsList.slice(0, 10).map(lead => {
+                  const dateStr = lead.createdAt?.toDate ? lead.createdAt.toDate().toLocaleString() : new Date(lead.createdAt || 0).toLocaleString();
+                  const statusColors = {
+                    new: { bg: 'rgba(83,109,254,0.08)', txt: 'var(--primary-blue, #536DFE)' },
+                    contacted: { bg: 'rgba(214,168,90,0.12)', txt: 'var(--warning, #FFA726)' },
+                    converted: { bg: 'rgba(110,191,139,0.12)', txt: 'var(--success, #66BB6A)' }
+                  };
+                  const currentColors = statusColors[lead.status] || statusColors.new;
+
+                  return (
+                    <tr key={lead.id} style={{ borderBottom: '1px solid var(--border)', fontSize: '0.82rem' }}>
+                      <td style={{ padding: '12px' }}>
+                        <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{lead.name}</div>
+                        <div style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }}>📞 {lead.phone}</div>
+                      </td>
+                      <td style={{ padding: '12px', fontWeight: 600, color: 'var(--text-primary)' }}>
+                        {lead.course}
+                      </td>
+                      <td style={{ padding: '12px', textTransform: 'capitalize', color: 'var(--text-secondary)' }}>
+                        {lead.source?.replace('_', ' ') || 'Web Enquiry'}
+                      </td>
+                      <td style={{ padding: '12px', color: 'var(--text-muted)' }}>
+                        {dateStr}
+                      </td>
+                      <td style={{ padding: '12px' }}>
+                        <select
+                          value={lead.status || 'new'}
+                          onChange={e => handleUpdateLeadStatus(lead.id, e.target.value)}
+                          style={{
+                            background: currentColors.bg,
+                            color: currentColors.txt,
+                            border: '1px solid var(--border)',
+                            borderRadius: '6px',
+                            padding: '4px 8px',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                            fontSize: '0.78rem',
+                            outline: 'none'
+                          }}
+                        >
+                          <option value="new" style={{ color: '#121212', background: '#FFFFFF' }}>New</option>
+                          <option value="contacted" style={{ color: '#121212', background: '#FFFFFF' }}>Contacted</option>
+                          <option value="converted" style={{ color: '#121212', background: '#FFFFFF' }}>Converted</option>
+                        </select>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {leadsList.length === 0 && (
+                  <tr>
+                    <td colSpan="5" style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '24px', fontStyle: 'italic' }}>
+                      No leads captured yet.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
       </div>
     );
   };
@@ -2383,6 +2486,20 @@ const AdminDashboard = () => {
 
     const myRooms = chatRoomsList.filter(rm => rm.facultyId === user.uid);
     const unreadDoubtCount = myRooms.reduce((acc, rm) => acc + (rm.facultyUnreadCount || 0), 0);
+    const activeQueriesCount = facultyQueries.filter(q => q.status !== 'Resolved').length;
+
+    const getStatusStyle = (status) => {
+      switch (status?.toLowerCase()) {
+        case 'resolved':
+          return { background: 'rgba(34,197,94,0.1)', color: '#22C55E' };
+        case 'replied':
+          return { background: 'rgba(37,99,235,0.1)', color: '#2563EB' };
+        case 'viewed':
+          return { background: 'rgba(245,158,11,0.1)', color: '#F59E0B' };
+        default:
+          return { background: 'rgba(100,116,139,0.1)', color: '#64748B' };
+      }
+    };
 
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
@@ -2418,7 +2535,7 @@ const AdminDashboard = () => {
           {[
             { label: 'Allotted Students', value: `${studentsList.length} Students`, color: 'var(--primary)', icon: <Users size={20} /> },
             { label: 'Classes Scheduled Today', value: `${myClasses.length} Sessions`, color: 'var(--success)', icon: <Calendar size={20} /> },
-            { label: 'Unread Doubt Queries', value: `${unreadDoubtCount} Messages`, color: unreadDoubtCount > 0 ? 'var(--danger)' : 'var(--text-muted)', icon: <MessageSquare size={20} /> }
+            { label: 'Pending Doubt Queries', value: `${activeQueriesCount} Active`, color: activeQueriesCount > 0 ? 'var(--danger)' : 'var(--text-muted)', icon: <MessageSquare size={20} /> }
           ].map((stat, idx) => (
             <div key={idx} style={{ background: 'var(--surface)', padding: '16px', borderRadius: '12px', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: '14px' }}>
               <div style={{ width: 40, height: 40, borderRadius: '50%', background: 'rgba(0,0,0,0.03)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: stat.color }}>
@@ -2487,6 +2604,149 @@ const AdminDashboard = () => {
                     )}
                   </tbody>
                 </table>
+              </div>
+            </div>
+
+            {/* Student Doubt Queries Workspace */}
+            <div className="card" style={{ padding: '20px', border: '1px solid var(--border)', background: 'var(--white)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '0 0 16px 0' }}>
+                <h3 style={{ margin: 0, fontSize: '0.98rem', fontWeight: 800, color: 'var(--dark)' }}>Student Doubt Queries Workspace</h3>
+                <span style={{ fontSize: '0.72rem', background: 'rgba(37,99,235,0.08)', color: 'var(--primary)', padding: '2px 8px', borderRadius: '100px', fontWeight: 700 }}>
+                  {facultyQueries.filter(q => q.status !== 'Resolved').length} Active
+                </span>
+              </div>
+              
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                {facultyQueries.length === 0 ? (
+                  <div style={{ textAlign: 'center', color: 'var(--text-light)', fontStyle: 'italic', fontSize: '0.82rem', padding: '20px' }}>
+                    No doubt queries assigned to you.
+                  </div>
+                ) : (
+                  facultyQueries.map(q => {
+                    const isReplying = activeReplyQueryId === q.id;
+                    const studentUser = allUsers.find(u => u.id === q.studentId) || {};
+                    
+                    let priorityBg = 'rgba(100, 116, 139, 0.08)';
+                    let priorityColor = '#64748b';
+                    if (q.priority === 'High') {
+                      priorityBg = 'rgba(239, 68, 68, 0.08)';
+                      priorityColor = '#ef4444';
+                    } else if (q.priority === 'Medium') {
+                      priorityBg = 'rgba(245, 158, 11, 0.08)';
+                      priorityColor = '#f59e0b';
+                    }
+
+                    return (
+                      <div key={q.id} style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '16px', background: 'var(--bg)', borderRadius: '12px', border: '1px solid var(--border)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ fontWeight: 800, fontSize: '0.9rem', color: 'var(--dark)' }}>{q.studentName}</span>
+                            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>({q.studentClass})</span>
+                            <span style={{ fontSize: '0.7rem', padding: '2px 6px', borderRadius: '4px', background: priorityBg, color: priorityColor, fontWeight: 800 }}>
+                              {q.priority}
+                            </span>
+                          </div>
+                          
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span style={{ 
+                              fontSize: '0.7rem', 
+                              fontWeight: 800, 
+                              padding: '2px 6px', 
+                              borderRadius: '4px',
+                              whiteSpace: 'nowrap',
+                              ...getStatusStyle(q.status)
+                            }}>
+                              {q.status}
+                            </span>
+                            
+                            <button
+                              onClick={() => handleToggleQueryStatus(q.id, q.status)}
+                              className="btn btn-ghost"
+                              style={{ padding: '2px 6px', fontSize: '0.7rem' }}
+                              title="Toggle Status"
+                            >
+                              {q.status === 'Resolved' ? 'Reopen' : 'Resolve'}
+                            </button>
+                          </div>
+                        </div>
+
+                        <div style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--dark)', marginTop: '4px' }}>
+                          Subject: {q.subject}
+                        </div>
+                        
+                        <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--text-secondary)', whiteSpace: 'pre-wrap', lineHeight: 1.4 }}>
+                          {q.question}
+                        </p>
+
+                        {q.attachmentUrl && (
+                          <div style={{ marginTop: '2px' }}>
+                            <a href={q.attachmentUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: '0.72rem', color: '#2563EB', fontWeight: 700, textDecoration: 'underline' }}>
+                              📎 View Attachment
+                            </a>
+                          </div>
+                        )}
+
+                        {q.reply && (
+                          <div style={{ marginTop: '6px', padding: '10px', background: 'var(--white)', borderRadius: '8px', borderLeft: '3px solid #2563EB', fontSize: '0.78rem' }}>
+                            <span style={{ fontWeight: 700, color: '#2563EB' }}>Reply sent:</span> {q.reply}
+                          </div>
+                        )}
+
+                        {isReplying ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '8px', background: 'var(--white)', padding: '12px', borderRadius: '8px', border: '1px solid var(--border)' }}>
+                            <textarea
+                              rows={3}
+                              placeholder="Write your answer / reply..."
+                              value={replyText}
+                              onChange={e => setReplyText(e.target.value)}
+                              className="form-input"
+                              style={{ fontSize: '0.78rem' }}
+                            />
+                            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+                              <button
+                                onClick={() => {
+                                  setActiveReplyQueryId(null);
+                                  setReplyText('');
+                                }}
+                                className="btn btn-ghost"
+                                style={{ padding: '4px 10px', fontSize: '0.72rem' }}
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                onClick={() => handleReplyQuery(q.id, q.studentId, studentUser.email, q.studentName, q.question)}
+                                disabled={submittingReply}
+                                className="btn btn-primary"
+                                style={{ padding: '4px 12px', fontSize: '0.72rem' }}
+                              >
+                                {submittingReply ? 'Sending...' : 'Send Reply'}
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          q.status !== 'Resolved' && (
+                            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '4px' }}>
+                              <button
+                                onClick={() => {
+                                  setActiveReplyQueryId(q.id);
+                                  setReplyText(q.reply || '');
+                                }}
+                                className="btn btn-primary"
+                                style={{ padding: '4px 10px', fontSize: '0.72rem' }}
+                              >
+                                {q.reply ? 'Edit Reply' : 'Reply'}
+                              </button>
+                            </div>
+                          )
+                        )}
+
+                        <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', textAlign: 'right', marginTop: '2px' }}>
+                          Submitted: {q.createdAt ? new Date(q.createdAt.toDate()).toLocaleString() : 'Just now'}
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
               </div>
             </div>
 

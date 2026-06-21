@@ -1,0 +1,10 @@
+{
+  "pairs": [
+    { "term": "Python", "definition": "A popular high-level language utilizing clear indentation." },
+    { "term": "GKE", "definition": "Google Kubernetes Engine for deploying managed containers." },
+    { "term": "Firebase", "definition": "Google's backend-as-a-service supporting database and auth." },
+    { "term": "V8 Engine", "definition": "Open-source high-performance engine running JS in Chrome." },
+    { "term": "DNS", "definition": "Resolves domain names to numeric IP addresses." },
+    { "term": "Kernel", "definition": "Core component of an OS managing system resources." }
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "questions": [
+    {
+      "q": "Which Google Sheets formula would you use to fetch and pull data horizontally from a specific key?",
+      "options": ["VLOOKUP", "HLOOKUP", "XLOOKUP", "INDEX-MATCH"],
+      "a": "HLOOKUP"
+    },
+    {
+      "q": "What starts every single formula or calculation expression in Google Sheets and Excel?",
+      "options": ["=", "@", "SUM", "#"],
+      "a": "="
+    },
+    {
+      "q": "Which Excel and Google Sheets function is used to join or merge multiple text strings into a single cell?",
+      "options": ["CONCATENATE", "MERGE", "JOIN", "COMBINE"],
+      "a": "CONCATENATE"
+    },
+    {
+      "q": "Which key combination is the default shortcut to create a new spreadsheet in Google Sheets?",
+      "options": ["Ctrl+N", "Shift+F11", "Ctrl+Shift+T", "Alt+S"],
+      "a": "Shift+F11"
+    },
+    {
+      "q": "What does the Excel formula error '#DIV/0!' represent?",
+      "options": ["Formula divided by zero", "Cell reference is invalid", "Wrong data type in argument", "Column is not wide enough"],
+      "a": "Formula divided by zero"
+    }
+  ]
+}

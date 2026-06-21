@@ -41,6 +41,12 @@ const Attendance = () => {
   useEffect(() => {
     if (!user) return;
 
+    if (!db) {
+      console.error("Attendance: Firestore not initialized");
+      setLoading(false);
+      return;
+    }
+
     let unsubStudents = () => {};
     let unsubAttendance = () => {};
     let unsubTodaySched = () => {};
@@ -48,15 +54,23 @@ const Attendance = () => {
 
     if (canManage) {
       // Load all students to mark attendance
-      const studentsQuery = query(collection(db, 'users'), where('role', 'in', ['student', 'Student']));
-      unsubStudents = onSnapshot(studentsQuery, (snap) => {
-        const list = [];
-        snap.forEach(doc => {
-          list.push({ id: doc.id, ...doc.data() });
+      try {
+        const studentsQuery = query(collection(db, 'users'), where('role', 'in', ['student', 'Student']));
+        unsubStudents = onSnapshot(studentsQuery, (snap) => {
+          const list = [];
+          snap.forEach(doc => {
+            list.push({ id: doc.id, ...doc.data() });
+          });
+          setStudents(list);
+          setLoading(false);
+        }, (err) => {
+          console.error("Attendance: students listener error:", err);
+          setLoading(false);
         });
-        setStudents(list);
+      } catch (err) {
+        console.error("Attendance: students listener creation failed", err);
         setLoading(false);
-      });
+      }
 
       // Load today's marked attendance status to pre-populate map
       const dateStr = format(parseISO(attendanceDate), 'dd MMM yyyy');
@@ -73,66 +87,89 @@ const Attendance = () => {
           statuses[data.studentId] = data.status;
         });
         setAttendanceStatusMap(statuses);
+      }).catch(err => {
+        console.error("Attendance: failed to load today's marked attendance", err);
       });
 
     } else {
       // Load student's own attendance from top-level attendance collection
-      const attQuery = query(
-        collection(db, 'attendance'),
-        where('studentId', '==', user.uid),
-        orderBy('timestamp', 'desc')
-      );
+      try {
+        const attQuery = query(
+          collection(db, 'attendance'),
+          where('studentId', '==', user.uid),
+          orderBy('timestamp', 'desc')
+        );
 
-      unsubAttendance = onSnapshot(attQuery, (snap) => {
-        const records = [];
-        let p = 0, a = 0, l = 0, t = 0;
-        
-        snap.forEach(doc => {
-          const d = { id: doc.id, ...doc.data() };
-          records.push(d);
-          t++;
-          if (d.status === 'present') p++;
-          else if (d.status === 'absent') a++;
-          else if (d.status === 'late') { l++; p++; } // Late present still increments attendance count
-        });
+        unsubAttendance = onSnapshot(attQuery, (snap) => {
+          const records = [];
+          let p = 0, a = 0, l = 0, t = 0;
+          
+          snap.forEach(doc => {
+            const d = { id: doc.id, ...doc.data() };
+            records.push(d);
+            t++;
+            if (d.status === 'present') p++;
+            else if (d.status === 'absent') a++;
+            else if (d.status === 'late') { l++; p++; } // Late present still increments attendance count
+          });
 
-        setStudentRecords(records);
-        setStudentStats({
-          total: t, present: p, absent: a, late: l,
-          percentage: t === 0 ? 0 : Math.round((p / t) * 100)
+          setStudentRecords(records);
+          setStudentStats({
+            total: t, present: p, absent: a, late: l,
+            percentage: t === 0 ? 0 : Math.round((p / t) * 100)
+          });
+          setLoading(false);
+        }, (err) => {
+          console.error("Attendance: student attendance listener error:", err);
+          setLoading(false);
         });
+      } catch (err) {
+        console.error("Attendance: student attendance listener creation failed", err);
         setLoading(false);
-      });
+      }
 
       // Load today's schedule for student check-in
-      const todayDateStr = format(new Date(), 'yyyy-MM-dd');
-      const schedTodayQuery = query(
-        collection(db, 'studentSchedules'),
-        where('studentId', '==', user.uid),
-        where('date', '==', todayDateStr)
-      );
-      unsubTodaySched = onSnapshot(schedTodayQuery, (snap) => {
-        const list = [];
-        snap.forEach(doc => {
-          list.push({ id: doc.id, ...doc.data() });
+      try {
+        const todayDateStr = format(new Date(), 'yyyy-MM-dd');
+        const schedTodayQuery = query(
+          collection(db, 'studentSchedules'),
+          where('studentId', '==', user.uid),
+          where('date', '==', todayDateStr)
+        );
+        unsubTodaySched = onSnapshot(schedTodayQuery, (snap) => {
+          const list = [];
+          snap.forEach(doc => {
+            list.push({ id: doc.id, ...doc.data() });
+          });
+          setTodaySchedules(list);
+        }, (err) => {
+          console.error("Attendance: student schedules listener error:", err);
         });
-        setTodaySchedules(list);
-      });
+      } catch (err) {
+        console.error("Attendance: student schedules listener creation failed", err);
+      }
 
       // Load today's calendar events for student check-in
-      const calTodayQuery = query(
-        collection(db, 'studentCalendar'),
-        where('studentId', '==', user.uid),
-        where('date', '==', todayDateStr),
-        where('type', '==', 'class')
-      );
-      unsubTodayCal = onSnapshot(calTodayQuery, (snap) => {
-        const list = [];
-        snap.forEach(doc => {
-          list.push({ id: doc.id, ...doc.data() });
+      try {
+        const todayDateStr = format(new Date(), 'yyyy-MM-dd');
+        const calTodayQuery = query(
+          collection(db, 'studentCalendar'),
+          where('studentId', '==', user.uid),
+          where('date', '==', todayDateStr),
+          where('type', '==', 'class')
+        );
+        unsubTodayCal = onSnapshot(calTodayQuery, (snap) => {
+          const list = [];
+          snap.forEach(doc => {
+            list.push({ id: doc.id, ...doc.data() });
+          });
+          setTodayCalendarEvents(list);
+        }, (err) => {
+          console.error("Attendance: student calendar events listener error:", err);
         });
-        setTodayCalendarEvents(list);
-      });
+      } catch (err) {
+        console.error("Attendance: student calendar events listener creation failed", err);
+      }
     }
 
     return () => {

@@ -48,38 +48,74 @@ const Assignments = () => {
   const [noteForm, setNoteForm] = useState({ id: '', title: '', subject: '', content: '' });
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const [toast, setToast] = useState('');
+  const triggerToast = (msg) => {
+    setToast(msg);
+    setTimeout(() => setToast(''), 3000);
+  };
+
   // Real-time Firestore sync
   useEffect(() => {
     if (!user?.uid) return;
-    
-    // Fetch global assignments
-    const unsubGlobal = onSnapshot(collection(db, 'assignments'), (snap) => {
-      const data = [];
-      snap.forEach(doc => {
-        data.push({ id: doc.id, ...doc.data() });
-      });
-      // Sort newest first
-      data.sort((x, y) => (y.createdAt?.seconds || 0) - (x.createdAt?.seconds || 0));
-      setGlobalAssignments(data);
-      setLoading(false);
-    });
 
-    // Fetch personal assignments (for student)
+    if (!db) {
+      console.error("Assignments: Firestore not initialized");
+      triggerToast("Firestore not initialized");
+      return;
+    }
+    
+    let unsubGlobal = () => {};
     let unsubPersonal = () => {};
-    if (user.role?.toLowerCase() !== 'admin') {
-      unsubPersonal = onSnapshot(collection(db, `users/${user.uid}/assignments`), (snap) => {
+    let unsubNote = () => {};
+
+    try {
+      // Fetch global assignments
+      unsubGlobal = onSnapshot(collection(db, 'assignments'), (snap) => {
         const data = [];
-        snap.forEach(doc => data.push({ id: doc.id, ...doc.data() }));
-        setPersonalAssignments(data);
+        snap.forEach(doc => {
+          data.push({ id: doc.id, ...doc.data() });
+        });
+        // Sort newest first
+        data.sort((x, y) => (y.createdAt?.seconds || 0) - (x.createdAt?.seconds || 0));
+        setGlobalAssignments(data);
+        setLoading(false);
+      }, (error) => {
+        console.error("Assignments: Error fetching global assignments", error);
+        setLoading(false);
       });
+    } catch (err) {
+      console.error("Assignments: Failed to setup global assignments listener", err);
+      triggerToast("Failed to connect to assignments");
+      setLoading(false);
     }
 
-    // Fetch notes (for student)
-    const unsubNote = onSnapshot(collection(db, `users/${user.uid}/notes`), (snap) => {
-      const data = [];
-      snap.forEach(doc => data.push({ id: doc.id, ...doc.data() }));
-      setNotes(data);
-    });
+    try {
+      // Fetch personal assignments (for student)
+      if (user.role?.toLowerCase() !== 'admin') {
+        unsubPersonal = onSnapshot(collection(db, `users/${user.uid}/assignments`), (snap) => {
+          const data = [];
+          snap.forEach(doc => data.push({ id: doc.id, ...doc.data() }));
+          setPersonalAssignments(data);
+        }, (error) => {
+          console.error("Assignments: Error fetching personal assignments", error);
+        });
+      }
+    } catch (err) {
+      console.error("Assignments: Failed to setup personal assignments listener", err);
+    }
+
+    try {
+      // Fetch notes (for student)
+      unsubNote = onSnapshot(collection(db, `users/${user.uid}/notes`), (snap) => {
+        const data = [];
+        snap.forEach(doc => data.push({ id: doc.id, ...doc.data() }));
+        setNotes(data);
+      }, (error) => {
+        console.error("Assignments: Error fetching notes", error);
+      });
+    } catch (err) {
+      console.error("Assignments: Failed to setup notes listener", err);
+    }
 
     return () => { 
       unsubGlobal(); 
@@ -580,6 +616,15 @@ const Assignments = () => {
         </form>
       </Modal>
 
+      {toast && (
+        <div style={{
+          position: 'fixed', bottom: '24px', right: '24px', padding: '12px 24px',
+          background: 'rgba(239,83,80,0.95)', color: 'white', borderRadius: '8px',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.15)', zIndex: 1000, display: 'flex', alignItems: 'center', gap: '8px'
+        }}>
+          <span>⚠️ {toast}</span>
+        </div>
+      )}
     </motion.div>
   );
 };

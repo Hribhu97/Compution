@@ -1,0 +1,29 @@
+{
+  "questions": [
+    {
+      "q": "What is Google's custom Application-Specific Integrated Circuit (ASIC) designed for machine learning called?",
+      "options": ["TPU (Tensor Processing Unit)", "GPU (Graphics Processing Unit)", "CPU (Central Processing Unit)", "FPGA"],
+      "a": "TPU (Tensor Processing Unit)"
+    },
+    {
+      "q": "Which PC hardware component stores the Operating System currently running and acts as high-speed system memory?",
+      "options": ["SSD", "RAM", "CPU Cache", "BIOS chip"],
+      "a": "RAM"
+    },
+    {
+      "q": "Which component is widely known as the 'brain' of the computer, executing calculations and processing program instructions?",
+      "options": ["Motherboard", "CPU", "Power Supply", "GPU"],
+      "a": "CPU"
+    },
+    {
+      "q": "What non-volatile solid-state storage device uses flash memory to read and write files at extreme speeds?",
+      "options": ["HDD", "SSD", "RAM", "Floppy Disk"],
+      "a": "SSD"
+    },
+    {
+      "q": "Which interface slot on a motherboard is typically used to connect dedicated high-end graphics cards?",
+      "options": ["SATA", "PCI Express (PCIe)", "USB 3.0", "M.2"],
+      "a": "PCI Express (PCIe)"
+    }
+  ]
+}

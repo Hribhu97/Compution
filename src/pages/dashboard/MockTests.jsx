@@ -57,16 +57,31 @@ const MockTests = () => {
   });
 
   useEffect(() => {
-    const unsub = onSnapshot(collection(db, 'tests'), (snap) => {
-      const data = [];
-      snap.forEach(doc => {
-        data.push({ id: doc.id, ...doc.data() });
-      });
-      // Sort newest first
-      data.sort((x, y) => (y.createdAt?.seconds || 0) - (x.createdAt?.seconds || 0));
-      setTests(data);
+    if (!db) {
+      console.error("MockTests: Firestore not initialized");
       setLoading(false);
-    });
+      return;
+    }
+
+    let unsub = () => {};
+    try {
+      unsub = onSnapshot(collection(db, 'tests'), (snap) => {
+        const data = [];
+        snap.forEach(doc => {
+          data.push({ id: doc.id, ...doc.data() });
+        });
+        // Sort newest first
+        data.sort((x, y) => (y.createdAt?.seconds || 0) - (x.createdAt?.seconds || 0));
+        setTests(data);
+        setLoading(false);
+      }, (err) => {
+        console.error("MockTests: tests listener error:", err);
+        setLoading(false);
+      });
+    } catch (err) {
+      console.error("MockTests: tests listener creation failed", err);
+      setLoading(false);
+    }
     return () => unsub();
   }, []);
 

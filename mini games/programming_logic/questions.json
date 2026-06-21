@@ -1,0 +1,29 @@
+{
+  "questions": [
+    {
+      "q": "Which data structure does Google Search's PageRank algorithm primarily traverse?",
+      "options": ["A directed graph of web pages", "A binary search tree", "A FIFO queue", "A stack"],
+      "a": "A directed graph of web pages"
+    },
+    {
+      "q": "What is the time complexity of searching for an element in a balanced Binary Search Tree (BST)?",
+      "options": ["O(1)", "O(log n)", "O(n)", "O(n log n)"],
+      "a": "O(log n)"
+    },
+    {
+      "q": "What will be the output of: print(type([])) in Python?",
+      "options": ["<class 'list'>", "<class 'tuple'>", "<class 'dict'>", "<class 'set'>"],
+      "a": "<class 'list'>"
+    },
+    {
+      "q": "Which of these is the JavaScript engine inside Google Chrome?",
+      "options": ["V8", "SpiderMonkey", "Chakra", "JavaScriptCore"],
+      "a": "V8"
+    },
+    {
+      "q": "In computer logic, what does the expression '1 XOR 1' evaluate to?",
+      "options": ["0", "1", "2", "Undefined"],
+      "a": "0"
+    }
+  ]
+}

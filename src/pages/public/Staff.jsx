@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { collection, onSnapshot } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { Search, ChevronDown, User, BookOpen, GraduationCap, Award, Clock, HelpCircle, ArrowLeft, Mail, Compass } from 'lucide-react';
+import LeadCaptureSystem from '../../components/LeadCaptureSystem';
 
 const fadeUp = {
   hidden: { opacity: 0, y: 20 },
@@ -90,17 +91,29 @@ const Staff = () => {
   const [expandedId, setExpandedId] = useState(null);
 
   useEffect(() => {
-    const unsub = onSnapshot(collection(db, 'staff'), (snap) => {
-      const data = [];
-      snap.forEach(doc => {
-        data.push({ id: doc.id, ...doc.data() });
+    if (!db) {
+      console.error("Staff: Firestore not initialized");
+      setLoading(false);
+      return;
+    }
+
+    let unsub = () => {};
+    try {
+      unsub = onSnapshot(collection(db, 'staff'), (snap) => {
+        const data = [];
+        snap.forEach(doc => {
+          data.push({ id: doc.id, ...doc.data() });
+        });
+        setDbStaff(data);
+        setLoading(false);
+      }, (error) => {
+        console.error("Error loading staff from Firestore:", error);
+        setLoading(false);
       });
-      setDbStaff(data);
+    } catch (err) {
+      console.error("Staff: staff listener creation failed", err);
       setLoading(false);
-    }, (error) => {
-      console.error("Error loading staff from Firestore:", error);
-      setLoading(false);
-    });
+    }
     return () => unsub();
   }, []);
 
@@ -341,6 +354,7 @@ const Staff = () => {
             </motion.div>
           )}
         </div>
+        <LeadCaptureSystem />
       </div>
     );
 };

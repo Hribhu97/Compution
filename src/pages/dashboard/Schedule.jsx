@@ -68,55 +68,75 @@ const Schedule = () => {
   useEffect(() => {
     if (!user) return;
 
-    // Fetch calendarEvents for real-time calendar sync
-    const schedQuery = query(collection(db, 'calendarEvents'));
-    const unsubSched = onSnapshot(schedQuery, (snap) => {
-      const list = [];
-      snap.forEach(doc => {
-        const d = doc.data();
-        list.push({ 
-          id: doc.id, 
-          ...d,
-          date: d.startDate || d.date || '',
-          time: d.startTime || d.time || '',
-          subject: d.title || d.subject || '',
-          mode: d.eventType === 'Google Meet Session' ? 'online' : 'offline',
-          faculty: d.assignedFacultyName || d.faculty || 'Faculty Mentor'
-        });
-      });
-      // Sort by date and time
-      list.sort((a, b) => {
-        const dateCompare = (a.date || '').localeCompare(b.date || '');
-        if (dateCompare !== 0) return dateCompare;
-        return (a.time || '').localeCompare(b.time || '');
-      });
-      setSchedules(list);
-      setLoading(false);
-    }, (error) => {
-      console.error(error);
-      setLoading(false);
-    });
+    if (!db) {
+      console.error("Schedule: Firestore not initialized");
+      triggerToast("Firestore not initialized");
+      return;
+    }
 
-    // Fetch student users list for schedule assignments (for faculty/admin)
+    let unsubSched = () => {};
     let unsubStudents = () => {};
-    if (canManage) {
-      const studentsQuery = query(collection(db, 'users'), where('role', '==', 'student'));
-      unsubStudents = onSnapshot(studentsQuery, (snap) => {
+
+    try {
+      // Fetch calendarEvents for real-time calendar sync
+      const schedQuery = query(collection(db, 'calendarEvents'));
+      unsubSched = onSnapshot(schedQuery, (snap) => {
         const list = [];
         snap.forEach(doc => {
-          const data = doc.data();
-          if (user?.role === 'faculty') {
-            const hasAssignedIds = data.assignedFacultyIds?.includes(user.uid);
-            const hasAssignedLegacy = data.assignedFaculty?.includes(user.uid) || data.assignedFaculty?.includes(user.email);
-            if (hasAssignedIds || hasAssignedLegacy) {
+          const d = doc.data();
+          list.push({ 
+            id: doc.id, 
+            ...d,
+            date: d.startDate || d.date || '',
+            time: d.startTime || d.time || '',
+            subject: d.title || d.subject || '',
+            mode: d.eventType === 'Google Meet Session' ? 'online' : 'offline',
+            faculty: d.assignedFacultyName || d.faculty || 'Faculty Mentor'
+          });
+        });
+        // Sort by date and time
+        list.sort((a, b) => {
+          const dateCompare = (a.date || '').localeCompare(b.date || '');
+          if (dateCompare !== 0) return dateCompare;
+          return (a.time || '').localeCompare(b.time || '');
+        });
+        setSchedules(list);
+        setLoading(false);
+      }, (error) => {
+        console.error("Schedule: Error fetching calendarEvents", error);
+        setLoading(false);
+      });
+    } catch (err) {
+      console.error("Schedule: Failed to setup calendarEvents listener", err);
+      triggerToast("Failed to connect to schedules");
+      setLoading(false);
+    }
+
+    try {
+      // Fetch student users list for schedule assignments (for faculty/admin)
+      if (canManage) {
+        const studentsQuery = query(collection(db, 'users'), where('role', '==', 'student'));
+        unsubStudents = onSnapshot(studentsQuery, (snap) => {
+          const list = [];
+          snap.forEach(doc => {
+            const data = doc.data();
+            if (user?.role === 'faculty') {
+              const hasAssignedIds = data.assignedFacultyIds?.includes(user.uid);
+              const hasAssignedLegacy = data.assignedFaculty?.includes(user.uid) || data.assignedFaculty?.includes(user.email);
+              if (hasAssignedIds || hasAssignedLegacy) {
+                list.push({ id: doc.id, ...data });
+              }
+            } else {
               list.push({ id: doc.id, ...data });
             }
-          } else {
-            list.push({ id: doc.id, ...data });
-          }
+          });
+          setStudents(list);
+        }, (error) => {
+          console.error("Schedule: Error fetching students list", error);
         });
-        setStudents(list);
-      });
+      }
+    } catch (err) {
+      console.error("Schedule: Failed to setup students roster listener", err);
     }
 
     return () => {

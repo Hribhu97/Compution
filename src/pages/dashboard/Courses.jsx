@@ -5,6 +5,8 @@ import { db } from '../../firebase';
 import { collection, onSnapshot, addDoc, deleteDoc, doc, serverTimestamp } from 'firebase/firestore';
 import { BookOpen, Clock, Users, ChevronRight, Play, Lock, Plus, Trash2, Search } from 'lucide-react';
 import Modal from '../../components/Modal';
+import { useCourses } from '../../hooks/useCourses';
+import { courseRepository } from '../../repositories/courseRepository';
 
 const stagger = { show: { transition: { staggerChildren: 0.07 } } };
 const item = { hidden: { opacity: 0, y: 14 }, show: { opacity: 1, y: 0, transition: { duration: 0.4, ease: [0.16, 1, 0.3, 1] } } };
@@ -24,11 +26,15 @@ const COURSE_METADATA = {
 const Courses = () => {
   const { user } = useAuth();
   const [tab, setTab] = useState('enrolled');
-  const [courses, setCourses] = useState([]);
+  const { courses, loading } = useCourses(user);
   const [students, setStudents] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [toast, setToast] = useState('');
+  const triggerToast = (msg) => {
+    setToast(msg);
+    setTimeout(() => setToast(''), 3000);
+  };
   
   // New Course Form State
   const [courseForm, setCourseForm] = useState({
@@ -74,36 +80,38 @@ const Courses = () => {
     return () => window.removeEventListener('simulatedPeriodChanged', handleSync);
   }, [user?.courseProgress]);
 
-  // Fetch live courses & student list
+  // Fetch student list ONLY for admin/faculty to save bandwidth and secure data
   useEffect(() => {
-    const unsubCourses = onSnapshot(collection(db, 'courses'), (snap) => {
-      const data = [];
-      snap.forEach(doc => {
-        data.push({ id: doc.id, ...doc.data() });
-      });
-      setCourses(data);
-      setLoading(false);
-    }, (err) => {
-      console.warn("Firestore courses fetch failed, falling back to local metadata:", err);
-      setLoading(false);
-    });
+    if (user?.role !== 'admin' && user?.role !== 'faculty') return;
 
-    const unsubUsers = onSnapshot(collection(db, 'users'), (snap) => {
-      const data = [];
-      snap.forEach(doc => {
-        const d = doc.data();
-        if (d.role !== 'admin') data.push({ id: doc.id, ...d });
+    if (!db) {
+      console.error("Courses: Firestore not initialized");
+      triggerToast("Firestore not initialized");
+      return;
+    }
+    
+    let unsubUsers = () => {};
+
+    try {
+      unsubUsers = onSnapshot(collection(db, 'users'), (snap) => {
+        const data = [];
+        snap.forEach(doc => {
+          const d = doc.data();
+          if (d.role !== 'admin') data.push({ id: doc.id, ...d });
+        });
+        setStudents(data);
+      }, (err) => {
+        console.error("Courses: Error fetching users list", err);
       });
-      setStudents(data);
-    }, (err) => {
-      console.warn("Firestore users fetch failed:", err);
-    });
+    } catch (err) {
+      console.error("Courses: Failed to setup users listener", err);
+      triggerToast("Failed to connect to users roster");
+    }
 
     return () => {
-      unsubCourses();
       unsubUsers();
     };
-  }, []);
+  }, [user?.role]);
 
   const isNew = simulatedPeriod === 'new';
 
@@ -390,93 +398,43 @@ const Courses = () => {
   }
 
   // ── STUDENT VIEW ─────────────────────────────────────
-  const userCourse = user?.course && user.course !== 'Not specified' ? user.course : 'Python Mastery';
-  
-  // Find course details dynamically from allCourses
-  const getCourseDetails = (title) => {
-    const found = activeCourses.find(c => c.title === title);
-    if (found) return found;
-    return COURSE_METADATA[title] || COURSE_METADATA['Python Mastery'] || { subject: 'Programming', color: '#536DFE', emoji: '💻', nextLesson: 'Introduction & Setup', totalLessons: 24, schedule: 'Mon, Wed · 5 PM' };
-  };
-
-  const primaryMeta = getCourseDetails(userCourse);
-
-  const userProgress = user?.courseProgress !== undefined ? user.courseProgress : (isNew ? 0 : 68);
-
-  const enrolledList = [
-    {
-      id: 'primary',
-      title: userCourse,
-      subject: primaryMeta.subject,
-      progress: userProgress,
-      nextLesson: isNew ? 'Introduction & Setup' : (primaryMeta.nextLesson || 'Chapter 1 Overview'),
-      color: primaryMeta.color,
-      emoji: primaryMeta.emoji,
-      totalLessons: primaryMeta.totalLessons,
-      done: Math.round(primaryMeta.totalLessons * (userProgress / 100)),
-      schedule: primaryMeta.schedule
-    }
-  ];
-
-  // Secondary choice setup
-  const secondaryChoices = ['Data Structures & Algorithms', 'Class XI & XII Computer Science'].filter(c => c !== userCourse);
-  secondaryChoices.forEach((cName, idx) => {
-    const meta = getCourseDetails(cName);
-    if (meta) {
-      const defaultProg = idx === 0 ? 85 : 72;
-      enrolledList.push({
-        id: `secondary-${idx}`,
-        title: cName,
-        subject: meta.subject,
-        progress: isNew ? 0 : defaultProg,
-        nextLesson: isNew ? 'Course Overview' : (meta.nextLesson || 'Chapter 1 Overview'),
-        color: meta.color,
-        emoji: meta.emoji,
-        totalLessons: meta.totalLessons,
-        done: isNew ? 0 : Math.round(meta.totalLessons * (defaultProg / 100)),
-        schedule: meta.schedule
-      });
-    }
+  const enrolledList = courses.map((c, index) => {
+    const progress = user?.courseProgress?.[c.id] !== undefined ? user.courseProgress[c.id] : 35;
+    return {
+      id: c.id,
+      title: c.title,
+      subject: c.subject,
+      progress,
+      nextLesson: c.nextLesson || 'Introduction & Setup',
+      color: c.color,
+      emoji: c.emoji,
+      totalLessons: c.totalLessons,
+      done: Math.round(c.totalLessons * (progress / 100)),
+      schedule: c.schedule
+    };
   });
-
-  const availableList = activeCourses.filter(c => c.title !== userCourse).map(c => ({
-    title: c.title,
-    subject: c.subject,
-    color: c.color,
-    emoji: c.emoji,
-    duration: c.duration || '3 months',
-    students: students.filter(s => s.course === c.title).length + 8 // add fallback students count for available exploring
-  }));
 
   return (
     <motion.div variants={stagger} initial="hidden" animate="show">
       <motion.div variants={item} style={{ marginBottom: '28px' }}>
-        <h1 style={{ fontSize: '1.75rem', marginBottom: '6px' }}>My Courses</h1>
+        <h1 style={{ fontSize: '1.75rem', marginBottom: '6px' }}>My Assigned Courses</h1>
         <p style={{ color: 'var(--text-muted)' }}>
-          {isNew ? 'Kickstart your fresh syllabus study sessions' : 'Track your active courses and discover new programs'}
+          Access your personal courses. Other syllabuses are protected.
         </p>
       </motion.div>
 
-      {/* Tab switcher */}
-      <motion.div variants={item} style={{ display: 'flex', gap: '4px', background: 'var(--surface)', borderRadius: 'var(--radius-md)', padding: '4px', marginBottom: '28px', width: 'fit-content' }}>
-        {['enrolled', 'available'].map(t => (
-          <button key={t} onClick={() => setTab(t)} style={{
-            padding: '9px 22px', borderRadius: 'var(--radius-md)', fontWeight: 700, fontSize: '0.9rem',
-            background: tab === t ? 'white' : 'transparent',
-            color: tab === t ? 'var(--dark)' : 'var(--text-muted)',
-            boxShadow: tab === t ? 'var(--shadow-sm)' : 'none',
-            transition: 'var(--transition)', border: 'none', cursor: 'pointer'
-          }}>
-            {t === 'enrolled' ? '📚 Enrolled' : '🔍 Explore More'}
-          </button>
-        ))}
-      </motion.div>
-
-      {tab === 'enrolled' && (
+      {loading ? (
+        <div style={{ padding: '40px', textAlign: 'center' }}>Loading courses...</div>
+      ) : enrolledList.length === 0 ? (
+        <div style={{ background: 'var(--surface-card)', padding: '48px', textAlign: 'center', borderRadius: '20px', border: '1.5px dashed var(--border-strong)', color: 'var(--text-light)' }}>
+          <BookOpen size={44} style={{ margin: '0 auto 16px', opacity: 0.5 }} />
+          <h3>No Courses Assigned</h3>
+          <p style={{ fontSize: '0.9rem' }}>You are currently not enrolled in any programs. Please contact your administrator to assign courses.</p>
+        </div>
+      ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          {enrolledList.map((c, i) => (
-            <motion.div key={c.id} variants={item} className="card"
-              style={{ overflow: 'hidden' }}>
+          {enrolledList.map((c) => (
+            <motion.div key={c.id} variants={item} className="card" style={{ overflow: 'hidden' }}>
               <div style={{ height: '5px', background: c.color }} />
               <div className="card-p">
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: '16px', flexWrap: 'wrap' }}>
@@ -484,17 +442,7 @@ const Courses = () => {
                   <div style={{ flex: 1, minWidth: '200px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '8px' }}>
                       <div>
-                        <h3 style={{ fontSize: '1.1rem', marginBottom: '4px' }}>
-                          {c.title}
-                          {c.id === 'primary' && (
-                            <span style={{
-                              marginLeft: '8px', fontSize: '0.7rem', background: 'rgba(83,109,254,0.1)',
-                              color: 'var(--primary)', padding: '2px 8px', borderRadius: '4px', verticalAlign: 'middle'
-                            }}>
-                              Primary Track
-                            </span>
-                          )}
-                        </h3>
+                        <h3 style={{ fontSize: '1.1rem', marginBottom: '4px' }}>{c.title}</h3>
                         <span className="badge badge-primary" style={{ fontSize: '0.72rem' }}>{c.subject}</span>
                       </div>
                       <div style={{ textAlign: 'right' }}>
@@ -520,7 +468,7 @@ const Courses = () => {
                         <span>Next: <strong style={{ color: 'var(--dark)' }}>{c.nextLesson}</strong></span>
                       </div>
                       <button className="btn btn-primary" style={{ padding: '9px 20px', fontSize: '0.85rem' }}>
-                        <Play size={14} /> Continue
+                        <Play size={14} /> Continue Course
                       </button>
                     </div>
                   </div>
@@ -530,30 +478,13 @@ const Courses = () => {
           ))}
         </div>
       )}
-
-      {tab === 'available' && (
-        <div className="grid-auto-cards">
-          {availableList.map((c, i) => (
-            <motion.div key={i} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.08 }}
-              className="card" style={{ overflow: 'hidden', cursor: 'pointer' }}>
-              <div style={{ height: '5px', background: c.color }} />
-              <div className="card-p">
-                <div style={{ fontSize: '2rem', marginBottom: '14px' }}>{c.emoji}</div>
-                <h3 style={{ fontSize: '1.05rem', marginBottom: '8px' }}>{c.title}</h3>
-                <span className="badge badge-primary" style={{ marginBottom: '16px', display: 'inline-flex' }}>{c.subject}</span>
-                <div className="divider" style={{ margin: '14px 0' }} />
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', display: 'flex', gap: '14px' }}>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Clock size={13} /> {c.duration}</span>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Users size={13} /> {c.students}/15</span>
-                  </div>
-                  <button className="btn btn-secondary" style={{ padding: '8px 16px', fontSize: '0.82rem' }}>
-                    Enquire <ChevronRight size={13} />
-                  </button>
-                </div>
-              </div>
-            </motion.div>
-          ))}
+      {toast && (
+        <div style={{
+          position: 'fixed', bottom: '24px', right: '24px', padding: '12px 24px',
+          background: 'rgba(239,83,80,0.95)', color: 'white', borderRadius: '8px',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.15)', zIndex: 1000, display: 'flex', alignItems: 'center', gap: '8px'
+        }}>
+          <span>⚠️ {toast}</span>
         </div>
       )}
     </motion.div>

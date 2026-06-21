@@ -1,0 +1,34 @@
+{
+  "challenges": [
+    {
+      "target": "Create a hyperlinked anchor tag pointing to google.com that opens in a new browser tab.",
+      "options": [
+        "<a href='https://google.com' target='_blank'>Google</a>",
+        "<a href='https://google.com' target='_self'>Google</a>",
+        "<link href='https://google.com'>Google</link>",
+        "<a src='https://google.com' target='new'>Google</a>"
+      ],
+      "correctIndex": 0
+    },
+    {
+      "target": "Create a division element with a solid 2px blue border and 10px of inner padding.",
+      "options": [
+        "<div style='border: 2px solid blue; padding: 10px;'>Content</div>",
+        "<div style='border: 2px solid blue; margin: 10px;'>Content</div>",
+        "<div style='outline: 2px solid blue; padding: 10px;'>Content</div>",
+        "<div border='2px solid blue' padding='10px'>Content</div>"
+      ],
+      "correctIndex": 0
+    },
+    {
+      "target": "Render an image with a width of 100px and alternative text reading 'Logo'.",
+      "options": [
+        "<img src='logo.png' width='100' alt='Logo' />",
+        "<img src='logo.png' size='100px' title='Logo' />",
+        "<image src='logo.png' width='100px'>Logo</image>",
+        "<img href='logo.png' width='100' alt='Logo' />"
+      ],
+      "correctIndex": 0
+    }
+  ]
+}

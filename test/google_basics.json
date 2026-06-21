@@ -1,0 +1,41 @@
+{
+  "title": "Google Workspace & CS Basics",
+  "subject": "Google Workspace",
+  "classGroup": "Class 10",
+  "totalMarks": 100,
+  "duration": 30,
+  "difficulty": "Easy",
+  "status": "Published",
+  "questions": [
+    {
+      "questionText": "Which of the following is Google's cloud-based spreadsheet application?",
+      "options": [
+        "Google Docs",
+        "Google Sheets",
+        "Google Slides",
+        "Google Drive"
+      ],
+      "correctAnswerIndex": 1
+    },
+    {
+      "questionText": "What was Google's original search engine index algorithm named?",
+      "options": [
+        "PageRank",
+        "WebCrawlers",
+        "AdSense",
+        "SearchRank"
+      ],
+      "correctAnswerIndex": 0
+    },
+    {
+      "questionText": "Who are the original founders of Google?",
+      "options": [
+        "Steve Jobs & Steve Wozniak",
+        "Bill Gates & Paul Allen",
+        "Larry Page & Sergey Brin",
+        "Mark Zuckerberg & Eduardo Saverin"
+      ],
+      "correctAnswerIndex": 2
+    }
+  ]
+}

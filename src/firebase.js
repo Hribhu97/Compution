@@ -1,6 +1,6 @@
 import { initializeApp } from "firebase/app";
 import { getAnalytics } from "firebase/analytics";
-import { getAuth, GoogleAuthProvider } from "firebase/auth";
+import { getAuth, GoogleAuthProvider, setPersistence, browserLocalPersistence } from "firebase/auth";
 import { getFirestore, collection, doc, getDoc, setDoc, updateDoc, getDocs, enableIndexedDbPersistence, runTransaction } from "firebase/firestore";
 
 export const firebaseConfig = {
@@ -16,6 +16,9 @@ export const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const analytics = getAnalytics(app);
 const auth = getAuth(app);
+setPersistence(auth, browserLocalPersistence).catch((err) => {
+  console.error("Auth persistence failed:", err);
+});
 const db = getFirestore(app);
 
 enableIndexedDbPersistence(db).catch((err) => {

@@ -1,0 +1,10 @@
+{
+  "shortcuts": [
+    { "action": "Open New Browser Tab", "keys": "Ctrl+T" },
+    { "action": "Reopen Last Closed Tab", "keys": "Ctrl+Shift+T" },
+    { "action": "Open Developer Console", "keys": "F12" },
+    { "action": "Copy Selected Content", "keys": "Ctrl+C" },
+    { "action": "Paste Copied Content", "keys": "Ctrl+V" },
+    { "action": "Select All Items", "keys": "Ctrl+A" }
+  ]
+}

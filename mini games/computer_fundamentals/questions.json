@@ -1,0 +1,29 @@
+{
+  "questions": [
+    {
+      "q": "Which Google-led operating system is based on the Linux kernel and designed primarily for touchscreen mobile devices?",
+      "options": ["Android", "ChromeOS", "Fuchsia", "Ubuntu"],
+      "a": "Android"
+    },
+    {
+      "q": "What port number does secure HTTPS web traffic typically run on?",
+      "options": ["80", "443", "21", "8080"],
+      "a": "443"
+    },
+    {
+      "q": "Which network protocol is responsible for resolving a domain name (like google.com) to an IP address?",
+      "options": ["HTTP", "DNS", "FTP", "DHCP"],
+      "a": "DNS"
+    },
+    {
+      "q": "What type of memory is volatile and loses its contents when the computer is powered off?",
+      "options": ["ROM", "RAM", "SSD", "Hard Drive"],
+      "a": "RAM"
+    },
+    {
+      "q": "What is Google Cloud's managed Kubernetes service called?",
+      "options": ["GKE", "EKS", "AKS", "App Engine"],
+      "a": "GKE"
+    }
+  ]
+}

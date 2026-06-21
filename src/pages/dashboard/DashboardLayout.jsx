@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
+import GuidedTour from '../../components/GuidedTour';
 import { motion, AnimatePresence } from 'framer-motion';
 import { signOut } from 'firebase/auth';
 import { auth, db } from '../../firebase';
@@ -9,7 +10,7 @@ import {
   LayoutDashboard, BookOpen, ClipboardList,
   FileText, Settings, LogOut, Search, Bell,
   CalendarCheck, Calendar, MessageSquare, User, Sparkles, ShieldAlert, Loader2,
-  Video
+  Video, Gamepad2
 } from 'lucide-react';
 
 const ADMISSION_SUBJECTS = [
@@ -49,6 +50,7 @@ const NAV_MAIN = [
   { to: '/dashboard/courses', label: 'Course', icon: BookOpen },
   { to: '/dashboard/schedule', label: 'Schedule', icon: Calendar },
   { to: '/dashboard/tests', label: 'Tests', icon: ClipboardList },
+  { to: '/dashboard/mini-games', label: 'Mini Games', icon: Gamepad2 },
   { to: '/dashboard/attendance', label: 'Attendance', icon: CalendarCheck },
   { to: '/dashboard/assignments', label: 'Assignments', icon: FileText },
   { to: '/dashboard/community', label: 'Community', icon: MessageSquare },
@@ -57,6 +59,33 @@ const NAV_MAIN = [
 const DashboardLayout = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const [tourCompleted, setTourCompleted] = useState(true);
+
+  // Subscribe to tour preferences
+  useEffect(() => {
+    if (!user?.uid) return;
+
+    if (!db) {
+      console.error("DashboardLayout: Firestore not initialized");
+      return;
+    }
+
+    let unsub = () => {};
+    try {
+      unsub = onSnapshot(doc(db, 'userPreferences', user.uid), (docSnap) => {
+        if (docSnap.exists()) {
+          setTourCompleted(!!docSnap.data().tourCompleted);
+        } else {
+          setTourCompleted(false);
+        }
+      }, (err) => {
+        console.error("DashboardLayout: tour preferences listener error:", err);
+      });
+    } catch (err) {
+      console.error("DashboardLayout: tour preferences listener creation failed", err);
+    }
+    return () => unsub();
+  }, [user?.uid]);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [hasUnread, setHasUnread] = useState(false);
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
@@ -161,10 +190,23 @@ const DashboardLayout = () => {
 
   useEffect(() => {
     if (!user?.uid) return;
-    const notifRef = query(collection(db, `users/${user.uid}/notifications`), orderBy('createdAt', 'desc'), limit(10));
-    const unsub = onSnapshot(notifRef, (snap) => {
-      setHasUnread(!snap.empty);
-    });
+
+    if (!db) {
+      console.error("DashboardLayout: Firestore not initialized");
+      return;
+    }
+
+    let unsub = () => {};
+    try {
+      const notifRef = query(collection(db, `users/${user.uid}/notifications`), orderBy('createdAt', 'desc'), limit(10));
+      unsub = onSnapshot(notifRef, (snap) => {
+        setHasUnread(!snap.empty);
+      }, (err) => {
+        console.error("DashboardLayout: notifications listener error:", err);
+      });
+    } catch (err) {
+      console.error("DashboardLayout: notifications listener creation failed", err);
+    }
     return () => unsub();
   }, [user?.uid]);
 
@@ -332,6 +374,19 @@ const DashboardLayout = () => {
     { to: '/dashboard/community', label: 'Chat', icon: MessageSquare },
   ];
 
+
+  const getTourId = (to) => {
+    if (to === '/dashboard') return 'tour-dashboard-anchor';
+    if (to === '/dashboard/courses') return 'tour-nav-courses';
+    if (to === '/dashboard/schedule') return 'tour-nav-schedule';
+    if (to === '/dashboard/tests') return 'tour-nav-tests';
+    if (to === '/dashboard/mini-games') return 'tour-nav-minigames';
+    if (to === '/dashboard/attendance') return 'tour-nav-attendance';
+    if (to === '/dashboard/assignments') return 'tour-nav-assignments';
+    if (to === '/dashboard/community') return 'tour-nav-community';
+    return undefined;
+  };
+
   return (
     <div className="dash-shell" style={{ transition: 'background-color 0.3s ease' }}>
       <aside className="dash-sidebar-panel hide-mobile">
@@ -459,7 +514,7 @@ const DashboardLayout = () => {
         <header className="dash-header-bar">
           <div className="dash-welcome" style={{ 
             fontWeight: 600, 
-            color: isDarkMode ? '#F1F5F9' : 'var(--dark)', 
+            color: 'var(--text-primary)', 
             fontSize: '1.05rem', 
             marginRight: '16px',
             transition: 'color 0.3s ease'
@@ -473,7 +528,7 @@ const DashboardLayout = () => {
               left: '16px', 
               top: '50%', 
               transform: 'translateY(-50%)', 
-              color: isDarkMode ? '#94A3B8' : 'var(--text-muted)',
+              color: 'var(--text-secondary)',
               transition: 'color 0.3s ease'
             }} />
             <input
@@ -483,10 +538,10 @@ const DashboardLayout = () => {
                 padding: '13px 16px 13px 46px', 
                 borderRadius: '100px', 
                 border: isDarkMode ? '1.5px solid rgba(255,255,255,0.08)' : '1.5px solid rgba(83,109,254,0.2)',
-                background: isDarkMode ? '#151F32' : 'white', 
+                background: 'var(--surface-card)', 
                 fontSize: '0.9rem', 
                 outline: 'none', 
-                color: isDarkMode ? '#F1F5F9' : 'var(--dark)', 
+                color: 'var(--text-primary)', 
                 transition: 'all 0.3s ease',
               }}
               onFocus={(e) => {
@@ -503,7 +558,7 @@ const DashboardLayout = () => {
           <div className="dash-header-actions" style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '16px' }}>
             <button style={{ 
               position: 'relative', 
-              color: isDarkMode ? '#94A3B8' : 'var(--text-muted)', 
+              color: 'var(--text-secondary)', 
               padding: '8px',
               transition: 'color 0.3s ease'
             }}>
@@ -529,12 +584,12 @@ const DashboardLayout = () => {
                   alignItems: 'center', 
                   gap: '10px', 
                   cursor: 'pointer', 
-                  background: isDarkMode ? '#151F32' : 'white', 
+                  background: 'var(--surface-card)', 
                   padding: '6px 16px 6px 6px', 
                   borderRadius: '100px',
                   border: isDarkMode ? '1px solid rgba(255,255,255,0.08)' : '1px solid transparent',
                   boxShadow: isDarkMode ? 'none' : '0 2px 8px rgba(0,0,0,0.04)',
-                  color: isDarkMode ? '#F1F5F9' : 'var(--dark)',
+                  color: 'var(--text-primary)',
                   transition: 'all 0.3s ease'
                 }}>
                 {user?.photoURL ? (
@@ -558,13 +613,13 @@ const DashboardLayout = () => {
                     exit={{ opacity: 0, y: 10, scale: 0.95 }}
                     style={{
                       position: 'absolute', top: 'calc(100% + 8px)', right: 0, width: '200px',
-                      background: isDarkMode ? '#151F32' : 'white', 
+                      background: 'var(--surface-card)', 
                       borderRadius: '16px', 
                       boxShadow: isDarkMode ? '0 8px 32px rgba(0,0,0,0.24)' : '0 8px 24px rgba(0,0,0,0.08)',
-                      border: isDarkMode ? '1px solid rgba(255,255,255,0.08)' : '1px solid var(--border)',
+                      border: '1px solid var(--border)',
                       padding: '8px', 
                       zIndex: 100,
-                      color: isDarkMode ? '#F1F5F9' : 'var(--dark)',
+                      color: 'var(--text-primary)',
                       transition: 'background-color 0.3s ease, color 0.3s ease'
                     }}
                   >
@@ -618,8 +673,8 @@ const DashboardLayout = () => {
         className="dash-bottom-nav hide-desktop hide-desktop--flex" 
         aria-label="Mobile navigation"
         style={{
-          background: isDarkMode ? '#151F32' : 'white',
-          borderTop: isDarkMode ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid var(--border)',
+          background: 'var(--surface-card)',
+          borderTop: '1px solid var(--border)',
           boxShadow: isDarkMode ? '0 -4px 20px rgba(0, 0, 0, 0.25)' : '0 -4px 20px rgba(0, 0, 0, 0.06)',
           transition: 'all 0.3s ease'
         }}
@@ -632,7 +687,7 @@ const DashboardLayout = () => {
             style={({ isActive }) => ({
               color: isActive 
                 ? (isDarkMode ? '#00E5FF' : 'var(--primary)') 
-                : (isDarkMode ? '#94A3B8' : 'var(--text-muted)'),
+                : ('var(--text-secondary)'),
               background: isActive 
                 ? (isDarkMode ? 'rgba(0, 229, 255, 0.1)' : 'var(--primary-light)') 
                 : 'transparent',
@@ -657,7 +712,7 @@ const DashboardLayout = () => {
               gap: '4px',
               padding: '8px 4px',
               borderRadius: 'var(--radius-sm)',
-              color: isDarkMode ? '#94A3B8' : 'var(--text-muted)',
+              color: 'var(--text-secondary)',
               fontSize: '0.65rem',
               fontWeight: 600,
               minWidth: 0,
@@ -934,6 +989,9 @@ const DashboardLayout = () => {
           </motion.div>
         )}
       </AnimatePresence>
+      {!tourCompleted && user?.uid && (
+        <GuidedTour userId={user.uid} role={user.role} onComplete={() => setTourCompleted(true)} />
+      )}
     </div>
   );
 };

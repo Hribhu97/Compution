@@ -53,32 +53,39 @@ class FirestoreQueryManager {
       const subscribers = new Set();
       subscribers.add(callback);
 
-      // Start the actual Firestore listener
-      const unsubscribe = onSnapshot(queryRef, (snapshot) => {
-        let result;
-        if (snapshot.forEach && typeof snapshot.forEach === 'function') {
-          result = [];
-          snapshot.forEach((doc) => {
-            result.push({ id: doc.id, ...doc.data() });
-          });
-        } else {
-          result = snapshot.exists() ? { id: snapshot.id, ...snapshot.data() } : null;
-        }
-        
-        // Cache the result
-        this.queryCache.set(key, result);
-
-        // Notify all subscribers
-        subscribers.forEach((sub) => {
-          try {
-            sub(result, snapshot);
-          } catch (e) {
-            console.error('Subscriber callback failed:', e);
+      let unsubscribe = () => {};
+      try {
+        // Start the actual Firestore listener
+        unsubscribe = onSnapshot(queryRef, (snapshot) => {
+          let result;
+          if (snapshot.forEach && typeof snapshot.forEach === 'function') {
+            result = [];
+            snapshot.forEach((doc) => {
+              result.push({ id: doc.id, ...doc.data() });
+            });
+          } else {
+            result = snapshot.exists() ? { id: snapshot.id, ...snapshot.data() } : null;
           }
+          
+          // Cache the result
+          this.queryCache.set(key, result);
+
+          // Notify all subscribers
+          subscribers.forEach((sub) => {
+            try {
+              sub(result, snapshot);
+            } catch (e) {
+              console.error('Subscriber callback failed:', e);
+            }
+          });
+        }, (error) => {
+          console.error("FirestoreQueryManager: Error in onSnapshot listener", error);
+          if (errorCallback) errorCallback(error);
         });
-      }, (error) => {
-        if (errorCallback) errorCallback(error);
-      });
+      } catch (err) {
+        console.error("FirestoreQueryManager: Failed to initialize onSnapshot listener", err);
+        if (errorCallback) errorCallback(err);
+      }
 
       activeListener = { unsubscribe, subscribers };
       this.listeners.set(key, activeListener);

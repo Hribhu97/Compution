@@ -95,6 +95,19 @@ const Profile = () => {
   const [toast, setToast] = useState(null);
   const [saving, setSaving] = useState(false);
 
+  const handleResetTour = async () => {
+    try {
+      await setDoc(doc(db, 'userPreferences', user.uid), { tourCompleted: false }, { merge: true });
+      triggerToast('Walkthrough reset! Redirecting to Dashboard...');
+      setTimeout(() => {
+        window.location.href = '/dashboard';
+      }, 1200);
+    } catch (err) {
+      console.error("Error resetting tour:", err);
+      triggerToast('Failed to reset onboarding tour.');
+    }
+  };
+
   // Card Editing States
   const [editStates, setEditStates] = useState({
     personal: false,
@@ -538,6 +551,29 @@ const Profile = () => {
                 </button>
               </form>
             )}
+          </div>
+
+          {/* ONBOARDING TOUR CARD */}
+          <div id="tour-settings-section" className="card card-p transition-card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+              <div style={{
+                width: 40, height: 40, borderRadius: '50%', background: 'rgba(83,109,254,0.06)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--primary)'
+              }}>
+                <Compass size={18} />
+              </div>
+              <div>
+                <h3 style={{ fontSize: '1rem', fontWeight: 800 }}>Onboarding Tutorial</h3>
+                <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '2px' }}>Restart the guided tour to walk through key dashboard features.</p>
+              </div>
+            </div>
+            <button
+              onClick={handleResetTour}
+              className="btn btn-secondary"
+              style={{ padding: '8px 16px', fontSize: '0.85rem', borderRadius: '8px' }}
+            >
+              Show Tour Again
+            </button>
           </div>
 
           {/* NOTIFICATIONS CARD */}

@@ -20,22 +20,44 @@ const AdminStudentGrid = () => {
   const [tempProgress, setTempProgress] = useState(35);
   const [updatingProgress, setUpdatingProgress] = useState(false);
 
+  const [toast, setToast] = useState('');
+  const triggerToast = (msg) => {
+    setToast(msg);
+    setTimeout(() => setToast(''), 3000);
+  };
+
   useEffect(() => {
-    // Fetch all students
-    const usersRef = collection(db, 'users');
-    // Using onSnapshot without where('role', '==', 'student') to avoid needing a composite index immediately if not set. 
-    // We filter client-side since this is a small-scale app right now.
-    const unsub = onSnapshot(usersRef, (snap) => {
-      const data = [];
-      snap.forEach(doc => {
-        const d = doc.data();
-        if (d.role !== 'admin') {
-          data.push({ id: doc.id, ...d });
-        }
+    if (!db) {
+      console.error("AdminStudentGrid: Firestore not initialized");
+      triggerToast("Firestore not initialized");
+      return;
+    }
+
+    let unsub = () => {};
+    try {
+      // Fetch all students
+      const usersRef = collection(db, 'users');
+      // Using onSnapshot without where('role', '==', 'student') to avoid needing a composite index immediately if not set. 
+      // We filter client-side since this is a small-scale app right now.
+      unsub = onSnapshot(usersRef, (snap) => {
+        const data = [];
+        snap.forEach(doc => {
+          const d = doc.data();
+          if (d.role !== 'admin') {
+            data.push({ id: doc.id, ...d });
+          }
+        });
+        setStudents(data);
+        setLoading(false);
+      }, (error) => {
+        console.error("AdminStudentGrid: Error fetching students list", error);
+        setLoading(false);
       });
-      setStudents(data);
+    } catch (err) {
+      console.error("AdminStudentGrid: Failed to setup users listener", err);
+      triggerToast("Failed to connect to students roster");
       setLoading(false);
-    });
+    }
 
     return () => unsub();
   }, []);
@@ -305,6 +327,15 @@ const AdminStudentGrid = () => {
           </div>
         )}
       </Modal>
+      {toast && (
+        <div style={{
+          position: 'fixed', bottom: '24px', right: '24px', padding: '12px 24px',
+          background: 'rgba(239,83,80,0.95)', color: 'white', borderRadius: '8px',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.15)', zIndex: 1000, display: 'flex', alignItems: 'center', gap: '8px'
+        }}>
+          <span>⚠️ {toast}</span>
+        </div>
+      )}
     </div>
   );
 };

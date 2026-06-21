@@ -194,6 +194,12 @@ const ChatAssistant = () => {
     return false;
   };
 
+  const [toast, setToast] = useState('');
+  const triggerToast = (msg) => {
+    setToast(msg);
+    setTimeout(() => setToast(''), 3000);
+  };
+
   const showTyping = isTyping || isLastMsgProcessing();
 
   useEffect(() => {
@@ -201,12 +207,28 @@ const ChatAssistant = () => {
       setMessages([]);
       return;
     }
-    const chatRef = query(collection(db, `users/${user.uid}/chatHistory`), orderBy('createdAt', 'asc'));
-    const unsub = onSnapshot(chatRef, (snap) => {
-      const data = [];
-      snap.forEach(doc => data.push({ id: doc.id, ...doc.data() }));
-      setMessages(data);
-    });
+
+    if (!db) {
+      console.error("ChatAssistant: Firestore not initialized");
+      triggerToast("Firestore not initialized");
+      return;
+    }
+
+    let unsub = () => {};
+    try {
+      const chatRef = query(collection(db, `users/${user.uid}/chatHistory`), orderBy('createdAt', 'asc'));
+      unsub = onSnapshot(chatRef, (snap) => {
+        const data = [];
+        snap.forEach(doc => data.push({ id: doc.id, ...doc.data() }));
+        setMessages(data);
+      }, (error) => {
+        console.error("ChatAssistant: Error fetching chat history", error);
+      });
+    } catch (err) {
+      console.error("ChatAssistant: Failed to setup chat listener", err);
+      triggerToast("Failed to connect to chat assistant");
+    }
+
     return () => unsub();
   }, [user]);
 
@@ -420,6 +442,15 @@ const ChatAssistant = () => {
           </>
         )}
       </AnimatePresence>
+      {toast && (
+        <div style={{
+          position: 'fixed', bottom: '24px', right: '24px', padding: '12px 24px',
+          background: 'rgba(239,83,80,0.95)', color: 'white', borderRadius: '8px',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.15)', zIndex: 1000, display: 'flex', alignItems: 'center', gap: '8px'
+        }}>
+          <span>⚠️ {toast}</span>
+        </div>
+      )}
     </>
   );
 };

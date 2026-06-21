@@ -1,0 +1,10 @@
+{
+  "challenges": [
+    { "decimal": 5, "binary": "0101" },
+    { "decimal": 13, "binary": "1101" },
+    { "decimal": 9, "binary": "1001" },
+    { "decimal": 15, "binary": "1111" },
+    { "decimal": 10, "binary": "1010" },
+    { "decimal": 6, "binary": "0110" }
+  ]
+}

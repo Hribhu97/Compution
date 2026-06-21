@@ -105,13 +105,27 @@ const Community = () => {
   useEffect(() => {
     if (!user || activeTab !== 'board') return;
     
-    const commRef = query(collection(db, 'community'), orderBy('createdAt', 'desc'));
-    const unsub = onSnapshot(commRef, (snap) => {
-      const data = [];
-      snap.forEach(doc => data.push({ id: doc.id, ...doc.data() }));
-      setPosts(data);
+    if (!db) {
+      console.error("Community: Firestore not initialized");
+      return;
+    }
+
+    let unsub = () => {};
+    try {
+      const commRef = query(collection(db, 'community'), orderBy('createdAt', 'desc'));
+      unsub = onSnapshot(commRef, (snap) => {
+        const data = [];
+        snap.forEach(doc => data.push({ id: doc.id, ...doc.data() }));
+        setPosts(data);
+        setPostsLoading(false);
+      }, (err) => {
+        console.error("Community: posts board listener error:", err);
+        setPostsLoading(false);
+      });
+    } catch (err) {
+      console.error("Community: posts board listener creation failed", err);
       setPostsLoading(false);
-    });
+    }
 
     return () => unsub();
   }, [user, activeTab]);
@@ -120,75 +134,90 @@ const Community = () => {
   useEffect(() => {
     if (!user || activeTab !== 'chat') return;
 
+    if (!db) {
+      console.error("Community: Firestore not initialized");
+      return;
+    }
+
+    let unsubUsers = () => {};
+    let unsubRooms = () => {};
+
     // Fetch all users to find potential chat partners based on assignment & fallbacks
-    const usersRef = collection(db, 'users');
-    const unsubUsers = onSnapshot(usersRef, (snap) => {
-      const allUsers = [];
-      snap.forEach(doc => {
-        allUsers.push({ id: doc.id, ...doc.data() });
-      });
-
-      if (isStudent) {
-        // Students can only message assigned faculty
-        const assigned = user.assignedFaculty || [];
-        let matchingFaculty = allUsers.filter(u => 
-          u.role?.toLowerCase() === 'faculty' && (assigned.includes(u.id) || assigned.includes(u.email))
-        );
-
-        // Fallback matchmaking if not assigned
-        if (matchingFaculty.length === 0) {
-          const course = user.course || 'Python Mastery';
-          if (course.toLowerCase().includes('python') || course.toLowerCase().includes('basic computer') || course.toLowerCase().includes('class 11') || course.toLowerCase().includes('class 12') || course.toLowerCase().includes('tally') || course.toLowerCase().includes('excel')) {
-            const sharmistha = allUsers.find(u => u.email === 'sharmisthaghosh855@gmail.com');
-            if (sharmistha) matchingFaculty = [sharmistha];
-          } else {
-            const hribhu = allUsers.find(u => u.email === 'tapadarhribhu350@gmail.com');
-            if (hribhu) matchingFaculty = [hribhu];
-          }
-        }
-        setChatUsers(matchingFaculty);
-      } else if (isFaculty) {
-        // Faculty can only message assigned students
-        const facultyEmail = user.email?.toLowerCase();
-        const facultyId = user.uid;
-
-        const matchingStudents = allUsers.filter(u => {
-          if (u.role?.toLowerCase() !== 'student') return false;
-          
-          const assigned = u.assignedFaculty || [];
-          if (assigned.includes(facultyId) || assigned.includes(facultyEmail)) return true;
-
-          // Course fallback match (if student doesn't have assigned faculty array)
-          if (assigned.length === 0) {
-            const course = u.course || '';
-            const isPythonClass = course.toLowerCase().includes('python') || course.toLowerCase().includes('basic computer') || course.toLowerCase().includes('class 11') || course.toLowerCase().includes('class 12') || course.toLowerCase().includes('tally') || course.toLowerCase().includes('excel');
-            if (facultyEmail === 'sharmisthaghosh855@gmail.com' && isPythonClass) return true;
-            if (facultyEmail === 'tapadarhribhu350@gmail.com' && !isPythonClass) return true;
-          }
-          return false;
+    try {
+      const usersRef = collection(db, 'users');
+      unsubUsers = onSnapshot(usersRef, (snap) => {
+        const allUsers = [];
+        snap.forEach(doc => {
+          allUsers.push({ id: doc.id, ...doc.data() });
         });
-        setChatUsers(matchingStudents);
-      } else if (isAdmin || isMember) {
-        // Admin & Member can chat with anyone (all students + faculty)
-        const chatPartners = allUsers.filter(u => u.id !== user.uid);
-        setChatUsers(chatPartners);
-      }
-    });
+
+        if (isStudent) {
+          // Students can message assigned faculty
+          const assigned = user.assignedFaculty || [];
+          let matchingFaculty = allUsers.filter(u => 
+            u.role?.toLowerCase() === 'faculty' && (assigned.includes(u.id) || assigned.includes(u.email))
+          );
+          // Fallback matchmaking if not assigned
+          if (matchingFaculty.length === 0) {
+            const course = user.course || '';
+            const isPythonClass = course.toLowerCase().includes('python') || course.toLowerCase().includes('basic computer') || course.toLowerCase().includes('class 11') || course.toLowerCase().includes('class 12') || course.toLowerCase().includes('tally') || course.toLowerCase().includes('excel');
+            matchingFaculty = allUsers.filter(u => {
+              if (u.role?.toLowerCase() !== 'faculty') return false;
+              if (u.email === 'sharmisthaghosh855@gmail.com' && isPythonClass) return true;
+              if (u.email === 'tapadarhribhu350@gmail.com' && !isPythonClass) return true;
+              return false;
+            });
+          }
+          setChatUsers(matchingFaculty);
+        } else if (isFaculty) {
+          // Faculty can message assigned students
+          const facultyEmail = user.email?.toLowerCase();
+          const facultyId = user.uid;
+          const matchingStudents = allUsers.filter(u => {
+            if (u.role?.toLowerCase() !== 'student') return false;
+            const assigned = u.assignedFaculty || [];
+            if (assigned.includes(facultyId) || assigned.includes(facultyEmail)) return true;
+            if (assigned.length === 0) {
+              const course = u.course || '';
+              const isPythonClass = course.toLowerCase().includes('python') || course.toLowerCase().includes('basic computer') || course.toLowerCase().includes('class 11') || course.toLowerCase().includes('class 12') || course.toLowerCase().includes('tally') || course.toLowerCase().includes('excel');
+              if (facultyEmail === 'sharmisthaghosh855@gmail.com' && isPythonClass) return true;
+              if (facultyEmail === 'tapadarhribhu350@gmail.com' && !isPythonClass) return true;
+            }
+            return false;
+          });
+          setChatUsers(matchingStudents);
+        } else if (isAdmin || isMember) {
+          // Admin & Member can chat with anyone
+          const chatPartners = allUsers.filter(u => u.id !== user.uid);
+          setChatUsers(chatPartners);
+        }
+      }, (err) => {
+        console.error("Community: users list listener error:", err);
+      });
+    } catch (err) {
+      console.error("Community: users list listener creation failed", err);
+    }
 
     // Fetch active chat rooms
-    const roomsQuery = query(
-      collection(db, 'communityThreads'),
-      where('participants', 'array-contains', user.uid)
-    );
+    try {
+      const roomsQuery = query(
+        collection(db, 'communityThreads'),
+        where('participants', 'array-contains', user.uid)
+      );
 
-    const unsubRooms = onSnapshot(roomsQuery, (snap) => {
-      const roomList = [];
-      snap.forEach(doc => {
-        roomList.push({ id: doc.id, ...doc.data() });
+      unsubRooms = onSnapshot(roomsQuery, (snap) => {
+        const roomList = [];
+        snap.forEach(doc => {
+          roomList.push({ id: doc.id, ...doc.data() });
+        });
+        roomList.sort((a, b) => (b.lastMessageTime?.seconds || 0) - (a.lastMessageTime?.seconds || 0));
+        setRooms(roomList);
+      }, (err) => {
+        console.error("Community: active rooms listener error:", err);
       });
-      roomList.sort((a, b) => (b.lastMessageTime?.seconds || 0) - (a.lastMessageTime?.seconds || 0));
-      setRooms(roomList);
-    });
+    } catch (err) {
+      console.error("Community: active rooms listener creation failed", err);
+    }
 
     return () => {
       unsubUsers();
@@ -202,35 +231,58 @@ const Community = () => {
       setMessages([]);
       return;
     }
+
+    if (!db) {
+      console.error("Community: Firestore not initialized");
+      return;
+    }
+
     setMessagesLoading(true);
 
-    const msgQuery = query(
-      collection(db, `communityThreads/${activeRoom.id}/messages`),
-      orderBy('timestamp', 'asc')
-    );
+    let unsubMsg = () => {};
+    let unsubRoom = () => {};
 
-    const unsubMsg = onSnapshot(msgQuery, (snap) => {
-      const list = [];
-      snap.forEach(doc => {
-        list.push({ id: doc.id, ...doc.data() });
+    try {
+      const msgQuery = query(
+        collection(db, `communityThreads/${activeRoom.id}/messages`),
+        orderBy('timestamp', 'asc')
+      );
+
+      unsubMsg = onSnapshot(msgQuery, (snap) => {
+        const list = [];
+        snap.forEach(doc => {
+          list.push({ id: doc.id, ...doc.data() });
+        });
+        setMessages(list);
+        setMessagesLoading(false);
+
+        // Scroll to bottom on load/new message
+        setTimeout(scrollToBottom, 100);
+
+        // Mark messages as seen/read
+        markMessagesAsRead(activeRoom.id);
+      }, (err) => {
+        console.error("Community: messages list listener error:", err);
+        setMessagesLoading(false);
       });
-      setMessages(list);
+    } catch (err) {
+      console.error("Community: messages list listener creation failed", err);
       setMessagesLoading(false);
-
-      // Scroll to bottom on load/new message
-      setTimeout(scrollToBottom, 100);
-
-      // Mark messages as seen/read
-      markMessagesAsRead(activeRoom.id);
-    });
+    }
 
     // Listen to typing status
-    const unsubRoom = onSnapshot(doc(db, 'communityThreads', activeRoom.id), (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        setTypingUsers(data.typing || {});
-      }
-    });
+    try {
+      unsubRoom = onSnapshot(doc(db, 'communityThreads', activeRoom.id), (docSnap) => {
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          setTypingUsers(data.typing || {});
+        }
+      }, (err) => {
+        console.error("Community: typing status listener error:", err);
+      });
+    } catch (err) {
+      console.error("Community: typing status listener creation failed", err);
+    }
 
     return () => {
       unsubMsg();
@@ -843,7 +895,7 @@ const Community = () => {
                           if (userId !== user.uid && typingVal) {
                             return (
                               <div key={userId} style={{ display: 'flex', justifyContent: 'flex-start', padding: '4px' }}>
-                                <div style={{ display: 'flex', gap: '4px', padding: '8px 12px', borderRadius: '12px', background: isDarkMode ? '#1E2D4A' : '#E2E8F0', color: isDarkMode ? '#94A3B8' : 'var(--text-muted)', fontSize: '0.75rem', fontWeight: 600 }}>
+                                <div style={{ display: 'flex', gap: '4px', padding: '8px 12px', borderRadius: '12px', background: isDarkMode ? '#1E2D4A' : '#E2E8F0', color: 'var(--text-secondary)', fontSize: '0.75rem', fontWeight: 600 }}>
                                   <span>{activeRoom.displayName} is typing</span>
                                   <motion.span animate={{ opacity: [0, 1, 0] }} transition={{ repeat: Infinity, duration: 1 }}>.</motion.span>
                                   <motion.span animate={{ opacity: [0, 1, 0] }} transition={{ repeat: Infinity, duration: 1, delay: 0.2 }}>.</motion.span>
@@ -861,7 +913,7 @@ const Community = () => {
 
                   {/* Attachment Preview panel */}
                   {attachment && (
-                    <div style={{ padding: '8px 24px', background: isDarkMode ? '#1E2D4A' : '#F1F5F9', borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+                    <div style={{ padding: '8px 24px', background: 'var(--surface-secondary)', borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         {attachment.type === 'image' ? <Image size={18} style={{ color: 'var(--primary)' }} /> : <FileText size={18} style={{ color: 'var(--danger)' }} />}
                         <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--dark)' }}>{attachment.name}</span>

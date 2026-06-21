@@ -5,10 +5,13 @@ import {
   BookOpen, Terminal, Code, Trophy, Users, Clock,
   ArrowRight, CheckCircle, Star, ChevronRight,
   Zap, Target, TrendingUp, Award, MapPin, Phone, Mail,
-  Menu, X, Loader2, Sun, Moon
+  Menu, X, Loader2, Sun, Moon, Play
 } from 'lucide-react';
 import Modal from '../../components/Modal';
+import LeadCaptureSystem from '../../components/LeadCaptureSystem';
 import { useAuth } from '../../contexts/AuthContext';
+import { collection, onSnapshot } from 'firebase/firestore';
+import { db } from '../../firebase';
 
 /* ── FADE IN VARIANTS ─────────────────────────────── */
 const fadeUp = {
@@ -65,8 +68,9 @@ const AdmissionApplicationModal = ({ isOpen, onClose, triggerToast, initialSubje
         const text = `Hello, I would like to apply for admission.%0AName: ${form.name}%0AContact: ${form.contact}%0ASubject: ${form.subject}`;
         triggerToast("Opening WhatsApp to complete your application...");
         window.open(`https://wa.me/919674035542?text=${text}`, '_blank');
+        window.open(`https://wa.me/916290935898?text=${text}`, '_blank');
         onClose();
-        setForm({ name: '', contact: '', subject: 'Class 11 CS' });
+        setForm({ name: '', contact: '', subject: 'Basic+AI (Prompt Engn)' });
         setStatus('idle');
       }, 1000);
     }, 1500);
@@ -230,10 +234,9 @@ const AdmissionApplicationModal = ({ isOpen, onClose, triggerToast, initialSubje
 /* ── NAVBAR ────────────────────────────────────────── */
 const NAV_LINKS = [
   { label: 'Courses', href: '#courses' },
-  { label: 'Faculty', href: '#about' },
-  { label: 'Meet Our Team', to: '/staff' },
+  { label: 'Faculty & Team', to: '/staff' },
   { label: 'Our Stories', href: '#stories' },
-  { label: 'Contact', href: '#stories' },
+  { label: 'Contact', href: '#contact' },
 ];
 
 const Navbar = ({ onOpenAdmission, isDarkMode, toggleTheme }) => {
@@ -732,16 +735,173 @@ const LearningJourney = () => {
   );
 };
 
-/* ── TESTIMONIALS ──────────────────────────────────── */
-const Testimonials = () => {
+/* ── STUDENT STORIES ────────────────────────────────── */
+const VideoPlayer = ({ src, duration, name }) => {
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [hasError, setHasError] = useState(false);
+  const videoRef = React.useRef(null);
+
+  const handlePlayClick = (e) => {
+    e.stopPropagation();
+    if (!videoRef.current) return;
+    if (isPlaying) {
+      videoRef.current.pause();
+      setIsPlaying(false);
+    } else {
+      videoRef.current.play().then(() => {
+        setIsPlaying(true);
+        setHasError(false);
+      }).catch((err) => {
+        console.warn("Video play failed or file not found:", err);
+        setHasError(true);
+      });
+    }
+  };
+
+  const handleVideoError = () => {
+    setHasError(true);
+  };
+
+  return (
+    <div style={{
+      position: 'relative',
+      width: '100%',
+      aspectRatio: '16/9',
+      background: 'linear-gradient(135deg, #1e1e38 0%, #0c0c1e 100%)',
+      borderRadius: '12px',
+      overflow: 'hidden',
+      boxShadow: 'inset 0 0 40px rgba(0,0,0,0.6), 0 8px 24px rgba(0,0,0,0.12)',
+      border: '1px solid rgba(255,255,255,0.08)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: '16px'
+    }}>
+      <video
+        ref={videoRef}
+        src={src}
+        onError={handleVideoError}
+        onClick={handlePlayClick}
+        style={{
+          width: '100%',
+          height: '100%',
+          objectFit: 'cover',
+          display: isPlaying && !hasError ? 'block' : 'none'
+        }}
+        controls={isPlaying && !hasError}
+      />
+
+      {(!isPlaying || hasError) && (
+        <div 
+          onClick={handlePlayClick}
+          style={{
+            position: 'absolute',
+            top: 0, left: 0, right: 0, bottom: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'space-between',
+            padding: '16px',
+            cursor: 'pointer',
+            background: 'radial-gradient(circle at center, rgba(30,30,60,0.25) 0%, rgba(10,10,25,0.75) 100%)',
+            zIndex: 2
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
+            <span style={{
+              fontSize: '0.65rem',
+              fontWeight: 700,
+              textTransform: 'uppercase',
+              letterSpacing: '1px',
+              color: 'rgba(255,255,255,0.6)',
+              background: 'rgba(255,255,255,0.08)',
+              padding: '4px 8px',
+              borderRadius: '100px',
+              backdropFilter: 'blur(4px)'
+            }}>
+              Student Story
+            </span>
+            <span style={{
+              fontSize: '0.7rem',
+              fontWeight: 700,
+              color: 'white',
+              background: 'rgba(0,0,0,0.6)',
+              padding: '3px 8px',
+              borderRadius: '6px'
+            }}>
+              ⏱️ {duration}
+            </span>
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', flex: 1 }}>
+            <motion.div
+              whileHover={{ scale: 1.12 }}
+              whileTap={{ scale: 0.95 }}
+              style={{
+                width: 48, height: 48,
+                borderRadius: '50%',
+                background: 'rgba(255, 255, 255, 0.15)',
+                backdropFilter: 'blur(12px)',
+                border: '1px solid rgba(255, 255, 255, 0.3)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
+                color: 'white'
+              }}
+            >
+              <Play size={20} fill="white" style={{ marginLeft: 2 }} />
+            </motion.div>
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+            <span style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.8)', fontWeight: 600 }}>
+              Watch {name.split(' ')[0]}'s Experience
+            </span>
+            {hasError && (
+              <span style={{ fontSize: '0.65rem', color: '#ff6b6b', fontWeight: 600, background: 'rgba(255,0,0,0.15)', padding: '2px 8px', borderRadius: '4px' }}>
+                Video Pending
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const StudentStories = () => {
   const students = [
-    { name: 'Ritika Sharma', batch: 'Class XII CS, 2024', score: '98/100 in CS Board', quote: 'Compution taught me how to actually think through problems. I scored 98 in my board CS paper — something I never thought was possible.', avatar: 'RS' },
-    { name: 'Aditya Bose', batch: 'Python + DSA, 2024', score: 'SWE Intern at Startup', quote: 'Within 4 months, I went from not knowing arrays to cracking a startup internship interview. The DSA track was a game changer.', avatar: 'AB' },
-    { name: 'Priya Mukherjee', batch: 'BCA Semester Support', score: 'Topped her semester', quote: 'University C++ concepts felt impossible until I joined Compution. Cleared all papers with distinction.', avatar: 'PM' },
+    { 
+      name: 'Ritika Sharma', 
+      batch: 'Class XII CS, 2024', 
+      score: '98/100 in CS Board', 
+      quote: 'Compution taught me how to actually think through problems. I scored 98 in my board CS paper — something I never thought was possible.', 
+      avatar: 'RS',
+      videoUrl: '/student stories/story1.mp4',
+      duration: '1:45 mins'
+    },
+    { 
+      name: 'Aditya Bose', 
+      batch: 'Python + DSA, 2024', 
+      score: 'SWE Intern at Startup', 
+      quote: 'Within 4 months, I went from not knowing arrays to cracking a startup internship interview. The DSA track was a game changer.', 
+      avatar: 'AB',
+      videoUrl: '/student stories/story2.mp4',
+      duration: '1:20 mins'
+    },
+    { 
+      name: 'Priya Mukherjee', 
+      batch: 'BCA Semester Support', 
+      score: 'Topped her semester', 
+      quote: 'University C++ concepts felt impossible until I joined Compution. Cleared all papers with distinction.', 
+      avatar: 'PM',
+      videoUrl: '/student stories/story3.mp4',
+      duration: '1:10 mins'
+    },
   ];
 
   return (
-    <section className="section" style={{ background: 'var(--bg)' }}>
+    <section id="stories" className="section" style={{ background: 'var(--bg)' }}>
       <div className="container">
         <motion.div variants={fadeUp} initial="hidden" whileInView="show" viewport={{ once: true }}
           style={{ textAlign: 'center', marginBottom: '64px' }}>
@@ -752,12 +912,16 @@ const Testimonials = () => {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '28px' }}>
           {students.map((s, i) => (
             <motion.div key={i} variants={fadeUp} initial="hidden" whileInView="show"
-              viewport={{ once: true }} custom={i * 0.8} className="card card-p">
-              <div style={{ display: 'flex', gap: '4px', marginBottom: '20px' }}>
+              viewport={{ once: true }} custom={i * 0.8} className="card card-p"
+              style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              
+              <VideoPlayer src={s.videoUrl} duration={s.duration} name={s.name} />
+
+              <div style={{ display: 'flex', gap: '4px', marginTop: '4px' }}>
                 {[...Array(5)].map((_, j) => <Star key={j} size={16} fill="#FFA726" color="#FFA726" />)}
               </div>
-              <p style={{ color: 'var(--text-main)', lineHeight: 1.75, marginBottom: '24px', fontStyle: 'italic', fontSize: '0.95rem' }}>"{s.quote}"</p>
-              <div className="divider" style={{ marginBottom: '20px' }} />
+              <p style={{ color: 'var(--text-main)', lineHeight: 1.75, marginBottom: '8px', fontStyle: 'italic', fontSize: '0.95rem' }}>"{s.quote}"</p>
+              <div className="divider" style={{ marginTop: 'auto', marginBottom: '16px' }} />
               <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
                 <div style={{
                   width: 44, height: 44, borderRadius: '50%',
@@ -780,6 +944,115 @@ const Testimonials = () => {
     </section>
   );
 };
+
+
+/* ── NEW TESTIMONIALS (PRIORITY 4) ──────────────────── */
+const DEFAULT_TESTIMONIALS = [
+  { name: 'Soham Dutta', course: 'Class XII CS', review: 'Hribhu sir explained memory structures and pointer references in C++ so clearly. The mock tests helped me score a 99 in boards!', faculty: 'Hribhu Tapadar' },
+  { name: 'Ananya Sen', course: 'Python Mastery', review: 'Building projects like the Python CLI game made me fall in love with coding. Compution feels like a real programming lab.', faculty: 'Sharmistha Ghosh' },
+  { name: 'Rohit Banerjee', course: 'Data Structures & Algorithms', review: 'The whiteboard coding sessions and sorting algorithm walkthroughs prepared me completely for my technical round.', faculty: 'Hribhu Tapadar' }
+];
+
+const Testimonials = () => {
+  const [testimonials, setTestimonials] = useState([]);
+  
+  useEffect(() => {
+    if (!db) {
+      console.error("Firestore not initialized");
+      setTestimonials(DEFAULT_TESTIMONIALS);
+      return;
+    }
+    
+    let unsub = () => {};
+    try {
+      unsub = onSnapshot(collection(db, 'testimonials'), (snap) => {
+        if (!snap.empty) {
+          const list = [];
+          snap.forEach(d => list.push({ id: d.id, ...d.data() }));
+          setTestimonials(list);
+        } else {
+          setTestimonials(DEFAULT_TESTIMONIALS);
+        }
+      }, (err) => {
+        console.error("Testimonials listener error:", err);
+        setTestimonials(DEFAULT_TESTIMONIALS);
+      });
+    } catch (err) {
+      console.error("Home: Testimonials - Failed to create Firestore listener", err);
+      setTestimonials(DEFAULT_TESTIMONIALS);
+    }
+    return () => unsub();
+  }, []);
+
+  return (
+    <section id="testimonials" className="section" style={{ background: 'var(--surface-secondary)' }}>
+      <div className="container">
+        <motion.div variants={fadeUp} initial="hidden" whileInView="show" viewport={{ once: true }}
+          style={{ textAlign: 'center', marginBottom: '64px' }}>
+          <span className="badge badge-primary" style={{ marginBottom: '16px' }}>Student Reviews</span>
+          <h2>What our students say <span className="gradient-text">about Compution</span></h2>
+          <p style={{ marginTop: '12px', color: 'var(--text-secondary)', fontSize: '0.98rem' }}>Authentic feedback from school, college, and professional learners.</p>
+        </motion.div>
+
+        {/* Carousel for mobile / grid for desktop */}
+        <div className="testimonials-display-layout">
+          {testimonials.map((t, i) => (
+            <div key={i} className="card card-p testimonial-card-premium" style={{ display: 'flex', flexDirection: 'column', gap: '16px', border: '1px solid var(--border)' }}>
+              {/* Avatar Placeholder */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{
+                  width: '44px', height: '44px', borderRadius: '50%',
+                  background: 'linear-gradient(135deg, var(--primary), var(--accent))',
+                  color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontWeight: 800, fontSize: '0.95rem'
+                }}>
+                  {t.name.split(' ').map(n => n[0]).join('')}
+                </div>
+                <div>
+                  <h4 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 800, color: 'var(--text-primary)' }}>{t.name}</h4>
+                  <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 600 }}>{t.course}</span>
+                </div>
+              </div>
+
+              <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text-secondary)', lineHeight: 1.6, fontStyle: 'italic', flex: 1 }}>
+                "{t.review}"
+              </p>
+
+              {t.faculty && (
+                <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--primary)', borderTop: '1px solid var(--border)', paddingTop: '10px', marginTop: '4px' }}>
+                  Mentor: {t.faculty}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+      
+      <style>{`
+        .testimonials-display-layout {
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: 24px;
+        }
+        @media (max-width: 800px) {
+          .testimonials-display-layout {
+            display: flex;
+            overflow-x: auto;
+            scroll-snap-type: x mandatory;
+            padding-bottom: 12px;
+            gap: 16px;
+            scrollbar-width: none;
+          }
+          .testimonial-card-premium {
+            flex: 0 0 280px;
+            scroll-snap-align: start;
+          }
+        }
+      `}</style>
+    </section>
+  );
+};
+
 
 /* ── STORIES DATA ─────────────────────────────────── */
 const STORIES_DATA = [
@@ -1131,6 +1404,118 @@ const Toast = ({ message, onClose }) => {
     </motion.div>
   );
 };
+/* ── CONTACT SECTION ────────────────────────────────── */
+const ContactSection = ({ onOpenAdmission }) => {
+  return (
+    <section id="contact" className="section" style={{ background: 'var(--white)', padding: '60px 0' }}>
+      <div className="container">
+        <motion.div
+          variants={fadeUp}
+          initial="hidden"
+          whileInView="show"
+          viewport={{ once: true }}
+          style={{
+            background: '#070a13',
+            borderRadius: '24px',
+            padding: '48px 56px',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: '40px',
+            flexWrap: 'wrap',
+            border: '1px solid rgba(255, 255, 255, 0.05)',
+            boxShadow: '0 20px 40px rgba(0,0,0,0.25)',
+            width: '100%'
+          }}
+        >
+          <div style={{ flex: '1 1 500px' }}>
+            <h2 style={{ color: 'white', marginBottom: '12px', fontSize: '2.25rem', fontWeight: 800 }}>
+              Start your story with us
+            </h2>
+            <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: '1rem', maxWidth: '520px', lineHeight: 1.6, marginBottom: '24px' }}>
+              New batches starting soon. Limited seats. Walk in or call us to secure your place.
+            </p>
+            <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap', alignItems: 'center' }}>
+              {[
+                { icon: <MapPin size={16} />, text: '20, J.K. Mitra Road, Kolkata - 700037' },
+                { icon: <Phone size={16} />, text: '+91-9674035542', href: 'tel:+919674035542' },
+                { icon: <Mail size={16} />, text: 'compution.kolkata@gmail.com', href: 'mailto:compution.kolkata@gmail.com' },
+              ].map((item, i) => (
+                <span key={i} style={{ color: 'rgba(255,255,255,0.7)', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.88rem', fontWeight: 500 }}>
+                  <span style={{ color: '#536df5' }}>{item.icon}</span>
+                  {item.href ? (
+                    <a href={item.href} style={{ color: 'inherit', textDecoration: 'none', transition: 'color 0.2s' }}
+                       onMouseEnter={e => e.target.style.color = 'white'}
+                       onMouseLeave={e => e.target.style.color = 'inherit'}>
+                      {item.text}
+                    </a>
+                  ) : (
+                    item.text
+                  )}
+                </span>
+              ))}
+            </div>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', minWidth: '220px', width: '100%', maxWidth: '240px' }}>
+            <button 
+              type="button" 
+              onClick={onOpenAdmission}
+              style={{ 
+                background: '#4c6ef5', 
+                color: 'white', 
+                padding: '14px 28px', 
+                borderRadius: '12px', 
+                fontWeight: 700, 
+                fontSize: '0.95rem',
+                border: 'none',
+                cursor: 'pointer',
+                textAlign: 'center',
+                boxShadow: '0 4px 14px rgba(76, 110, 245, 0.3)',
+                transition: 'all 0.2s ease'
+              }}
+              onMouseEnter={e => {
+                e.target.style.transform = 'translateY(-2px)';
+                e.target.style.backgroundColor = '#3b5bdb';
+              }}
+              onMouseLeave={e => {
+                e.target.style.transform = 'none';
+                e.target.style.backgroundColor = '#4c6ef5';
+              }}
+            >
+              Apply for Admission
+            </button>
+            <Link 
+              to="/login" 
+              style={{ 
+                background: '#1c1f26', 
+                color: 'white', 
+                padding: '14px 28px', 
+                borderRadius: '12px', 
+                fontWeight: 700, 
+                fontSize: '0.95rem',
+                border: '1px solid rgba(255, 255, 255, 0.1)',
+                cursor: 'pointer',
+                textAlign: 'center',
+                transition: 'all 0.2s ease',
+                textDecoration: 'none'
+              }}
+              onMouseEnter={e => {
+                e.target.style.transform = 'translateY(-2px)';
+                e.target.style.backgroundColor = '#252934';
+              }}
+              onMouseLeave={e => {
+                e.target.style.transform = 'none';
+                e.target.style.backgroundColor = '#1c1f26';
+              }}
+            >
+              Login
+            </Link>
+          </div>
+        </motion.div>
+      </div>
+    </section>
+  );
+};
 
 /* ── PAGE EXPORT ───────────────────────────────────── */
 const Home = () => {
@@ -1202,8 +1587,9 @@ const Home = () => {
       <WhyCompution />
       <CoursesSection onOpenAdmission={openAdmission} />
       <LearningJourney />
+      <StudentStories />
       <Testimonials />
-      <OurStories onOpenAdmission={openAdmission} />
+      <ContactSection onOpenAdmission={openAdmission} />
       <Footer onOpenAdmission={openAdmission} />
       
       <AdmissionApplicationModal 
@@ -1212,6 +1598,7 @@ const Home = () => {
         triggerToast={setToast}
         initialSubject={selectedCourse}
       />
+      <LeadCaptureSystem />
 
       <AnimatePresence>
         {toast && (
