@@ -61,6 +61,21 @@ export const AuthProvider = ({ children }) => {
             };
             
             if (targetRole === 'student') {
+              let regFee = 300;
+              let admFee = 0;
+              let baseMonthly = 500;
+              try {
+                const fsSnap = await getDoc(doc(db, 'settings', 'feeStructure'));
+                if (fsSnap.exists()) {
+                  const fs = fsSnap.data();
+                  regFee = Number(fs.registrationFee) || 300;
+                  admFee = Number(fs.admissionFee) || 0;
+                  baseMonthly = Number(fs.class2to5) || 500;
+                }
+              } catch (e) {
+                console.error("Error fetching fee structure in AuthContext:", e);
+              }
+
               newProfile = {
                 ...newProfile,
                 studentId: `COMP-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
@@ -72,7 +87,11 @@ export const AuthProvider = ({ children }) => {
                 autoGroup: '',
                 customGroupException: '',
                 feeStatus: 'Pending',
-                feesAmount: 2400
+                monthlyFee: baseMonthly,
+                registrationFee: regFee,
+                admissionFee: admFee,
+                feesAmount: (baseMonthly * 12) + regFee + admFee,
+                joiningDate: new Date().toISOString()
               };
             }
             await setDoc(userRef, newProfile);

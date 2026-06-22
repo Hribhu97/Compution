@@ -7,22 +7,24 @@
     <script>
       (function() {
         try {
-          var isDark = false;
+          var theme = localStorage.getItem('compution-theme');
           var systemDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-          var hasSavedPref = false;
-          var savedVal = false;
-          for (var i = 0; i < localStorage.length; i++) {
-            var key = localStorage.key(i);
-            if (key && key.indexOf('isDarkMode_') === 0) {
-              hasSavedPref = true;
-              if (localStorage.getItem(key) === 'true') {
-                savedVal = true;
-              }
-            }
+          var isDark = false;
+          
+          if (theme === 'dark') {
+            isDark = true;
+          } else if (theme === 'light') {
+            isDark = false;
+          } else {
+            // Default or 'system'
+            isDark = systemDark;
           }
-          isDark = hasSavedPref ? savedVal : systemDark;
+          
           if (isDark) {
             document.documentElement.classList.add('dark-theme');
+            document.documentElement.setAttribute('data-theme', 'dark');
+          } else {
+            document.documentElement.removeAttribute('data-theme');
           }
         } catch (e) {}
       })();

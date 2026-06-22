@@ -17,6 +17,8 @@ import ChildDashboard from '../../components/ChildDashboard';
 import Modal from '../../components/Modal';
 import { queryManager } from '../../utils/FirestoreQueryManager';
 import StudentOverview from '../../features/dashboard/StudentOverview';
+import { useTheme } from '../../theme/useTheme';
+import { StudentWorkspaceTheme } from '../../theme/StudentWorkspaceTheme';
 
 const stagger = { show: { transition: { staggerChildren: 0.06 } } };
 
@@ -24,17 +26,8 @@ export default function Overview() {
   const { user, loading } = useAuth();
   const { showToast } = useToast();
   
-  // Theme Switching (Defaulting to system default)
-  const [isDarkMode, setIsDarkMode] = useState(() => {
-    if (!user?.uid) {
-      return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-    }
-    const saved = localStorage.getItem(`isDarkMode_${user.uid}`);
-    if (saved !== null) {
-      return saved === 'true';
-    }
-    return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-  });
+  const { theme, resolvedTheme, setTheme } = useTheme();
+  const isDarkMode = resolvedTheme === 'dark';
 
   // UI layout mode switcher
   const [uiMode, setUiMode] = useState(() => {
@@ -83,7 +76,6 @@ export default function Overview() {
   useEffect(() => {
     if (user?.uid) {
       localStorage.setItem(`uiMode_${user.uid}`, uiMode);
-      localStorage.setItem(`isDarkMode_${user.uid}`, isDarkMode);
       localStorage.setItem(`xp_${user.uid}`, xp);
       localStorage.setItem(`level_${user.uid}`, level);
       localStorage.setItem(`rankPoints_${user.uid}`, rankPoints);
@@ -91,13 +83,8 @@ export default function Overview() {
       localStorage.setItem(`friends_${user.uid}`, JSON.stringify(friends));
       localStorage.setItem(`studentHasCrown_${user.uid}`, studentHasCrown);
       localStorage.setItem(`hasPlayedGame_${user.uid}`, hasPlayedGame);
-      window.dispatchEvent(new Event('themechange'));
     }
-  }, [uiMode, isDarkMode, xp, level, rankPoints, streak, friends, studentHasCrown, hasPlayedGame, user?.uid]);
-
-  useEffect(() => {
-    document.body.classList.toggle('dark-theme', isDarkMode);
-  }, [isDarkMode]);
+  }, [uiMode, xp, level, rankPoints, streak, friends, studentHasCrown, hasPlayedGame, user?.uid]);
 
   const getReferralCode = () => {
     if (!user?.studentId) return 'COMP2K260000';
@@ -125,7 +112,7 @@ export default function Overview() {
       display: 'flex', 
       flexDirection: 'column', 
       gap: '24px', 
-      background: isDarkMode ? 'var(--bg)' : 'transparent',
+      background: 'transparent',
       minHeight: '100vh',
       padding: '12px',
       borderRadius: '24px',
@@ -152,7 +139,7 @@ export default function Overview() {
         </div>
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
           {/* Layout buttons */}
-          <div style={{ display: 'flex', gap: '4px', background: isDarkMode ? '#1E2E4A' : '#F1F5F9', padding: '4px', borderRadius: '10px' }}>
+          <div style={{ display: 'flex', gap: '4px', background: 'var(--surface-elevated)', padding: '4px', borderRadius: '10px' }}>
             <button
               onClick={() => setUiMode('child')}
               style={{
@@ -161,7 +148,7 @@ export default function Overview() {
                 fontSize: '0.78rem',
                 fontWeight: 700,
                 background: uiMode === 'child' ? 'var(--primary)' : 'transparent',
-                color: uiMode === 'child' ? 'white' : ('var(--text-secondary)'),
+                color: uiMode === 'child' ? 'var(--text-on-primary)' : 'var(--text-secondary)',
                 transition: 'all 0.2s',
                 cursor: 'pointer'
               }}
@@ -176,7 +163,7 @@ export default function Overview() {
                 fontSize: '0.78rem',
                 fontWeight: 700,
                 background: uiMode === 'default' ? 'var(--primary)' : 'transparent',
-                color: uiMode === 'default' ? 'white' : ('var(--text-secondary)'),
+                color: uiMode === 'default' ? 'var(--text-on-primary)' : 'var(--text-secondary)',
                 transition: 'all 0.2s',
                 cursor: 'pointer'
               }}
@@ -187,11 +174,11 @@ export default function Overview() {
 
           {/* Light/Dark mode switcher */}
           <button
-            onClick={() => setIsDarkMode(!isDarkMode)}
+            onClick={() => setTheme(isDarkMode ? 'light' : 'dark')}
             style={{
               padding: '8px 12px',
               borderRadius: '10px',
-              background: isDarkMode ? '#1E2E4A' : '#F1F5F9',
+              background: 'var(--surface-elevated)',
               color: 'var(--text-primary)',
               fontWeight: 700,
               fontSize: '0.78rem',
@@ -207,20 +194,22 @@ export default function Overview() {
       </div>
 
       {uiMode === 'child' ? (
-        <ChildDashboard 
-          user={user} 
-          showToast={showToast} 
-          isDarkMode={isDarkMode} 
-          xp={xp} setXp={setXp}
-          level={level} setLevel={setLevel}
-          rankPoints={rankPoints} setRankPoints={setRankPoints}
-          streak={streak} setStreak={setStreak}
-          friends={friends} setFriends={setFriends}
-          duels={duels} setDuels={setDuels}
-          studentHasCrown={studentHasCrown} setStudentHasCrown={setStudentHasCrown}
-          hasPlayedGame={hasPlayedGame} setHasPlayedGame={setHasPlayedGame}
-          referralCode={referralCode} referralLink={referralLink}
-        />
+        <StudentWorkspaceTheme isDark={isDarkMode}>
+          <ChildDashboard 
+            user={user} 
+            showToast={showToast} 
+            isDarkMode={isDarkMode} 
+            xp={xp} setXp={setXp}
+            level={level} setLevel={setLevel}
+            rankPoints={rankPoints} setRankPoints={setRankPoints}
+            streak={streak} setStreak={setStreak}
+            friends={friends} setFriends={setFriends}
+            duels={duels} setDuels={setDuels}
+            studentHasCrown={studentHasCrown} setStudentHasCrown={setStudentHasCrown}
+            hasPlayedGame={hasPlayedGame} setHasPlayedGame={setHasPlayedGame}
+            referralCode={referralCode} referralLink={referralLink}
+          />
+        </StudentWorkspaceTheme>
       ) : (
         <StudentOverview isDarkMode={isDarkMode} />
       )}

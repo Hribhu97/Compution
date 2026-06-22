@@ -10,6 +10,7 @@ import {
 import Modal from '../../components/Modal';
 import LeadCaptureSystem from '../../components/LeadCaptureSystem';
 import { useAuth } from '../../contexts/AuthContext';
+import { useTheme } from '../../theme/useTheme';
 import { collection, onSnapshot } from 'firebase/firestore';
 import { db } from '../../firebase';
 
@@ -24,6 +25,8 @@ const fadeUp = {
 
 const ADMISSION_SUBJECTS = [
   'Basic+AI (Prompt Engn)',
+  'Tally Expert',
+  'Advance Excel Expert',
   'School Syllabus (Classes 2 to 5)',
   'School Syllabus (Classes 6 to 10)',
   'Class XI & XII Computer Science',
@@ -397,140 +400,355 @@ const Navbar = ({ onOpenAdmission, isDarkMode, toggleTheme }) => {
 };
 
 /* ── HERO ──────────────────────────────────────────── */
-const Hero = ({ onOpenAdmission }) => (
-  <section style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', paddingTop: '100px' }}>
-    <div className="container grid-hero">
-      {/* Left */}
-      <div>
-        <motion.div variants={fadeUp} initial="hidden" animate="show" custom={0}>
-          <span className="badge badge-primary" style={{ marginBottom: '24px' }}>
-            <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--primary)', display: 'inline-block' }} />
-            Kolkata's Premier CS Institute
-          </span>
-        </motion.div>
-        <motion.h1 variants={fadeUp} initial="hidden" animate="show" custom={1}
-          style={{ marginBottom: '24px', fontWeight: 900 }}>
-          Learn Computer Science{' '}
-          <span className="gradient-text">Beyond Textbooks</span>
-        </motion.h1>
-        <motion.p variants={fadeUp} initial="hidden" animate="show" custom={2}
-          style={{ fontSize: '1.2rem', color: 'var(--text-muted)', marginBottom: '40px', lineHeight: 1.7, maxWidth: '480px' }}>
-          Academic excellence meets practical programming. From Class XI CS to B.Tech support — mentorship that actually works.
-        </motion.p>
-        <motion.div variants={fadeUp} initial="hidden" animate="show" custom={3}
-          style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
-          <button type="button" className="btn btn-primary btn-lg" onClick={onOpenAdmission}>
-            Enroll Now <ArrowRight size={20} />
-          </button>
-          <Link to="/login" className="btn btn-secondary btn-lg">Login</Link>
-          <a href="#courses" className="btn btn-ghost btn-lg">Explore Courses</a>
-        </motion.div>
-        <motion.div variants={fadeUp} initial="hidden" animate="show" custom={4}
-          className="grid-stats-row" style={{ marginTop: '48px' }}>
-          {[['500+', 'Students Trained'], ['95%', 'Success Rate'], ['5+', 'Years Experience']].map(([val, label]) => (
-            <div key={label}>
-              <div style={{ fontFamily: 'var(--font-heading)', fontWeight: 900, fontSize: '2rem', color: 'var(--dark)' }}>{val}</div>
-              <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: 500 }}>{label}</div>
-            </div>
-          ))}
-        </motion.div>
-      </div>
+const Hero = ({ onOpenAdmission }) => {
+  const [currentSlide, setCurrentSlide] = useState(0);
+  const [direction, setDirection] = useState(0);
 
-      {/* Right — Code Visual */}
-      <motion.div
-        initial={{ opacity: 0, x: 40 }}
-        animate={{ opacity: 1, x: 0 }}
-        transition={{ duration: 0.8, delay: 0.3, ease: [0.16, 1, 0.3, 1] }}
-        className="hero-visual-wrap"
-        style={{ position: 'relative' }}
+  const slides = [
+    {
+      courseKey: 'Basic+AI (Prompt Engn)',
+      header: 'Become expert in',
+      title: 'COMPUTER BASICS',
+      subtitle: 'with Prompt Engineering',
+      description: 'A Computer Basics course is the perfect starting point for beginners, teaching fundamental skills like operating systems, internet usage, and now prompt engineering.',
+      image: '/images/comp_basics.png',
+      bgColor: 'rgba(94, 107, 255, 0.08)',
+      accentColor: 'var(--primary)',
+      floatingBadge: 'AI Driven 🤖'
+    },
+    {
+      courseKey: 'Tally Expert',
+      header: 'Become expert in',
+      title: 'TALLY EXPERT',
+      subtitle: '(GST & Accounting)',
+      description: 'A Tally Accountant is responsible for running the accounting, taxation, inventory management, and financial activities of an organisation.',
+      image: '/images/tally_expert.png',
+      bgColor: 'rgba(102, 187, 106, 0.08)',
+      accentColor: 'var(--success)',
+      floatingBadge: '100% Practical 📈'
+    },
+    {
+      courseKey: 'Advance Excel Expert',
+      header: 'Become expert in',
+      title: 'ADVANCE EXCEL EXPERT',
+      subtitle: '& Data Analytics',
+      description: 'An Excel Analyst is responsible for modeling complex datasets, automating reporting spreadsheets, and designing insightful dashboards.',
+      image: '/images/excel_expert.png',
+      bgColor: 'rgba(245, 158, 11, 0.08)',
+      accentColor: '#F59E0B',
+      floatingBadge: 'Dashboards 📊'
+    }
+  ];
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      handleNext();
+    }, 6000);
+    return () => clearInterval(timer);
+  }, [currentSlide]);
+
+  const handleNext = () => {
+    setDirection(1);
+    setCurrentSlide((prev) => (prev + 1) % slides.length);
+  };
+
+  const handlePrev = () => {
+    setDirection(-1);
+    setCurrentSlide((prev) => (prev - 1 + slides.length) % slides.length);
+  };
+
+  const slide = slides[currentSlide];
+
+  return (
+    <section style={{ 
+      minHeight: '100vh', 
+      display: 'flex', 
+      alignItems: 'center', 
+      paddingTop: '110px', 
+      paddingBottom: '60px',
+      position: 'relative',
+      overflow: 'hidden',
+      background: 'var(--bg-light)'
+    }}>
+      {/* Navigation Arrows */}
+      <button 
+        onClick={handlePrev}
+        aria-label="Previous Slide"
+        style={{
+          position: 'absolute',
+          left: '20px',
+          top: '50%',
+          transform: 'translateY(-50%)',
+          zIndex: 10,
+          background: 'rgba(255, 255, 255, 0.85)',
+          border: '1px solid var(--border)',
+          borderRadius: '50%',
+          width: '44px',
+          height: '44px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          cursor: 'pointer',
+          color: slide.accentColor,
+          boxShadow: 'var(--shadow-sm)',
+          transition: 'var(--transition)'
+        }}
+        onMouseEnter={e => { e.currentTarget.style.background = slide.accentColor; e.currentTarget.style.color = 'white'; }}
+        onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255, 255, 255, 0.85)'; e.currentTarget.style.color = slide.accentColor; }}
       >
-        {/* Main editor card */}
-        <div className="card" style={{ padding: 0, overflow: 'hidden', borderRadius: 'var(--radius-xl)' }}>
-          {/* Editor topbar */}
-          <div style={{ background: '#1A1D24', padding: '14px 20px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            {['#EF5350','#FFA726','#66BB6A'].map(c => (
-              <div key={c} style={{ width: 12, height: 12, borderRadius: '50%', background: c }} />
-            ))}
-            <span style={{ marginLeft: '12px', fontSize: '0.8rem', color: 'rgba(255,255,255,0.4)', fontFamily: 'monospace' }}>main.py — Compution</span>
-          </div>
-          {/* Code content */}
-          <div style={{ background: '#1E1E2E', padding: '28px', fontFamily: 'monospace', fontSize: '0.9rem', lineHeight: 2 }}>
-            {[
-              { color: '#FF79C6', text: 'def ' },
-              { color: '#50FA7B', text: 'solve_problem' },
-              { color: '#F8F8F2', text: '(input_data):' },
-            ].map((t, i) => <span key={i} style={{ color: t.color }}>{t.text}</span>)}
-            <br />
-            <span style={{ color: 'rgba(255,255,255,0.3)' }}>{'    '}# Think. Code. Conquer.</span>
-            <br />
-            <span style={{ color: '#BD93F9' }}>{'    '}result</span>
-            <span style={{ color: '#F8F8F2' }}> = []</span>
-            <br />
-            <span style={{ color: '#FF79C6' }}>{'    '}for </span>
-            <span style={{ color: '#BD93F9' }}>item </span>
-            <span style={{ color: '#FF79C6' }}>in </span>
-            <span style={{ color: '#F8F8F2' }}>input_data:</span>
-            <br />
-            <span style={{ color: '#F8F8F2' }}>{'        '}result.append(item </span>
-            <span style={{ color: '#FF79C6' }}>* </span>
-            <span style={{ color: '#F1FA8C' }}>2</span>
-            <span style={{ color: '#F8F8F2' }}>)</span>
-            <br />
-            <span style={{ color: '#FF79C6' }}>{'    '}return </span>
-            <span style={{ color: '#BD93F9' }}>result</span>
-            <br /><br />
-            {/* blinking cursor */}
-            <motion.span
-              animate={{ opacity: [1, 0, 1] }}
-              transition={{ repeat: Infinity, duration: 1.2 }}
-              style={{ background: '#50FA7B', width: 10, height: 18, display: 'inline-block', verticalAlign: 'middle' }}
+        <ChevronRight size={24} style={{ transform: 'rotate(180deg)' }} />
+      </button>
+
+      <button 
+        onClick={handleNext}
+        aria-label="Next Slide"
+        style={{
+          position: 'absolute',
+          right: '20px',
+          top: '50%',
+          transform: 'translateY(-50%)',
+          zIndex: 10,
+          background: 'rgba(255, 255, 255, 0.85)',
+          border: '1px solid var(--border)',
+          borderRadius: '50%',
+          width: '44px',
+          height: '44px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          cursor: 'pointer',
+          color: slide.accentColor,
+          boxShadow: 'var(--shadow-sm)',
+          transition: 'var(--transition)'
+        }}
+        onMouseEnter={e => { e.currentTarget.style.background = slide.accentColor; e.currentTarget.style.color = 'white'; }}
+        onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255, 255, 255, 0.85)'; e.currentTarget.style.color = slide.accentColor; }}
+      >
+        <ChevronRight size={24} />
+      </button>
+
+      <div className="container">
+        <AnimatePresence mode="wait" initial={false}>
+          <motion.div
+            key={currentSlide}
+            initial={{ opacity: 0, x: direction > 0 ? 40 : -40 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: direction > 0 ? -40 : 40 }}
+            transition={{ duration: 0.35, ease: 'easeInOut' }}
+            className="grid-hero"
+          >
+            {/* Left Content */}
+            <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+              <span className="badge badge-primary" style={{ marginBottom: '16px', alignSelf: 'flex-start' }}>
+                <span style={{ width: 6, height: 6, borderRadius: '50%', background: slide.accentColor, display: 'inline-block', marginRight: '6px' }} />
+                {slide.header}
+              </span>
+              
+              <h1 style={{ marginBottom: '16px', fontWeight: 900, lineHeight: 1.15 }}>
+                <span style={{ display: 'block', color: 'var(--dark)' }}>{slide.title}</span>
+                <span style={{ color: slide.accentColor, fontSize: '0.82em', display: 'block', marginTop: '4px' }}>{slide.subtitle}</span>
+              </h1>
+
+              <p style={{ fontSize: '1.02rem', color: 'var(--text-muted)', marginBottom: '24px', lineHeight: 1.65, maxWidth: '520px' }}>
+                {slide.description}
+              </p>
+
+              {/* Contacts row */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '24px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-secondary)' }}>Mob:</span>
+                  {['9143048483', '9804789733'].map(num => (
+                    <a 
+                      key={num}
+                      href={`tel:${num}`}
+                      style={{
+                        padding: '6px 16px',
+                        background: '#FF8A00',
+                        color: 'white',
+                        borderRadius: '20px',
+                        fontSize: '0.85rem',
+                        fontWeight: 700,
+                        textDecoration: 'none',
+                        boxShadow: '0 2px 8px rgba(255, 138, 0, 0.25)',
+                        transition: 'var(--transition)'
+                      }}
+                      onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-1px)'}
+                      onMouseLeave={e => e.currentTarget.style.transform = 'none'}
+                    >
+                      {num}
+                    </a>
+                  ))}
+                </div>
+                
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <span style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-secondary)' }}>Email:</span>
+                  <a 
+                    href="mailto:icc@introductionitacademy.com" 
+                    style={{ fontSize: '0.9rem', fontWeight: 800, color: 'var(--dark)', textDecoration: 'none' }}
+                  >
+                    icc@introductionitacademy.com
+                  </a>
+                </div>
+              </div>
+
+              {/* AI Implementation Highlight */}
+              <div style={{
+                padding: '12px 16px',
+                background: 'rgba(94, 107, 255, 0.04)',
+                borderLeft: `4px solid ${slide.accentColor}`,
+                borderRadius: '0 8px 8px 0',
+                fontSize: '0.85rem',
+                fontWeight: 600,
+                color: 'var(--text-secondary)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                maxWidth: '520px',
+                marginBottom: '32px'
+              }}>
+                <Zap size={16} style={{ color: slide.accentColor, flexShrink: 0 }} />
+                <span>*All of our courses use AI implementation for more specialized and custom approach.</span>
+              </div>
+
+              <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+                <button 
+                  type="button" 
+                  className="btn btn-lg" 
+                  onClick={() => onOpenAdmission(slide.courseKey)}
+                  style={{
+                    background: '#0F172A',
+                    color: 'white',
+                    padding: '14px 32px',
+                    borderRadius: '50px',
+                    fontWeight: 700,
+                    boxShadow: '0 4px 14px rgba(15, 23, 42, 0.3)',
+                    transition: 'var(--transition)',
+                    border: 'none',
+                    cursor: 'pointer'
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 6px 20px rgba(15, 23, 42, 0.4)'; }}
+                  onMouseLeave={e => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '0 4px 14px rgba(15, 23, 42, 0.3)'; }}
+                >
+                  Enquiry Now
+                </button>
+                <a 
+                  href="#courses" 
+                  className="btn btn-secondary btn-lg"
+                  style={{ borderRadius: '50px', padding: '14px 28px' }}
+                >
+                  Explore Courses
+                </a>
+              </div>
+            </div>
+
+            {/* Right Visual (Student 3D-popout style card) */}
+            <div style={{
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'center',
+              position: 'relative',
+              width: '100%',
+              maxWidth: '460px',
+              height: '460px',
+              margin: '0 auto'
+            }}>
+              {/* Colored background shape */}
+              <div style={{
+                position: 'absolute',
+                width: '80%',
+                height: '80%',
+                background: slide.bgColor,
+                borderRadius: '40px',
+                zIndex: 1,
+                bottom: '10%',
+                left: '10%',
+                overflow: 'hidden',
+                border: '1px solid rgba(255, 255, 255, 0.2)'
+              }}>
+                {/* Decorative yellow circle inside background */}
+                <div style={{
+                  position: 'absolute',
+                  width: '90px',
+                  height: '90px',
+                  background: '#FFE57F',
+                  borderRadius: '50%',
+                  top: '25%',
+                  left: '-25px',
+                  opacity: 0.9
+                }} />
+              </div>
+
+              {/* Floating course badge */}
+              <motion.div
+                animate={{ y: [0, -8, 0] }}
+                transition={{ repeat: Infinity, duration: 3.5, ease: 'easeInOut' }}
+                style={{
+                  position: 'absolute',
+                  top: '12%',
+                  right: '5%',
+                  zIndex: 3,
+                  background: 'var(--surface)',
+                  border: '1px solid var(--border)',
+                  padding: '10px 20px',
+                  borderRadius: '100px',
+                  boxShadow: 'var(--shadow-md)',
+                  fontSize: '0.85rem',
+                  fontWeight: 800,
+                  color: 'var(--dark)'
+                }}
+              >
+                {slide.floatingBadge}
+              </motion.div>
+
+              {/* Student Image */}
+              <img
+                src={slide.image}
+                alt={slide.title}
+                style={{
+                  position: 'relative',
+                  zIndex: 2,
+                  height: '90%',
+                  maxWidth: '90%',
+                  objectFit: 'contain',
+                  transform: 'translateY(-15px)',
+                  filter: 'drop-shadow(0 20px 25px rgba(0, 0, 0, 0.15))'
+                }}
+              />
+            </div>
+          </motion.div>
+        </AnimatePresence>
+
+        {/* Carousel Pagination Dots */}
+        <div style={{
+          display: 'flex',
+          justifyContent: 'center',
+          gap: '8px',
+          marginTop: '40px'
+        }}>
+          {slides.map((_, idx) => (
+            <button
+              key={idx}
+              aria-label={`Go to slide ${idx + 1}`}
+              onClick={() => {
+                setDirection(idx > currentSlide ? 1 : -1);
+                setCurrentSlide(idx);
+              }}
+              style={{
+                width: idx === currentSlide ? '24px' : '8px',
+                height: '8px',
+                borderRadius: '4px',
+                background: idx === currentSlide ? slide.accentColor : 'var(--border)',
+                border: 'none',
+                cursor: 'pointer',
+                transition: 'all 0.3s ease'
+              }}
             />
-          </div>
+          ))}
         </div>
-
-        {/* Floating achievement card */}
-        <motion.div
-          animate={{ y: [0, -8, 0] }}
-          transition={{ repeat: Infinity, duration: 3.5, ease: 'easeInOut' }}
-          className="card hero-float-card"
-          style={{
-            position: 'absolute', bottom: '-24px', left: '-32px',
-            padding: '16px 20px',
-            display: 'flex', alignItems: 'center', gap: '14px',
-            width: '220px'
-          }}
-        >
-          <div className="icon-box icon-box-sm" style={{ background: 'rgba(102,187,106,0.1)' }}>
-            <Trophy size={20} color="var(--success)" />
-          </div>
-          <div>
-            <div style={{ fontWeight: 700, fontSize: '0.95rem' }}>Python Badge</div>
-            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Intermediate unlocked!</div>
-          </div>
-        </motion.div>
-
-        {/* Floating streak card */}
-        <motion.div
-          animate={{ y: [0, -8, 0] }}
-          transition={{ repeat: Infinity, duration: 4, ease: 'easeInOut', delay: 0.5 }}
-          className="card hero-float-card"
-          style={{
-            position: 'absolute', top: '-20px', right: '-24px',
-            padding: '14px 18px',
-            display: 'flex', alignItems: 'center', gap: '12px',
-            width: '180px'
-          }}
-        >
-          <span style={{ fontSize: '1.5rem' }}>🔥</span>
-          <div>
-            <div style={{ fontWeight: 700, fontSize: '1.1rem' }}>7 Day Streak</div>
-            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Keep going!</div>
-          </div>
-        </motion.div>
-      </motion.div>
-    </div>
-  </section>
-);
+      </div>
+    </section>
+  );
+};
 
 /* ── WHY COMPUTION ─────────────────────────────────── */
 const WhyCompution = () => {
@@ -1524,43 +1742,12 @@ const Home = () => {
   const [selectedCourse, setSelectedCourse] = useState('');
   const [toast, setToast] = useState(null);
 
-  const [isDarkMode, setIsDarkMode] = useState(() => {
-    const systemDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-    let hasSavedPref = false;
-    let savedVal = false;
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (key && key.indexOf('isDarkMode_') === 0) {
-        hasSavedPref = true;
-        if (localStorage.getItem(key) === 'true') {
-          savedVal = true;
-        }
-      }
-    }
-    return hasSavedPref ? savedVal : systemDark;
-  });
+  const { theme, resolvedTheme, setTheme } = useTheme();
+  const isDarkMode = resolvedTheme === 'dark';
 
   const toggleTheme = () => {
-    const nextVal = !isDarkMode;
-    setIsDarkMode(nextVal);
-    const key = user ? `isDarkMode_${user.uid}` : 'isDarkMode_public';
-    localStorage.setItem(key, String(nextVal));
-    document.documentElement.classList.toggle('dark-theme', nextVal);
-    document.body.classList.toggle('dark-theme', nextVal);
-    window.dispatchEvent(new Event('themechange'));
+    setTheme(isDarkMode ? 'light' : 'dark');
   };
-
-  useEffect(() => {
-    const observer = new MutationObserver(() => {
-      const isDark = document.documentElement.classList.contains('dark-theme') || document.body.classList.contains('dark-theme');
-      if (isDark !== isDarkMode) {
-        setIsDarkMode(isDark);
-      }
-    });
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
-    observer.observe(document.body, { attributes: true, attributeFilter: ['class'] });
-    return () => observer.disconnect();
-  }, [isDarkMode]);
 
   const openAdmission = (courseName = '') => {
     const course = typeof courseName === 'string' ? courseName : '';

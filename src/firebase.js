@@ -30,16 +30,22 @@ enableIndexedDbPersistence(db).catch((err) => {
 });
 const googleProvider = new GoogleAuthProvider();
 
+import { query, where } from "firebase/firestore";
+
 export const syncStudentFeeAggregates = async (studentId) => {
   try {
     const userRef = doc(db, 'users', studentId);
-    const feesRef = collection(db, 'users', studentId, 'fees');
     
-    // Read subcollection outside transaction (required as transaction cannot query collections)
-    const feesSnap = await getDocs(feesRef);
-    let initialFeesList = [];
-    feesSnap.forEach(d => {
-      initialFeesList.push({ id: d.id, ref: d.ref });
+    // Read payments outside transaction (required as transaction cannot query collections)
+    const payRef = collection(db, 'paymentHistory');
+    const paySnap = await getDocs(query(payRef, where('studentId', '==', studentId)));
+    
+    let totalPaymentsReceived = 0;
+    paySnap.forEach(d => {
+      const p = d.data();
+      if (p.status === 'Approved' || p.status === 'Paid') {
+        totalPaymentsReceived += Number(p.amount) || 0;
+      }
     });
 
     let result = null;
@@ -50,105 +56,77 @@ export const syncStudentFeeAggregates = async (studentId) => {
       const userData = userSnap.data();
       if (userData.role !== 'student') return;
 
-      let totalAmount = 0;
-      let totalPaid = 0;
-      let finalPending = 0;
-      let computedStatus = 'Pending';
-      let currentFeesList = [];
+      const monthlyFee = Number(userData.monthlyFee) || 0;
+      const joiningDate = userData.joiningDate ? new Date(userData.joiningDate) : new Date(userData.createdAt || new Date());
+      const currentDate = new Date();
+      
+      // Calculate monthsActive (India Billing Year April -> March)
+      let academicYearStart = new Date(currentDate.getFullYear(), 3, 1); // April 1
+      if (currentDate.getMonth() < 3) {
+        academicYearStart = new Date(currentDate.getFullYear() - 1, 3, 1);
+      }
+      const effectiveStartDate = joiningDate > academicYearStart ? joiningDate : academicYearStart;
+      
+      let monthsActive = (currentDate.getFullYear() - effectiveStartDate.getFullYear()) * 12;
+      monthsActive -= effectiveStartDate.getMonth();
+      monthsActive += currentDate.getMonth();
+      monthsActive = monthsActive <= 0 ? 1 : monthsActive + 1;
 
-      if (initialFeesList.length === 0) {
-        // Dynamic Migration Fallback (Step 0 & 1)
-        const defaultAmount = userData.feesAmount !== undefined ? userData.feesAmount : 2400;
-        const defaultStatus = userData.feeStatus || 'Pending';
-        const defaultPaid = defaultStatus === 'Paid' ? defaultAmount : 0;
-        
-        const defaultFee = {
-          feeName: 'Tuition',
-          amount: defaultAmount,
-          paidAmount: defaultPaid,
-          month: 'May 2026',
-          status: defaultStatus,
-          createdAt: new Date().toISOString()
-        };
-
-        const defaultFeeRef = doc(db, 'users', studentId, 'fees', 'tuition_default');
-        transaction.set(defaultFeeRef, defaultFee);
-
-        totalAmount = defaultAmount;
-        totalPaid = defaultPaid;
-        computedStatus = defaultStatus;
-        currentFeesList = [{ id: 'tuition_default', ...defaultFee }];
+      // Carry forward balances & Fallbacks
+      let expectedTotal = 0;
+      if (monthlyFee > 0) {
+        expectedTotal = (monthlyFee * monthsActive) + (Number(userData.registrationFee) || 0) + (Number(userData.admissionFee) || 0);
       } else {
-        // Fetch snapshot data inside the transaction to avoid stale values
-        const feeSnaps = await Promise.all(initialFeesList.map(item => transaction.get(item.ref)));
-        feeSnaps.forEach(snap => {
-          if (snap.exists()) {
-            const feeData = snap.data();
-            currentFeesList.push({ id: snap.id, ref: snap.ref, ...feeData });
-            totalAmount += Number(feeData.amount) || 0;
-            totalPaid += Number(feeData.paidAmount) || 0;
+        expectedTotal = (Number(userData.feesAmount) || 0) + (Number(userData.registrationFee) || 0) + (Number(userData.admissionFee) || 0);
+      }
+
+      const lateFee = Number(userData.lateFee) || 0;
+      const discount = Number(userData.discount) || 0;
+
+      expectedTotal = expectedTotal + lateFee - discount;
+      
+      let balance = expectedTotal - totalPaymentsReceived;
+      let finalPending = Math.max(0, balance);
+      
+      // Admin Manual Override Logic
+      let computedStatus = userData.feeStatus || 'Pending';
+      
+      if (userData.statusSource === 'manual') {
+        // Retain the manual status
+        computedStatus = userData.feeStatus || 'Pending';
+      } else {
+        if (finalPending <= 0 && expectedTotal > 0) {
+          computedStatus = 'Paid';
+        } else if (totalPaymentsReceived > 0 && finalPending > 0) {
+          computedStatus = 'Partial';
+        } else if (totalPaymentsReceived === 0 && finalPending > 0) {
+          // If Admin manually set it to Delayed, don't overwrite to Pending
+          if (computedStatus !== 'Delayed') {
+             computedStatus = 'Pending';
           }
-        });
-      }
-
-      // ── VALIDATION RULES ──
-      // 1. Prevent paidAmount > feesAmount
-      if (totalPaid > totalAmount) {
-        totalPaid = totalAmount;
-      }
-
-      // 2. Prevent negative pending amounts
-      let totalPending = totalAmount - totalPaid;
-      finalPending = Math.max(0, totalPending);
-
-      // Status Calculation
-      if (finalPending <= 0 && totalAmount > 0) {
-        computedStatus = 'Paid';
-      } else if (totalPaid > 0) {
-        computedStatus = 'Partially Paid';
-      } else {
-        computedStatus = 'Pending';
-      }
-
-      // 3. If feeStatus === "Paid", force pendingAmount = 0 and paidAmount = feesAmount
-      if (computedStatus === 'Paid' || userData.feeStatus === 'Paid') {
-        computedStatus = 'Paid';
-        finalPending = 0;
-        totalPaid = totalAmount;
-
-        // Automatically update all fee documents to Paid inside transaction
-        if (initialFeesList.length > 0) {
-          currentFeesList.forEach(fee => {
-            if (fee.status !== 'Paid' || fee.paidAmount !== fee.amount) {
-              transaction.update(fee.ref, {
-                status: 'Paid',
-                paidAmount: Number(fee.amount) || 0
-              });
-            }
-          });
         }
       }
 
       transaction.update(userRef, {
-        feesAmount: totalAmount,
-        paidAmount: totalPaid,
+        feesAmount: expectedTotal,
+        paidAmount: totalPaymentsReceived,
         pendingAmount: finalPending,
         feeStatus: computedStatus,
+        monthsActive: monthsActive,
         updatedAt: new Date().toISOString()
       });
 
       result = {
-        feesAmount: totalAmount,
-        paidAmount: totalPaid,
+        feesAmount: expectedTotal,
+        paidAmount: totalPaymentsReceived,
         pendingAmount: finalPending,
-        feeStatus: computedStatus,
-        feesList: currentFeesList
+        feeStatus: computedStatus
       };
     });
 
     return result;
   } catch (error) {
-    console.error("Error syncing student fee aggregates:", error);
+    console.error("Error syncing student billing engine aggregates:", error);
     return null;
   }
 };

@@ -3,16 +3,17 @@
 /* =================== DESIGN TOKENS =================== */
 :root {
   /* Semantic Tokens: Light Mode */
-  --bg: #F6F7FB;
+  --bg: #F7F8FA;
   --surface: #FFFFFF;
-  --surface-elevated: #F0F2F7;
-  --text-primary: #1D2433;
-  --text-secondary: #5B6475;
-  --border: #D9DFEA;
-  --primary: #5B6CFF;
-  --success: #4CAF78;
-  --warning: #F0B24A;
-  --danger: #E46868;
+  --surface-elevated: #F2F4F7;
+  --text-primary: #1A1D24;
+  --text-secondary: #5E6472;
+  --border: #E3E7EE;
+  --primary: #5E6BFF;
+  --success: #43A46C;
+  --warning: #D98F2B;
+  --danger: #E05656;
+  --text-muted: #7A8394;
   
   /* Semantic helper tokens */
   --text-on-primary: #FFFFFF;
@@ -24,13 +25,12 @@
   
   /* Core brand tokens & backward compatibility mappings */
   --primary-dark: #4050E0;
-  --primary-light: rgba(91, 108, 255, 0.08);
+  --primary-light: rgba(94, 107, 255, 0.08);
   --accent: #7EC8FF;
   --border-strong: var(--border);
-  --text-muted: var(--text-secondary);
-  --text-light: #8E99A8;
+  --text-light: #7A8394;
   --primary-blue: var(--primary);
-  --accent-green: #4CAF78;
+  --accent-green: var(--success);
   
   --white: var(--surface);
   --dark: var(--text-primary);
@@ -618,15 +618,16 @@ body.dark-theme,
 [data-theme="dark"] {
   /* System mode tokens: Dark Mode */
   --bg: #121417;
-  --surface: #1A1D22;
-  --surface-elevated: #242932;
-  --text-primary: #F5F7FA;
-  --text-secondary: #A9B3C4;
-  --border: #343A46;
-  --primary: #7B88FF;
-  --success: #67C587;
-  --warning: #F2C05B;
-  --danger: #FF7A7A;
+  --surface: #1B1F26;
+  --surface-elevated: #232936;
+  --text-primary: #F4F4F5;
+  --text-secondary: #A1A8B8;
+  --border: #313847;
+  --primary: #6D7CFF;
+  --success: #4CAF7D;
+  --warning: #F4B860;
+  --danger: #FF6B6B;
+  --text-muted: #7C8394;
   
   /* Semantic helper tokens */
   --text-on-primary: #FFFFFF;
@@ -638,11 +639,10 @@ body.dark-theme,
   
   /* Core brand tokens & backward compatibility mappings */
   --primary-dark: #5C6AFF;
-  --primary-light: rgba(123, 136, 255, 0.08);
-  --accent: #7B88FF;
+  --primary-light: rgba(109, 124, 255, 0.08);
+  --accent: #6D7CFF;
   --border-strong: var(--border);
-  --text-muted: var(--text-secondary);
-  --text-light: #A9B3C4;
+  --text-light: #7C8394;
   --primary-blue: var(--primary);
   --accent-green: var(--success);
 
@@ -695,3 +695,139 @@ body.dark-theme .dash-bottom-nav a.active {
   color: var(--primary-blue);
   background: var(--primary-light);
 }
+
+/* =================== STUDENT WORKSPACE CHILD THEME SCOPED =================== */
+.student-workspace-theme-scoped {
+  /* Dynamic transitions for child theme area */
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+.student-workspace-theme-scoped .card-premium-child {
+  background: var(--surface-card);
+  border-radius: 28px;
+  border: 1px solid var(--border);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.03);
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  overflow: hidden;
+}
+
+.student-workspace-theme-scoped .card-premium-child:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 20px 48px rgba(83, 109, 254, 0.12);
+}
+
+.student-workspace-theme-scoped .candy-progress-track {
+  height: 12px;
+  background: var(--border);
+  border-radius: 100px;
+  position: relative;
+  overflow: hidden;
+}
+
+.student-workspace-theme-scoped.dark-theme .candy-progress-track {
+  background: #202D45;
+}
+
+.student-workspace-theme-scoped .candy-progress-fill {
+  height: 100%;
+  border-radius: 100px;
+  background: linear-gradient(90deg, #FF9966, #FF5E62);
+  box-shadow: 0 2px 6px rgba(255, 94, 98, 0.4);
+  position: relative;
+}
+
+.student-workspace-theme-scoped .candy-progress-fill::after {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: linear-gradient(45deg, 
+    rgba(255,255,255,0.15) 25%, 
+    transparent 25%, 
+    transparent 50%, 
+    rgba(255,255,255,0.15) 50%, 
+    rgba(255,255,255,0.15) 75%, 
+    transparent 75%, 
+    transparent);
+  background-size: 16px 16px;
+}
+
+.student-workspace-theme-scoped .friend-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px;
+  background: var(--surface-elevated);
+  border-radius: 20px;
+  transition: all 0.2s ease;
+  border: 1px solid transparent;
+}
+
+.student-workspace-theme-scoped .friend-row:hover {
+  background: var(--surface);
+  border-color: rgba(83, 109, 254, 0.3);
+  box-shadow: 0 8px 24px rgba(83, 109, 254, 0.08);
+  transform: scale(1.01);
+}
+
+.student-workspace-theme-scoped .game-card-child {
+  padding: 24px;
+  border-radius: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  position: relative;
+  overflow: hidden;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.student-workspace-theme-scoped .game-card-child:hover {
+  transform: translateY(-6px) scale(1.02);
+}
+
+.student-workspace-theme-scoped .game-btn-arcade {
+  padding: 10px 20px;
+  border: none;
+  background: var(--surface-elevated);
+  font-weight: 800;
+  font-size: 0.82rem;
+  border-radius: 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  transition: all 0.25s ease;
+  color: var(--text-primary);
+}
+
+.student-workspace-theme-scoped .game-btn-arcade:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 18px rgba(0,0,0,0.25);
+}
+
+.student-workspace-theme-scoped .pulse-online {
+  position: absolute;
+  bottom: 0; right: 0;
+  width: 9px; height: 9px;
+  border-radius: 50%;
+  background: #66BB6A;
+  border: 2px solid var(--surface);
+  box-shadow: 0 0 0 0 rgba(102, 187, 106, 0.7);
+  animation: pulseOnlineKey 2s infinite;
+}
+
+@keyframes pulseOnlineKey {
+  0% { box-shadow: 0 0 0 0 rgba(102, 187, 106, 0.7); }
+  70% { box-shadow: 0 0 0 6px rgba(102, 187, 106, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(102, 187, 106, 0); }
+}
+
+.student-workspace-theme-scoped .text-offwhite-override {
+  color: var(--text-primary) !important;
+}
+
+.student-workspace-theme-scoped .text-slate-muted-override {
+  color: var(--text-secondary) !important;
+}
+

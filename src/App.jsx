@@ -20,6 +20,8 @@ import Community from './pages/dashboard/Community';
 import Profile from './pages/dashboard/Profile';
 import NotFound from './pages/public/NotFound';
 
+import { ThemeProvider } from './theme/ThemeProvider';
+
 const PublicLayout = () => (
   <ReactLenis root options={{ lerp: 0.08, smoothWheel: true }}>
     <Outlet />
@@ -31,8 +33,8 @@ const ProtectedRoute = ({ children }) => {
   
   if (loading) {
     return (
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', width: '100vw', background: '#F8F7F4' }}>
-        <div style={{ width: '40px', height: '40px', borderRadius: '50%', border: '4px solid rgba(37,99,235,0.2)', borderTopColor: '#2563EB', animation: 'spin 1s linear infinite' }} />
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', width: '100vw', background: 'var(--bg)' }}>
+        <div style={{ width: '40px', height: '40px', borderRadius: '50%', border: '4px solid rgba(94,107,255,0.2)', borderTopColor: 'var(--primary)', animation: 'spin 1s linear infinite' }} />
         <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
       </div>
     );
@@ -47,9 +49,10 @@ const ProtectedRoute = ({ children }) => {
 
 function App() {
   return (
-    <AuthProvider>
-      <ToastProvider>
-        <Router>
+    <ThemeProvider>
+      <AuthProvider>
+        <ToastProvider>
+          <Router>
           <Routes>
             <Route element={<PublicLayout />}>
               <Route path="/" element={<Home />} />
@@ -73,6 +76,7 @@ function App() {
         </Router>
       </ToastProvider>
     </AuthProvider>
+  </ThemeProvider>
   );
 }
 

@@ -6,6 +6,7 @@ import { signOut } from 'firebase/auth';
 import { auth, db } from '../../firebase';
 import { collection, onSnapshot, query, orderBy, limit, doc, updateDoc, setDoc } from 'firebase/firestore';
 import { useAuth } from '../../contexts/AuthContext';
+import { useTheme } from '../../theme/useTheme';
 import {
   LayoutDashboard, BookOpen, ClipboardList,
   FileText, Settings, LogOut, Search, Bell,
@@ -56,10 +57,16 @@ const NAV_MAIN = [
   { to: '/dashboard/community', label: 'Community', icon: MessageSquare },
 ];
 
+import FeesPayment from '../../components/FeesPayment';
+
 const DashboardLayout = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const [tourCompleted, setTourCompleted] = useState(true);
+  const [isFeePaymentOpen, setIsFeePaymentOpen] = useState(false);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [hasUnread, setHasUnread] = useState(false);
+  const [isOffline, setIsOffline] = useState(!navigator.onLine);
 
   // Subscribe to tour preferences
   useEffect(() => {
@@ -86,54 +93,10 @@ const DashboardLayout = () => {
     }
     return () => unsub();
   }, [user?.uid]);
-  const [dropdownOpen, setDropdownOpen] = useState(false);
-  const [hasUnread, setHasUnread] = useState(false);
-  const [isOffline, setIsOffline] = useState(!navigator.onLine);
+  // Removed duplicate isOffline declaration
   const [showOnlineBanner, setShowOnlineBanner] = useState(false);
-  const [isDarkMode, setIsDarkMode] = useState(() => {
-    if (!user?.uid) {
-      return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-    }
-    const saved = localStorage.getItem(`isDarkMode_${user.uid}`);
-    if (saved !== null) {
-      return saved === 'true';
-    }
-    return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-  });
-
-  useEffect(() => {
-    if (user?.uid) {
-      const saved = localStorage.getItem(`isDarkMode_${user.uid}`);
-      if (saved !== null) {
-        setIsDarkMode(saved === 'true');
-      } else {
-        setIsDarkMode(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
-      }
-    }
-  }, [user]);
-
-  useEffect(() => {
-    const syncTheme = () => {
-      if (user?.uid) {
-        const saved = localStorage.getItem(`isDarkMode_${user.uid}`);
-        if (saved !== null) {
-          setIsDarkMode(saved === 'true');
-        } else {
-          setIsDarkMode(window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
-        }
-      }
-    };
-    window.addEventListener('themechange', syncTheme);
-    window.addEventListener('storage', syncTheme);
-    return () => {
-      window.removeEventListener('themechange', syncTheme);
-      window.removeEventListener('storage', syncTheme);
-    };
-  }, [user]);
-
-  useEffect(() => {
-    document.body.classList.toggle('dark-theme', isDarkMode);
-  }, [isDarkMode]);
+  const { theme, resolvedTheme, setTheme } = useTheme();
+  const isDarkMode = resolvedTheme === 'dark';
 
   useEffect(() => {
     let timer;
@@ -537,7 +500,7 @@ const DashboardLayout = () => {
                 width: '100%', 
                 padding: '13px 16px 13px 46px', 
                 borderRadius: '100px', 
-                border: isDarkMode ? '1.5px solid rgba(255,255,255,0.08)' : '1.5px solid rgba(83,109,254,0.2)',
+                border: '1.5px solid var(--border)',
                 background: 'var(--surface-card)', 
                 fontSize: '0.9rem', 
                 outline: 'none', 
@@ -546,16 +509,33 @@ const DashboardLayout = () => {
               }}
               onFocus={(e) => {
                 e.target.style.borderColor = 'var(--primary)';
-                if (isDarkMode) e.target.style.boxShadow = '0 0 0 3px rgba(83,109,254,0.25)';
+                e.target.style.boxShadow = '0 0 0 3px var(--primary-light)';
               }}
               onBlur={(e) => {
-                e.target.style.borderColor = isDarkMode ? 'rgba(255,255,255,0.08)' : 'rgba(83,109,254,0.2)';
+                e.target.style.borderColor = 'var(--border)';
                 e.target.style.boxShadow = 'none';
               }}
             />
           </div>
 
           <div className="dash-header-actions" style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '16px' }}>
+            
+            {user?.role === 'student' && user?.feeStatus !== 'Paid' && user?.pendingAmount > 0 && (
+              <button 
+                onClick={() => setIsFeePaymentOpen(true)}
+                style={{ 
+                  padding: '6px 14px', background: 'var(--danger)', color: 'white', 
+                  borderRadius: '100px', fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer',
+                  border: 'none', display: 'flex', alignItems: 'center', gap: '6px',
+                  boxShadow: '0 4px 12px rgba(239, 83, 80, 0.3)', transition: 'transform 0.2s'
+                }}
+                onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.05)'}
+                onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
+              >
+                Pay Due: ₹{user.pendingAmount}
+              </button>
+            )}
+
             <button style={{ 
               position: 'relative', 
               color: 'var(--text-secondary)', 
@@ -571,7 +551,7 @@ const DashboardLayout = () => {
                 height: '8px', 
                 background: 'var(--danger)', 
                 borderRadius: '50%', 
-                border: `2px solid ${isDarkMode ? '#0B0F19' : '#F0F4FF'}`,
+                border: '2px solid var(--bg)',
                 transition: 'border-color 0.3s ease'
               }} />}
             </button>
@@ -587,8 +567,8 @@ const DashboardLayout = () => {
                   background: 'var(--surface-card)', 
                   padding: '6px 16px 6px 6px', 
                   borderRadius: '100px',
-                  border: isDarkMode ? '1px solid rgba(255,255,255,0.08)' : '1px solid transparent',
-                  boxShadow: isDarkMode ? 'none' : '0 2px 8px rgba(0,0,0,0.04)',
+                  border: '1px solid var(--border)',
+                  boxShadow: 'var(--shadow-sm)',
                   color: 'var(--text-primary)',
                   transition: 'all 0.3s ease'
                 }}>
@@ -615,7 +595,7 @@ const DashboardLayout = () => {
                       position: 'absolute', top: 'calc(100% + 8px)', right: 0, width: '200px',
                       background: 'var(--surface-card)', 
                       borderRadius: '16px', 
-                      boxShadow: isDarkMode ? '0 8px 32px rgba(0,0,0,0.24)' : '0 8px 24px rgba(0,0,0,0.08)',
+                      boxShadow: 'var(--shadow-md)',
                       border: '1px solid var(--border)',
                       padding: '8px', 
                       zIndex: 100,
@@ -629,23 +609,23 @@ const DashboardLayout = () => {
                         navigate('/dashboard/profile');
                       }}
                       style={{ padding: '8px 12px', cursor: 'pointer', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.9rem', fontWeight: 500 }} 
-                      onMouseEnter={e => e.currentTarget.style.background = isDarkMode ? '#1E2D4A' : 'var(--surface)'} 
+                      onMouseEnter={e => e.currentTarget.style.background = 'var(--surface-elevated)'} 
                       onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                     >
                       <User size={16} /> My Profile
                     </div>
                     <div 
                       style={{ padding: '8px 12px', cursor: 'pointer', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.9rem', fontWeight: 500 }} 
-                      onMouseEnter={e => e.currentTarget.style.background = isDarkMode ? '#1E2D4A' : 'var(--surface)'} 
+                      onMouseEnter={e => e.currentTarget.style.background = 'var(--surface-elevated)'} 
                       onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                     >
                       <Settings size={16} /> Settings
                     </div>
-                    <div style={{ margin: '4px 0', height: 1, background: isDarkMode ? 'rgba(255,255,255,0.08)' : 'var(--border)' }} />
+                    <div style={{ margin: '4px 0', height: 1, background: 'var(--border)' }} />
                     <div 
                       onClick={handleLogout} 
                       style={{ padding: '8px 12px', cursor: 'pointer', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.9rem', fontWeight: 500, color: 'var(--danger)' }} 
-                      onMouseEnter={e => e.currentTarget.style.background = isDarkMode ? 'rgba(239,83,80,0.12)' : 'rgba(239,83,80,0.08)'} 
+                      onMouseEnter={e => e.currentTarget.style.background = 'rgba(239,83,80,0.12)'} 
                       onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                     >
                       <LogOut size={16} /> Logout
@@ -675,7 +655,7 @@ const DashboardLayout = () => {
         style={{
           background: 'var(--surface-card)',
           borderTop: '1px solid var(--border)',
-          boxShadow: isDarkMode ? '0 -4px 20px rgba(0, 0, 0, 0.25)' : '0 -4px 20px rgba(0, 0, 0, 0.06)',
+          boxShadow: 'var(--shadow-md)',
           transition: 'all 0.3s ease'
         }}
       >
@@ -685,12 +665,8 @@ const DashboardLayout = () => {
             to={to} 
             end={exact} 
             style={({ isActive }) => ({
-              color: isActive 
-                ? (isDarkMode ? '#00E5FF' : 'var(--primary)') 
-                : ('var(--text-secondary)'),
-              background: isActive 
-                ? (isDarkMode ? 'rgba(0, 229, 255, 0.1)' : 'var(--primary-light)') 
-                : 'transparent',
+              color: isActive ? 'var(--primary)' : 'var(--text-secondary)',
+              background: isActive ? 'var(--primary-light)' : 'transparent',
               transition: 'all 0.2s ease',
               borderRadius: 'var(--radius-sm)',
             })}
@@ -991,6 +967,15 @@ const DashboardLayout = () => {
       </AnimatePresence>
       {!tourCompleted && user?.uid && (
         <GuidedTour userId={user.uid} role={user.role} onComplete={() => setTourCompleted(true)} />
+      )}
+
+      {user && (
+        <FeesPayment 
+          isOpen={isFeePaymentOpen} 
+          onClose={() => setIsFeePaymentOpen(false)} 
+          pendingAmount={user?.pendingAmount || 0}
+          studentId={user?.uid}
+        />
       )}
     </div>
   );

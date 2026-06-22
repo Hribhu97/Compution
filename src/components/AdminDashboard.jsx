@@ -9,6 +9,7 @@ import { collection, collectionGroup, doc, getDoc, updateDoc, deleteDoc, getDocs
 import { Search, Download, Plus, MoreHorizontal, Eye, ArrowUpRight, Sparkles, ShieldCheck, Trash2, RefreshCw, CheckCircle, XCircle, AlertTriangle, Users, Bell, AlertCircle, Calendar, GraduationCap, ChevronDown, Mail, Send, Pencil, X, ShieldAlert, MessageSquare, Briefcase, UserCheck, Loader2, Check, CheckCheck, Info, UserMinus } from 'lucide-react';
 import Modal from './Modal';
 import SystemHealthPanel from './SystemHealthPanel';
+import ThemeInspector from '../theme/ThemeInspector';
 import { systemDoctorService } from '../services/systemDoctorService';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, PieChart, Pie } from 'recharts';
 
@@ -58,6 +59,8 @@ const AdminDashboard = () => {
   const [isRepairingFinancial, setIsRepairingFinancial] = useState(false);
   const [activeListenersCount, setActiveListenersCount] = useState(9); // Pooled listener count
   const [lastDrawerMsgTime, setLastDrawerMsgTime] = useState(0);
+  const [isDebugPanelOpen, setIsDebugPanelOpen] = useState(false);
+  const [debugSearch, setDebugSearch] = useState('');
 
   // Real-time Database lists
   const [allUsers, setAllUsers] = useState([]);
@@ -68,6 +71,7 @@ const AdminDashboard = () => {
   const [notificationLogs, setNotificationLogs] = useState([]);
   const [allFees, setAllFees] = useState([]);
   const [paymentHistoryList, setPaymentHistoryList] = useState([]);
+  const [paymentRequestsList, setPaymentRequestsList] = useState([]);
   const [selectedStudentFees, setSelectedStudentFees] = useState([]);
   const [selectedStudentAssignedFaculty, setSelectedStudentAssignedFaculty] = useState([]);
 
@@ -133,6 +137,9 @@ const AdminDashboard = () => {
   const [drawerUploadingAttachment, setDrawerUploadingAttachment] = useState(false);
   const [drawerActiveTab, setDrawerActiveTab] = useState('profile'); // 'profile' | 'chat'
 
+  // Master Fee Structure Config
+  const [feeStructure, setFeeStructure] = useState(null);
+
   // 1. DATA LISTENERS
   useEffect(() => {
     if (!db) {
@@ -152,6 +159,29 @@ const AdminDashboard = () => {
     let unsubAssignedStudentIds = () => {};
     let unsubAudit = () => {};
     let unsubQueries = () => {};
+    let unsubFeeStruct = () => {};
+    let unsubPaymentReq = () => {};
+
+    // 0. Master Fee Structure listener
+    try {
+      unsubFeeStruct = onSnapshot(doc(db, 'settings', 'feeStructure'), (docSnap) => {
+        if (docSnap.exists()) {
+          setFeeStructure(docSnap.data());
+        } else {
+          const defaultStructure = {
+            class2to5: 500, class6to8: 600, class9to10: 700, class11Science: 900, class11Application: 0, basicCourse: 700,
+            registrationFee: 300, admissionFee: 0,
+            gracePeriodDays: 5, lateFeeType: 'flat', lateFeeValue: 50, upiId: 'institutelogo@upi', upiName: 'Compution Institute'
+          };
+          setDoc(doc(db, 'settings', 'feeStructure'), defaultStructure, { merge: true });
+          setFeeStructure(defaultStructure);
+        }
+      }, (err) => {
+        console.error("AdminDashboard: fee structure listener error:", err);
+      });
+    } catch (err) {
+      console.error("AdminDashboard: fee structure listener creation failed", err);
+    }
 
     // 1. Leads real-time listener
     try {
@@ -270,6 +300,16 @@ const AdminDashboard = () => {
         }, (err) => {
           console.error("Error subscribing to paymentHistory:", err);
         });
+
+        // Payment Requests
+        unsubPaymentReq = onSnapshot(collection(db, 'paymentRequests'), (snap) => {
+          const list = [];
+          snap.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
+          list.sort((a, b) => (b.submittedAt || '').localeCompare(a.submittedAt || ''));
+          setPaymentRequestsList(list);
+        }, (err) => {
+          console.error("Error subscribing to paymentRequests:", err);
+        });
       }
     } catch (err) {
       console.error("AdminDashboard: payments listener creation failed", err);
@@ -359,6 +399,8 @@ const AdminDashboard = () => {
       unsubAssignedStudentIds();
       unsubAudit();
       unsubQueries();
+      unsubFeeStruct();
+      unsubPaymentReq();
     };
   }, [user?.uid, user?.role]);
 
@@ -1261,7 +1303,7 @@ const AdminDashboard = () => {
       triggerToast(`Query status marked as ${nextStatus}!`, 'success');
     } catch (err) {
       console.error("Error updating query status:", err);
-      triggerToast('Failed to update status', 'danger');
+      triggerToast(err.message || 'Failed to update status', 'danger');
     }
   };
 
@@ -1355,6 +1397,20 @@ const AdminDashboard = () => {
 
       let userDocPayload = {};
       if (role === 'student') {
+        let assignedMonthlyFee = 0;
+        if (numCat >= 2 && numCat <= 5) assignedMonthlyFee = feeStructure?.class2to5 || 500;
+        else if (numCat >= 6 && numCat <= 8) assignedMonthlyFee = feeStructure?.class6to8 || 600;
+        else if (numCat >= 9 && numCat <= 10) assignedMonthlyFee = feeStructure?.class9to10 || 700;
+        else if (numCat === 11 || numCat === 12) {
+          if (stream === 'science') assignedMonthlyFee = feeStructure?.class11Science || 900;
+          else if (stream === 'application') assignedMonthlyFee = feeStructure?.class11Application || 0;
+          else assignedMonthlyFee = feeStructure?.class11Science || 900;
+        } else if (text.includes('basic') || text.includes('computer course')) {
+          assignedMonthlyFee = feeStructure?.basicCourse || 700;
+        } else if (text.includes('bca') || text.includes('b.tech') || text.includes('custom')) {
+          assignedMonthlyFee = 0; // Admin manual entry
+        }
+        
         userDocPayload = {
           uid: newUserId,
           name: displayName,
@@ -1370,6 +1426,10 @@ const AdminDashboard = () => {
           permissions,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
+          joiningDate: new Date().toISOString(),
+          monthlyFee: assignedMonthlyFee,
+          registrationFee: Number(feeStructure?.registrationFee) || 300,
+          admissionFee: Number(feeStructure?.admissionFee) || 0,
           ...groupFields,
           ...extraFields
         };
@@ -1377,7 +1437,7 @@ const AdminDashboard = () => {
           userDocPayload.studentId = `COMP-2026-${Math.floor(1000 + Math.random() * 9000)}`;
         }
         if (userDocPayload.feeStatus === undefined) userDocPayload.feeStatus = 'Pending';
-        if (userDocPayload.feesAmount === undefined) userDocPayload.feesAmount = 2400;
+        if (userDocPayload.feesAmount === undefined) userDocPayload.feesAmount = assignedMonthlyFee * 12; // Example static amount, to be overridden by billing engine
       } else if (role === 'faculty') {
         userDocPayload = {
           uid: newUserId,
@@ -1681,77 +1741,131 @@ const AdminDashboard = () => {
       triggerToast('Fees amount updated!', 'success');
     } catch (err) {
       console.error(err);
-      triggerToast('Failed to update fees', 'danger');
+      triggerToast(err.message || 'Failed to update fees', 'danger');
     }
   };
 
   // ── UPDATE FEE STATUS ──
   const handleUpdateFeeStatus = async (studentId, status) => {
     try {
-      const feesRef = collection(db, 'users', studentId, 'fees');
-      const feesSnap = await getDocs(feesRef);
+      const userRef = doc(db, 'users', studentId);
+      const userSnap = await getDoc(userRef);
+      if (!userSnap.exists()) {
+        throw new Error('Student profile not found');
+      }
       
-      await runTransaction(db, async (transaction) => {
-        const userRef = doc(db, 'users', studentId);
-        const userSnap = await transaction.get(userRef);
-        if (!userSnap.exists()) {
-          throw new Error('Student profile not found');
-        }
-        
-        const userData = userSnap.data();
-        const feesAmount = Number(userData.feesAmount) || 0;
-        let paidAmount = Number(userData.paidAmount) || 0;
-        let pendingAmount = Number(userData.pendingAmount) || 0;
-        
-        let targetStatus = status;
-        if (status === 'Paid') {
-          paidAmount = feesAmount;
-          pendingAmount = 0;
-        } else {
-          if (paidAmount > feesAmount) {
-            paidAmount = feesAmount;
-          }
-          pendingAmount = Math.max(0, feesAmount - paidAmount);
-          if (pendingAmount === 0 && feesAmount > 0) {
-            targetStatus = 'Paid';
-            paidAmount = feesAmount;
-          }
-        }
-        
-        // Validation rules
-        if (paidAmount > feesAmount) {
-          paidAmount = feesAmount;
-        }
-        pendingAmount = Math.max(0, feesAmount - paidAmount);
-        if (targetStatus === 'Paid') {
-          pendingAmount = 0;
-          paidAmount = feesAmount;
-        }
-        
-        transaction.update(userRef, {
-          feeStatus: targetStatus,
-          paidAmount,
-          pendingAmount,
-          updatedAt: new Date().toISOString()
+      const userData = userSnap.data();
+      const pendingAmount = Number(userData.pendingAmount) || 0;
+      const oldStatus = userData.feeStatus || 'Pending';
+      
+      if (status === 'Paid' && pendingAmount > 0) {
+        // Auto-generate payment record for full pending amount
+        const payRef = collection(db, 'paymentHistory');
+        await addDoc(payRef, {
+          studentId,
+          amount: pendingAmount,
+          date: new Date().toISOString(),
+          mode: 'Admin Override',
+          transactionId: 'AUTO-' + Date.now(),
+          remarks: 'Manually marked as paid by Admin',
+          status: 'Approved'
         });
-        
-        if (targetStatus === 'Paid') {
-          feesSnap.forEach(feeDoc => {
-            const feeData = feeDoc.data();
-            const amount = Number(feeData.amount) || 0;
-            transaction.update(feeDoc.ref, {
-              status: 'Paid',
-              paidAmount: amount
-            });
-          });
-        }
+      }
+
+      await updateDoc(userRef, {
+        feeStatus: status,
+        statusSource: 'manual',
+        updatedAt: new Date().toISOString()
+      });
+      
+      // Resync to recalculate balances and strictly apply status logic
+      await syncStudentFeeAggregates(studentId);
+
+      // Audit Logging to billingLogs/
+      await addDoc(collection(db, 'billingLogs'), {
+        studentId,
+        oldStatus,
+        newStatus: status,
+        changedBy: user?.email || user?.uid || 'Admin',
+        timestamp: serverTimestamp()
       });
       
       await logAdminAction('fee_status_update', studentId, { feeStatus: status });
       triggerToast(`Fee status updated to ${status}!`, 'success');
     } catch (err) {
-      console.error("Error updating fee status in transaction:", err);
-      triggerToast('Failed to update fee status', 'danger');
+      console.error("Error updating fee status:", err);
+      triggerToast(err.message || 'Failed to update fee status', 'danger');
+    }
+  };
+
+  const handleToggleStatusSource = async (studentId, currentSource) => {
+    try {
+      const nextSource = currentSource === 'manual' ? 'automatic' : 'manual';
+      const userRef = doc(db, 'users', studentId);
+      await updateDoc(userRef, {
+        statusSource: nextSource,
+        updatedAt: new Date().toISOString()
+      });
+      if (nextSource === 'automatic') {
+        await syncStudentFeeAggregates(studentId);
+      }
+      triggerToast(`Status source updated to ${nextSource}!`, 'success');
+    } catch (err) {
+      console.error("Error toggling status source:", err);
+      triggerToast(err.message || 'Failed to update status source', 'danger');
+    }
+  };
+
+  const handleForceRecalculate = async (studentId) => {
+    try {
+      await syncStudentFeeAggregates(studentId);
+      triggerToast('Billing aggregates recalculated successfully!', 'success');
+    } catch (err) {
+      console.error("Error recalculating aggregates:", err);
+      triggerToast(err.message || 'Failed to recalculate aggregates', 'danger');
+    }
+  };
+
+  const handleApprovePaymentRequest = async (req) => {
+    try {
+      // 1. Create Payment History
+      await addDoc(collection(db, 'paymentHistory'), {
+        studentId: req.studentId,
+        studentName: req.studentName,
+        amount: req.amount,
+        date: new Date().toISOString(),
+        mode: 'UPI',
+        transactionId: req.utrNumber,
+        remarks: 'Approved via Verification',
+        status: 'Approved'
+      });
+      // 2. Resync Billing Engine
+      await syncStudentFeeAggregates(req.studentId);
+      // 3. Mark request as Approved
+      await updateDoc(doc(db, 'paymentRequests', req.id), {
+        status: 'Approved',
+        verifiedAt: new Date().toISOString(),
+        verifiedBy: user.displayName || 'Admin'
+      });
+      await logAdminAction('payment_verified', req.studentId, { utr: req.utrNumber, amount: req.amount });
+      triggerToast('Payment approved & synced successfully!', 'success');
+    } catch (e) {
+      console.error(e);
+      triggerToast(e.message || 'Failed to approve payment', 'danger');
+    }
+  };
+
+  const handleRejectPaymentRequest = async (reqId) => {
+    try {
+      await updateDoc(doc(db, 'paymentRequests', reqId), {
+        status: 'Rejected',
+        rejectedAt: new Date().toISOString(),
+        rejectedBy: user.displayName || 'Admin'
+      });
+      triggerToast('Payment request rejected', 'danger');
+    } catch (e) {
+      console.error(e);
+      triggerToast(e.message || 'Failed to reject payment', 'danger');
     }
   };
 
@@ -2055,7 +2169,7 @@ const AdminDashboard = () => {
         if (newPaidAmount === currentAmount) {
           newStatus = 'Paid';
         } else if (newPaidAmount > 0) {
-          newStatus = 'Partially Paid';
+          newStatus = 'Partial';
         }
 
         // 1. Update the fee document inside transaction
@@ -2087,9 +2201,11 @@ const AdminDashboard = () => {
       setSelectedStudentDetails(prev => {
         const updatedPaid = (prev.paidAmount || 0) + paymentVal;
         const updatedPending = Math.max(0, (prev.feesAmount || 0) - updatedPaid);
-        let updatedStatus = 'Pending';
-        if (updatedPending <= 0) updatedStatus = 'Paid';
-        else if (updatedPaid > 0) updatedStatus = 'Partially Paid';
+        let updatedStatus = prev.statusSource === 'manual' ? prev.feeStatus : 'Pending';
+        if (prev.statusSource !== 'manual') {
+          if (updatedPending <= 0) updatedStatus = 'Paid';
+          else if (updatedPaid > 0) updatedStatus = 'Partial';
+        }
         return {
           ...prev,
           paidAmount: updatedPaid,
@@ -2165,9 +2281,11 @@ const AdminDashboard = () => {
           const updatedFees = Math.max(0, (prev.feesAmount || 0) - feeItem.amount);
           const updatedPaid = Math.max(0, (prev.paidAmount || 0) - feeItem.paidAmount);
           const updatedPending = Math.max(0, updatedFees - updatedPaid);
-          let updatedStatus = 'Pending';
-          if (updatedFees > 0 && updatedPending <= 0) updatedStatus = 'Paid';
-          else if (updatedPaid > 0) updatedStatus = 'Partially Paid';
+          let updatedStatus = prev.statusSource === 'manual' ? prev.feeStatus : 'Pending';
+          if (prev.statusSource !== 'manual') {
+            if (updatedFees > 0 && updatedPending <= 0) updatedStatus = 'Paid';
+            else if (updatedPaid > 0) updatedStatus = 'Partial';
+          }
           return {
             ...prev,
             feesAmount: updatedFees,
@@ -3063,9 +3181,11 @@ const AdminDashboard = () => {
           { key: 'chats', label: 'Doubt Chats', roles: ['admin', 'faculty', 'member'] },
           { key: 'notifications', label: 'Alert logs', roles: ['admin', 'member'] },
           { key: 'roles', label: 'Roles Panel', roles: ['admin'] },
+          { key: 'fee_config', label: 'Fee Config', roles: ['admin'] },
           { key: 'analytics', label: 'Analytics', roles: ['admin'] },
           { key: 'audit_logs', label: 'System Audits', roles: ['admin'] },
-          { key: 'system_health', label: 'System Health', roles: ['admin'] }
+          { key: 'system_health', label: 'System Health', roles: ['admin'] },
+          { key: 'theme_inspector', label: 'Theme Inspector', roles: ['admin'] }
         ].filter(tab => tab.roles.includes(user?.role || 'student')).map(tab => (
           <button
             key={tab.key}
@@ -3195,6 +3315,20 @@ const AdminDashboard = () => {
                 {filteredStudents.map(student => {
                   const feeStatus = student.feeStatus || 'Pending';
                   const currentFeesAmount = student.feesAmount !== undefined ? student.feesAmount : 2400;
+                  const colorMap = {
+                    'Paid': 'var(--success)',
+                    'Partial': 'var(--primary)',
+                    'Partially Paid': 'var(--primary)',
+                    'Pending': 'var(--danger)',
+                    'Delayed': 'var(--danger)'
+                  };
+                  const bgMap = {
+                    'Paid': 'rgba(102,187,106,0.15)',
+                    'Partial': 'rgba(94, 107, 255, 0.15)',
+                    'Partially Paid': 'rgba(94, 107, 255, 0.15)',
+                    'Pending': 'rgba(245,158,11,0.15)',
+                    'Delayed': 'rgba(239,83,80,0.15)'
+                  };
 
                   return (
                     <tr key={student.id} style={{ borderBottom: '1px solid var(--border)', fontSize: '0.88rem' }}>
@@ -3315,6 +3449,25 @@ const AdminDashboard = () => {
                             >
                               Delayed
                             </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleUpdateFeeStatus(student.id, 'Partial');
+                              }}
+                              style={{
+                                padding: '4px 10px',
+                                background: feeStatus === 'Partial' ? 'rgba(94, 107, 255, 0.15)' : 'var(--surface)',
+                                color: 'var(--primary)',
+                                border: feeStatus === 'Partial' ? '1px solid var(--primary)' : '1px solid var(--border)',
+                                borderRadius: '6px',
+                                fontSize: '0.75rem',
+                                fontWeight: 600,
+                                cursor: 'pointer',
+                                transition: 'all 0.2s',
+                              }}
+                            >
+                              Partial
+                            </button>
                             {feeStatus !== 'Paid' && (
                               <button
                                 onClick={(e) => {
@@ -3342,9 +3495,9 @@ const AdminDashboard = () => {
                           <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
                             <span style={{
                               padding: '4px 10px',
-                              background: feeStatus === 'Paid' ? 'rgba(102,187,106,0.15)' : feeStatus === 'Pending' ? 'rgba(245,158,11,0.15)' : 'rgba(239,83,80,0.15)',
-                              color: feeStatus === 'Paid' ? 'var(--success)' : feeStatus === 'Pending' ? '#F59E0B' : 'var(--danger)',
-                              border: feeStatus === 'Paid' ? '1px solid var(--success)' : feeStatus === 'Pending' ? '1px solid #F59E0B' : '1px solid var(--danger)',
+                              background: bgMap[feeStatus] || 'var(--surface)',
+                              color: colorMap[feeStatus] || 'var(--text-muted)',
+                              border: `1px solid ${colorMap[feeStatus] || 'var(--border)'}`,
                               borderRadius: '6px',
                               fontSize: '0.75rem',
                               fontWeight: 600
@@ -3413,10 +3566,10 @@ const AdminDashboard = () => {
               {/* Widgets Row */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
                 {[
-                  { label: 'Total Collected', value: `₹${activeFees.reduce((acc, f) => acc + (Number(f.paidAmount) || 0), 0).toLocaleString('en-IN')}`, color: 'var(--success)' },
-                  { label: 'Total Pending', value: `₹${activeFees.reduce((acc, f) => acc + ((Number(f.amount) || 0) - (Number(f.paidAmount) || 0)), 0).toLocaleString('en-IN')}`, color: 'var(--danger)' },
+                  { label: 'Total Collected', value: `₹${studentsList.reduce((acc, s) => acc + (Number(s.paidAmount) || 0), 0).toLocaleString('en-IN')}`, color: 'var(--success)' },
+                  { label: 'Total Pending', value: `₹${studentsList.reduce((acc, s) => acc + (Number(s.pendingAmount) || 0), 0).toLocaleString('en-IN')}`, color: 'var(--danger)' },
                   { label: 'Pending Students', value: studentsList.filter(s => (s.pendingAmount || 0) > 0 || s.feeStatus !== 'Paid').length, color: '#F59E0B' },
-                  { label: 'Total Billed', value: `₹${activeFees.reduce((acc, f) => acc + (Number(f.amount) || 0), 0).toLocaleString('en-IN')}`, color: 'var(--primary)' }
+                  { label: 'Total Billed', value: `₹${studentsList.reduce((acc, s) => acc + (Number(s.feesAmount) || 0), 0).toLocaleString('en-IN')}`, color: 'var(--primary)' }
                 ].map((widget, i) => (
                   <div key={i} style={{ padding: '16px', background: 'var(--surface)', borderRadius: '12px', border: '1px solid var(--border)' }}>
                     <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 600, marginBottom: '6px' }}>{widget.label}</div>
@@ -3467,8 +3620,35 @@ const AdminDashboard = () => {
                 </div>
               </div>
 
+              {/* Payment Verification Queue */}
+              <div style={{ marginTop: '24px' }}>
+                <h3 style={{ fontSize: '1rem', fontWeight: 800, marginBottom: '12px', color: 'var(--dark)' }}>Pending Verifications</h3>
+                {paymentRequestsList.filter(r => r.status === 'Pending Verification').length === 0 ? (
+                  <div style={{ padding: '20px', background: 'var(--surface)', borderRadius: '12px', textAlign: 'center', color: 'var(--text-muted)' }}>
+                    No pending payment verifications.
+                  </div>
+                ) : (
+                  <div style={{ display: 'grid', gap: '12px' }}>
+                    {paymentRequestsList.filter(r => r.status === 'Pending Verification').map(req => (
+                      <div key={req.id} style={{ padding: '16px', background: 'var(--white)', border: '1px solid var(--border)', borderRadius: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div>
+                          <div style={{ fontWeight: 700 }}>{req.studentName} <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem', fontWeight: 500 }}>({req.paymentDate})</span></div>
+                          <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
+                            <span style={{ fontWeight: 600 }}>Amount:</span> ₹{req.amount} | <span style={{ fontWeight: 600 }}>UTR:</span> {req.utrNumber}
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <button onClick={() => handleApprovePaymentRequest(req)} className="btn btn-primary" style={{ padding: '6px 12px', fontSize: '0.8rem', borderRadius: '6px' }}>Approve</button>
+                          <button onClick={() => handleRejectPaymentRequest(req.id)} className="btn" style={{ padding: '6px 12px', fontSize: '0.8rem', borderRadius: '6px', background: 'var(--surface)', color: 'var(--danger)', border: '1px solid var(--danger)' }}>Reject</button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
               {/* Billed Roster Title & List */}
-              <div>
+              <div style={{ marginTop: '24px' }}>
                 <h3 style={{ fontSize: '1rem', fontWeight: 800, marginBottom: '12px', color: 'var(--dark)' }}>Student Billing Overview</h3>
                 <div className="table-scroll">
                   <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '700px' }}>
@@ -3488,13 +3668,15 @@ const AdminDashboard = () => {
                         const feeStatus = student.feeStatus || 'Pending';
                         const colorMap = {
                           'Paid': 'var(--success)',
-                          'Partially Paid': '#F59E0B',
+                          'Partial': 'var(--primary)',
+                          'Partially Paid': 'var(--primary)',
                           'Pending': 'var(--danger)',
                           'Delayed': 'var(--danger)'
                         };
                         const bgMap = {
                           'Paid': 'rgba(102,187,106,0.1)',
-                          'Partially Paid': 'rgba(245,158,11,0.1)',
+                          'Partial': 'rgba(94, 107, 255, 0.1)',
+                          'Partially Paid': 'rgba(94, 107, 255, 0.1)',
                           'Pending': 'rgba(239,83,80,0.1)',
                           'Delayed': 'rgba(239,83,80,0.1)'
                         };
@@ -3532,6 +3714,168 @@ const AdminDashboard = () => {
                   </table>
                 </div>
               </div>
+
+              {/* Admin Billing Debug Panel */}
+              {user?.role?.toLowerCase() === 'admin' && (
+                <div style={{
+                  background: 'var(--surface)',
+                  borderRadius: '16px',
+                  border: '1px solid var(--border)',
+                  padding: '20px',
+                  marginTop: '24px',
+                  boxShadow: '0 4px 12px rgba(0,0,0,0.05)'
+                }}>
+                  <div 
+                    onClick={() => setIsDebugPanelOpen(!isDebugPanelOpen)}
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      cursor: 'pointer',
+                      userSelect: 'none'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <AlertTriangle size={18} style={{ color: 'var(--primary)' }} />
+                      <h3 style={{ fontSize: '1rem', fontWeight: 800, margin: 0, color: 'var(--dark)' }}>
+                        Admin Billing Debug Panel
+                      </h3>
+                    </div>
+                    <ChevronDown 
+                      size={20} 
+                      style={{ 
+                        transform: isDebugPanelOpen ? 'rotate(180deg)' : 'rotate(0deg)', 
+                        transition: 'transform 0.2s',
+                        color: 'var(--text-muted)'
+                      }} 
+                    />
+                  </div>
+
+                  {isDebugPanelOpen && (
+                    <div style={{ marginTop: '16px' }}>
+                      <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '16px' }}>
+                        This panel allows you to monitor and control billing state directly. You can inspect fields stored in Firestore, toggle the billing source override, and force recalculations.
+                      </p>
+
+                      <div style={{ marginBottom: '16px', maxWidth: '400px' }}>
+                        <input
+                          type="text"
+                          placeholder="Search student by name or ID..."
+                          value={debugSearch}
+                          onChange={(e) => setDebugSearch(e.target.value)}
+                          style={{
+                            width: '100%',
+                            padding: '10px 14px',
+                            borderRadius: '8px',
+                            border: '1px solid var(--border)',
+                            background: 'var(--white)',
+                            color: 'var(--dark)',
+                            fontSize: '0.85rem'
+                          }}
+                        />
+                      </div>
+
+                      <div className="table-scroll">
+                        <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '800px' }}>
+                          <thead>
+                            <tr style={{ borderBottom: '1px solid var(--border)', fontSize: '0.8rem', color: 'var(--text-light)' }}>
+                              <th style={{ padding: '10px' }}>Student Info</th>
+                              <th style={{ padding: '10px' }}>Student ID</th>
+                              <th style={{ padding: '10px' }}>feeStatus</th>
+                              <th style={{ padding: '10px' }}>statusSource</th>
+                              <th style={{ padding: '10px' }}>pendingAmount</th>
+                              <th style={{ padding: '10px' }}>paidAmount</th>
+                              <th style={{ padding: '10px' }}>Last Update</th>
+                              <th style={{ padding: '10px' }}>Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {studentsList
+                              .filter(s => 
+                                !debugSearch || 
+                                s.displayName?.toLowerCase().includes(debugSearch.toLowerCase()) || 
+                                s.id?.toLowerCase().includes(debugSearch.toLowerCase())
+                              )
+                              .map(student => {
+                                const feeStatus = student.feeStatus || 'Pending';
+                                const statusSource = student.statusSource || 'automatic';
+                                const lastUpdate = student.updatedAt ? new Date(student.updatedAt).toLocaleString() : 'Never';
+
+                                const colorMap = {
+                                  'Paid': 'var(--success)',
+                                  'Partial': 'var(--primary)',
+                                  'Partially Paid': 'var(--primary)',
+                                  'Pending': 'var(--danger)',
+                                  'Delayed': 'var(--danger)'
+                                };
+                                const bgMap = {
+                                  'Paid': 'rgba(102,187,106,0.1)',
+                                  'Partial': 'rgba(94, 107, 255, 0.1)',
+                                  'Partially Paid': 'rgba(94, 107, 255, 0.1)',
+                                  'Pending': 'rgba(239,83,80,0.1)',
+                                  'Delayed': 'rgba(239,83,80,0.1)'
+                                };
+
+                                return (
+                                  <tr key={student.id} style={{ borderBottom: '1px solid var(--border)', fontSize: '0.85rem' }}>
+                                    <td style={{ padding: '10px' }}>
+                                      <div style={{ fontWeight: 700, color: 'var(--dark)' }}>{student.displayName}</div>
+                                      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{student.email}</div>
+                                    </td>
+                                    <td style={{ padding: '10px', fontFamily: 'monospace', fontSize: '0.75rem' }}>
+                                      {student.id}
+                                    </td>
+                                    <td style={{ padding: '10px' }}>
+                                      <span style={{
+                                        padding: '3px 8px', borderRadius: '100px', fontSize: '0.7rem', fontWeight: 800,
+                                        color: colorMap[feeStatus] || 'var(--text-muted)',
+                                        background: bgMap[feeStatus] || 'var(--surface)'
+                                      }}>{feeStatus}</span>
+                                    </td>
+                                    <td style={{ padding: '10px' }}>
+                                      <span style={{
+                                        padding: '3px 8px', borderRadius: '100px', fontSize: '0.7rem', fontWeight: 800,
+                                        color: statusSource === 'manual' ? '#F59E0B' : 'var(--success)',
+                                        background: statusSource === 'manual' ? 'rgba(245,158,11,0.1)' : 'rgba(102,187,106,0.1)'
+                                      }}>{statusSource}</span>
+                                    </td>
+                                    <td style={{ padding: '10px', fontWeight: 600 }}>
+                                      ₹{(student.pendingAmount || 0).toLocaleString()}
+                                    </td>
+                                    <td style={{ padding: '10px', fontWeight: 600, color: 'var(--success)' }}>
+                                      ₹{(student.paidAmount || 0).toLocaleString()}
+                                    </td>
+                                    <td style={{ padding: '10px', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                                      {lastUpdate}
+                                    </td>
+                                    <td style={{ padding: '10px' }}>
+                                      <div style={{ display: 'flex', gap: '8px' }}>
+                                        <button
+                                          onClick={() => handleToggleStatusSource(student.id, statusSource)}
+                                          className="btn btn-secondary"
+                                          style={{ padding: '4px 8px', fontSize: '0.7rem', borderRadius: '4px' }}
+                                        >
+                                          Toggle Source
+                                        </button>
+                                        <button
+                                          onClick={() => handleForceRecalculate(student.id)}
+                                          className="btn btn-primary"
+                                          style={{ padding: '4px 8px', fontSize: '0.7rem', borderRadius: '4px' }}
+                                        >
+                                          Recalculate
+                                        </button>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
 
             </div>
           )}
@@ -3949,6 +4293,107 @@ const AdminDashboard = () => {
               allFeesCount={allFees.length}
               auditLogsCount={auditLogs.length}
             />
+          )}
+
+          {/* ==================== 11b. TABS: THEME INSPECTOR ==================== */}
+          {activePanelTab === 'theme_inspector' && (
+            <ThemeInspector />
+          )}
+
+          {/* ==================== 12. TABS: FEE CONFIG ==================== */}
+          {activePanelTab === 'fee_config' && user?.role === 'admin' && (
+            <div className="card" style={{ padding: '24px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
+                <div style={{ background: 'rgba(91, 108, 255, 0.1)', padding: '10px', borderRadius: '12px', color: 'var(--primary)' }}>
+                  <Briefcase size={24} />
+                </div>
+                <div>
+                  <h2 style={{ fontSize: '1.25rem', fontWeight: 800, margin: 0, color: 'var(--text-primary)' }}>Fees Master Configuration</h2>
+                  <p style={{ margin: '4px 0 0 0', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Manage default class fees, grace periods, and late penalties.</p>
+                </div>
+              </div>
+
+              {feeStructure ? (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '20px' }}>
+                  {/* Base Fees */}
+                  <div style={{ border: '1px solid var(--border)', borderRadius: '12px', padding: '16px' }}>
+                    <h3 style={{ fontSize: '1rem', fontWeight: 700, marginBottom: '16px', color: 'var(--text-primary)' }}>Monthly Fees (₹)</h3>
+                    {Object.entries({
+                      'Class 2 to 5': 'class2to5',
+                      'Class 6 to 8': 'class6to8',
+                      'Class 9 to 10': 'class9to10',
+                      'Class 11/12 Science': 'class11Science',
+                      'Class 11/12 Application': 'class11Application',
+                      'Basic Computer Course': 'basicCourse',
+                      'Registration Fee (One-Time)': 'registrationFee',
+                      'Admission Fee (One-Time)': 'admissionFee'
+                    }).map(([label, key]) => (
+                      <div key={key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                        <span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>{label}</span>
+                        <input 
+                          type="number" 
+                          value={feeStructure[key]} 
+                          onChange={(e) => setFeeStructure(prev => ({ ...prev, [key]: Number(e.target.value) }))}
+                          style={{ width: '100px', padding: '6px 12px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.9rem' }}
+                        />
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Policies & UPI */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                    <div style={{ border: '1px solid var(--border)', borderRadius: '12px', padding: '16px' }}>
+                      <h3 style={{ fontSize: '1rem', fontWeight: 700, marginBottom: '16px', color: 'var(--text-primary)' }}>Late Fee Policy</h3>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                        <span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>Grace Period (Days)</span>
+                        <input type="number" value={feeStructure.gracePeriodDays} onChange={(e) => setFeeStructure(prev => ({ ...prev, gracePeriodDays: Number(e.target.value) }))} style={{ width: '100px', padding: '6px 12px', borderRadius: '6px', border: '1px solid var(--border)' }} />
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                        <span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>Penalty Type</span>
+                        <select value={feeStructure.lateFeeType} onChange={(e) => setFeeStructure(prev => ({ ...prev, lateFeeType: e.target.value }))} style={{ width: '120px', padding: '6px', borderRadius: '6px', border: '1px solid var(--border)' }}>
+                          <option value="flat">Flat Amount</option>
+                          <option value="percentage">Percentage (%)</option>
+                        </select>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>Penalty Value</span>
+                        <input type="number" value={feeStructure.lateFeeValue} onChange={(e) => setFeeStructure(prev => ({ ...prev, lateFeeValue: Number(e.target.value) }))} style={{ width: '100px', padding: '6px 12px', borderRadius: '6px', border: '1px solid var(--border)' }} />
+                      </div>
+                    </div>
+
+                    <div style={{ border: '1px solid var(--border)', borderRadius: '12px', padding: '16px' }}>
+                      <h3 style={{ fontSize: '1rem', fontWeight: 700, marginBottom: '16px', color: 'var(--text-primary)' }}>Institution UPI Detail</h3>
+                      <div style={{ marginBottom: '12px' }}>
+                        <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>UPI ID</label>
+                        <input type="text" value={feeStructure.upiId} onChange={(e) => setFeeStructure(prev => ({ ...prev, upiId: e.target.value }))} style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--border)' }} />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Account Name</label>
+                        <input type="text" value={feeStructure.upiName} onChange={(e) => setFeeStructure(prev => ({ ...prev, upiName: e.target.value }))} style={{ width: '100%', padding: '8px 12px', borderRadius: '6px', border: '1px solid var(--border)' }} />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div style={{ padding: '40px', textAlign: 'center', color: 'var(--text-muted)' }}>Loading configuration...</div>
+              )}
+
+              <div style={{ marginTop: '24px', display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
+                <button 
+                  onClick={async () => {
+                    try {
+                      await setDoc(doc(db, 'settings', 'feeStructure'), feeStructure, { merge: true });
+                      triggerToast('Master Fee Configuration Saved!', 'success');
+                    } catch (err) {
+                      triggerToast('Failed to save configuration', 'danger');
+                    }
+                  }}
+                  className="btn btn-primary"
+                >
+                  <Check size={16} /> Save Changes
+                </button>
+              </div>
+            </div>
           )}
 
         </div>
@@ -4497,8 +4942,8 @@ const AdminDashboard = () => {
                             selectedStudentFees.map((fee) => {
                               const remaining = fee.amount - fee.paidAmount;
                               const feeStatus = fee.status || 'Pending';
-                              const colorMap = { 'Paid': 'var(--success)', 'Partially Paid': '#F59E0B', 'Pending': 'var(--danger)' };
-                              const bgMap = { 'Paid': 'rgba(102,187,106,0.1)', 'Partially Paid': 'rgba(245,158,11,0.1)', 'Pending': 'rgba(239,83,80,0.1)' };
+                              const colorMap = { 'Paid': 'var(--success)', 'Partial': 'var(--primary)', 'Partially Paid': 'var(--primary)', 'Pending': 'var(--danger)' };
+                              const bgMap = { 'Paid': 'rgba(102,187,106,0.1)', 'Partial': 'rgba(94, 107, 255, 0.1)', 'Partially Paid': 'rgba(94, 107, 255, 0.1)', 'Pending': 'rgba(239,83,80,0.1)' };
 
                               return (
                                 <tr key={fee.id} style={{ borderBottom: '1px solid var(--border)' }}>
@@ -4552,6 +4997,22 @@ const AdminDashboard = () => {
                           )}
                         </tbody>
                       </table>
+                    </div>
+
+                    {/* Fee Breakdown */}
+                    <div style={{ padding: '12px', background: 'var(--surface-elevated)', borderRadius: '8px', marginBottom: '16px', fontSize: '0.85rem' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                        <span style={{ color: 'var(--text-secondary)' }}>Monthly Tuition Fee:</span>
+                        <span style={{ fontWeight: 600 }}>₹{selectedStudentDetails.monthlyFee || 0}/mo</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                        <span style={{ color: 'var(--text-secondary)' }}>Registration Fee (One-time):</span>
+                        <span style={{ fontWeight: 600 }}>₹{selectedStudentDetails.registrationFee || 0}</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ color: 'var(--text-secondary)' }}>Admission Fee (One-time):</span>
+                        <span style={{ fontWeight: 600 }}>₹{selectedStudentDetails.admissionFee || 0}</span>
+                      </div>
                     </div>
 
                     {/* Overall Aggregates Card */}

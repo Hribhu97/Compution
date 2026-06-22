@@ -225,13 +225,13 @@ export const systemDoctorService = {
         if (pending <= 0 && totalAmount > 0) {
           status = 'Paid';
         } else if (totalPaid > 0) {
-          status = 'Partially Paid';
+          status = 'Partial';
         }
 
         const mismatch = student.feesAmount !== totalAmount ||
                           student.paidAmount !== totalPaid ||
                           student.pendingAmount !== pending ||
-                          student.feeStatus !== status;
+                          (student.statusSource !== 'manual' && student.feeStatus !== status);
 
         if (mismatch && feesSnap.size > 0) {
           issuesFound++;
@@ -243,9 +243,9 @@ export const systemDoctorService = {
               feesAmount: totalAmount,
               paidAmount: totalPaid,
               pendingAmount: pending,
-              feeStatus: status
+              feeStatus: student.statusSource === 'manual' ? student.feeStatus : status
             },
-            log: `🔧 [Repair] Synced student billing totals for ${student.name} to Billed=${totalAmount}, Paid=${totalPaid}, Status=${status}`
+            log: `🔧 [Repair] Synced student billing totals for ${student.name} to Billed=${totalAmount}, Paid=${totalPaid}, Status=${student.statusSource === 'manual' ? student.feeStatus : status}`
           });
         }
       }

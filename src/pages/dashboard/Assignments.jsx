@@ -290,8 +290,8 @@ const Assignments = () => {
                 border: 'none',
                 cursor: 'pointer',
                 whiteSpace: 'nowrap',
-                background: selectedLevelFilter === grp.value ? 'var(--dark)' : 'var(--surface)',
-                color: selectedLevelFilter === grp.value ? 'white' : 'var(--text-muted)',
+                background: selectedLevelFilter === grp.value ? 'var(--primary)' : 'var(--surface)',
+                color: selectedLevelFilter === grp.value ? 'var(--text-on-primary)' : 'var(--text-secondary)',
                 transition: 'all 0.25s'
               }}
             >
@@ -303,11 +303,11 @@ const Assignments = () => {
         {/* Global Assignments Grid */}
         <div className="grid-auto-cards">
           {loading ? (
-            [1, 2, 3].map(i => <div key={i} style={{ height: 220, background: 'var(--white)', borderRadius: 20, animation: 'pulse 1.5s infinite' }} />)
+            [1, 2, 3].map(i => <div key={i} style={{ height: 220, background: 'var(--surface)', borderRadius: 20, animation: 'pulse 1.5s infinite' }} />)
           ) : groupedFilteredAssignments.length === 0 ? (
-            <motion.div variants={item} style={{ gridColumn: '1 / -1', padding: '60px', textAlign: 'center', background: 'var(--white)', borderRadius: '20px', color: 'var(--text-light)', border: '1px dashed var(--border-strong)' }}>
+            <motion.div variants={item} style={{ gridColumn: '1 / -1', padding: '60px', textAlign: 'center', background: 'var(--surface)', borderRadius: '20px', color: 'var(--text-light)', border: '1px dashed var(--border-strong)' }}>
               <FileText size={40} style={{ margin: '0 auto 16px', opacity: 0.5 }} />
-              <h3 style={{ fontSize: '1.2rem', color: 'var(--dark)', marginBottom: '8px' }}>No Assignments Published</h3>
+              <h3 style={{ fontSize: '1.2rem', color: 'var(--text-primary)', marginBottom: '8px' }}>No Assignments Published</h3>
               <p>Ready to deploy study sheets? Click "New Assignment" to publish tasks for {selectedLevelFilter === 'All' ? 'any standard' : selectedLevelFilter}.</p>
             </motion.div>
           ) : (
@@ -472,7 +472,7 @@ const Assignments = () => {
         {['assignments', 'notes'].map(t => (
           <button key={t} onClick={() => setTab(t)} style={{
             padding: '9px 22px', borderRadius: 'var(--radius-md)', fontWeight: 700, fontSize: '0.9rem',
-            background: tab === t ? 'white' : 'transparent', color: tab === t ? 'var(--dark)' : 'var(--text-muted)',
+            background: tab === t ? 'var(--surface-elevated)' : 'transparent', color: tab === t ? 'var(--text-primary)' : 'var(--text-secondary)',
             boxShadow: tab === t ? 'var(--shadow-sm)' : 'none', transition: 'var(--transition)', border: 'none', cursor: 'pointer',
             textTransform: 'capitalize'
           }}>
@@ -484,12 +484,12 @@ const Assignments = () => {
       {/* Content Grid */}
       <div className="grid-auto-cards">
         {loading ? (
-          [1,2,3].map(i => <motion.div key={i} variants={item} style={{ height: 200, background: 'var(--white)', borderRadius: 20, animation: 'pulse 1.5s infinite' }} />)
+          [1,2,3].map(i => <motion.div key={i} variants={item} style={{ height: 200, background: 'var(--surface)', borderRadius: 20, animation: 'pulse 1.5s infinite' }} />)
         ) : tab === 'assignments' ? (
           combinedAssignments.length === 0 ? (
-            <motion.div variants={item} style={{ gridColumn: '1 / -1', padding: '60px', textAlign: 'center', background: 'var(--white)', borderRadius: '20px', color: 'var(--text-light)', border: '1px dashed var(--border-strong)' }}>
+            <motion.div variants={item} style={{ gridColumn: '1 / -1', padding: '60px', textAlign: 'center', background: 'var(--surface)', borderRadius: '20px', color: 'var(--text-light)', border: '1px dashed var(--border-strong)' }}>
               <FileText size={40} style={{ margin: '0 auto 16px', opacity: 0.5 }} />
-              <h3 style={{ fontSize: '1.2rem', color: 'var(--dark)', marginBottom: '8px' }}>No assignments yet</h3>
+              <h3 style={{ fontSize: '1.2rem', color: 'var(--text-primary)', marginBottom: '8px' }}>No assignments yet</h3>
               <p>You're all caught up for {studentGrade}!</p>
             </motion.div>
           ) : (
@@ -524,9 +524,9 @@ const Assignments = () => {
           )
         ) : (
           notes.length === 0 ? (
-            <motion.div variants={item} style={{ gridColumn: '1 / -1', padding: '60px', textAlign: 'center', background: 'var(--white)', borderRadius: '20px', color: 'var(--text-light)', border: '1px dashed var(--border-strong)' }}>
+            <motion.div variants={item} style={{ gridColumn: '1 / -1', padding: '60px', textAlign: 'center', background: 'var(--surface)', borderRadius: '20px', color: 'var(--text-light)', border: '1px dashed var(--border-strong)' }}>
               <FileEdit size={40} style={{ margin: '0 auto 16px', opacity: 0.5 }} />
-              <h3 style={{ fontSize: '1.2rem', color: 'var(--dark)', marginBottom: '8px' }}>No notes saved</h3>
+              <h3 style={{ fontSize: '1.2rem', color: 'var(--text-primary)', marginBottom: '8px' }}>No notes saved</h3>
               <p>Create a note to remember important class details.</p>
             </motion.div>
           ) : (
