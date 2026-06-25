@@ -35,16 +35,23 @@ import { query, where } from "firebase/firestore";
 export const syncStudentFeeAggregates = async (studentId) => {
   try {
     const userRef = doc(db, 'users', studentId);
-    
-    // Read payments outside transaction (required as transaction cannot query collections)
-    const payRef = collection(db, 'paymentHistory');
-    const paySnap = await getDocs(query(payRef, where('studentId', '==', studentId)));
-    
-    let totalPaymentsReceived = 0;
-    paySnap.forEach(d => {
+    const feeRef = doc(db, 'fees', studentId);
+
+    // Fetch existing legacy payment history to backfill if the fees doc doesn't exist
+    const legacyPayRef = collection(db, 'paymentHistory');
+    const legacyPaySnap = await getDocs(query(legacyPayRef, where('studentId', '==', studentId)));
+    const legacyPayments = [];
+    legacyPaySnap.forEach(d => {
       const p = d.data();
       if (p.status === 'Approved' || p.status === 'Paid') {
-        totalPaymentsReceived += Number(p.amount) || 0;
+        legacyPayments.push({
+          amount: Number(p.amount) || 0,
+          date: p.date || p.timestamp || new Date().toISOString(),
+          transactionId: p.transactionId || p.utrNumber || d.id,
+          mode: p.mode || p.paymentMethod || 'UPI',
+          remarks: p.remarks || p.notes || 'Approved',
+          feeName: p.feeName || 'Tuition'
+        });
       }
     });
 
@@ -56,72 +63,102 @@ export const syncStudentFeeAggregates = async (studentId) => {
       const userData = userSnap.data();
       if (userData.role !== 'student') return;
 
-      const monthlyFee = Number(userData.monthlyFee) || 0;
-      const joiningDate = userData.joiningDate ? new Date(userData.joiningDate) : new Date(userData.createdAt || new Date());
-      const currentDate = new Date();
-      
-      // Calculate monthsActive (India Billing Year April -> March)
-      let academicYearStart = new Date(currentDate.getFullYear(), 3, 1); // April 1
-      if (currentDate.getMonth() < 3) {
-        academicYearStart = new Date(currentDate.getFullYear() - 1, 3, 1);
-      }
-      const effectiveStartDate = joiningDate > academicYearStart ? joiningDate : academicYearStart;
-      
-      let monthsActive = (currentDate.getFullYear() - effectiveStartDate.getFullYear()) * 12;
-      monthsActive -= effectiveStartDate.getMonth();
-      monthsActive += currentDate.getMonth();
-      monthsActive = monthsActive <= 0 ? 1 : monthsActive + 1;
+      const feeSnap = await transaction.get(feeRef);
+      let feeData = feeSnap.exists() ? feeSnap.data() : null;
 
-      // Carry forward balances & Fallbacks
-      let expectedTotal = 0;
-      if (monthlyFee > 0) {
-        expectedTotal = (monthlyFee * monthsActive) + (Number(userData.registrationFee) || 0) + (Number(userData.admissionFee) || 0);
-      } else {
-        expectedTotal = (Number(userData.feesAmount) || 0) + (Number(userData.registrationFee) || 0) + (Number(userData.admissionFee) || 0);
-      }
+      // Master fee structure config read
+      const feeStructRef = doc(db, 'settings', 'feeStructure');
+      const feeStructSnap = await transaction.get(feeStructRef);
+      const feeStructure = feeStructSnap.exists() ? feeStructSnap.data() : {
+        class2to5: 500, class6to8: 600, class9to10: 700, class11Science: 900, class11Application: 0, basicCourse: 700,
+        registrationFee: 300, admissionFee: 0
+      };
 
-      const lateFee = Number(userData.lateFee) || 0;
-      const discount = Number(userData.discount) || 0;
-
-      expectedTotal = expectedTotal + lateFee - discount;
-      
-      let balance = expectedTotal - totalPaymentsReceived;
-      let finalPending = Math.max(0, balance);
-      
-      // Admin Manual Override Logic
-      let computedStatus = userData.feeStatus || 'Pending';
-      
-      if (userData.statusSource === 'manual') {
-        // Retain the manual status
-        computedStatus = userData.feeStatus || 'Pending';
-      } else {
-        if (finalPending <= 0 && expectedTotal > 0) {
-          computedStatus = 'Paid';
-        } else if (totalPaymentsReceived > 0 && finalPending > 0) {
-          computedStatus = 'Partial';
-        } else if (totalPaymentsReceived === 0 && finalPending > 0) {
-          // If Admin manually set it to Delayed, don't overwrite to Pending
-          if (computedStatus !== 'Delayed') {
-             computedStatus = 'Pending';
+      // Pricing logic fallback based on classCategory, stream, and course
+      let monthlyFee = userData.monthlyFee;
+      if (monthlyFee === undefined || monthlyFee === null) {
+        const numCat = parseInt(userData.classCategory) || 0;
+        const text = `${userData.course || ''} ${userData.classCategory || ''}`.toLowerCase();
+        
+        if (numCat >= 2 && numCat <= 5) {
+          monthlyFee = Number(feeStructure.class2to5) || 500;
+        } else if (numCat >= 6 && numCat <= 8) {
+          monthlyFee = Number(feeStructure.class6to8) || 600;
+        } else if (numCat >= 9 && numCat <= 10) {
+          monthlyFee = Number(feeStructure.class9to10) || 700;
+        } else if (numCat === 11 || numCat === 12) {
+          if (userData.stream === 'science') {
+            monthlyFee = Number(feeStructure.class11Science) !== undefined ? Number(feeStructure.class11Science) : 900;
+          } else {
+            // application or other
+            monthlyFee = Number(feeStructure.class11Application) !== undefined ? Number(feeStructure.class11Application) : 700;
           }
+        } else if (text.includes('basic') || text.includes('computer')) {
+          monthlyFee = Number(feeStructure.basicCourse) || 700;
+        } else {
+          monthlyFee = 500; // general fallback
         }
+      } else {
+        monthlyFee = Number(monthlyFee);
       }
+
+      const currentDate = new Date();
+      const joiningDate = userData.joiningDate ? new Date(userData.joiningDate) : new Date(userData.createdAt || new Date());
+      
+      let monthsActive = (currentDate.getFullYear() - joiningDate.getFullYear()) * 12 + (currentDate.getMonth() - joiningDate.getMonth()) + 1;
+      if (monthsActive < 1) monthsActive = 1;
+
+      const baseTuition = monthlyFee * monthsActive;
+      const registrationFee = userData.registrationFee !== undefined ? Number(userData.registrationFee) : (Number(feeStructure.registrationFee) !== undefined ? Number(feeStructure.registrationFee) : 300);
+      const admissionFee = userData.admissionFee !== undefined ? Number(userData.admissionFee) : (Number(feeStructure.admissionFee) !== undefined ? Number(feeStructure.admissionFee) : 0);
+      const mandatoryFees = registrationFee + admissionFee;
+      const lateFees = Number(userData.lateFee) || 0;
+      const adminCharges = Number(userData.adminCharges) || 0;
+
+      const totalFeeDue = baseTuition + mandatoryFees + lateFees + adminCharges;
+
+      // Sum all approved successful transactions from paymentHistory collection (rebuild history array)
+      const paymentHistory = legacyPayments;
+      const totalPaid = paymentHistory.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+      const remainingBalance = totalFeeDue - totalPaid;
+
+      // Only PAID and PENDING allowed
+      const status = remainingBalance <= 0 ? 'Paid' : 'Pending';
+
+      // Find last payment date
+      let lastPaymentDate = null;
+      if (paymentHistory.length > 0) {
+        const sortedHistory = [...paymentHistory].sort((a, b) => new Date(b.date) - new Date(a.date));
+        lastPaymentDate = sortedHistory[0].date;
+      }
+
+      const updatedFeeDoc = {
+        studentId,
+        monthlyFee,
+        totalFeeDue,
+        totalPaid,
+        remainingBalance,
+        status,
+        paymentHistory,
+        dueDate: feeData?.dueDate || '10',
+        lastPaymentDate,
+        createdAt: feeData?.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+
+      transaction.set(feeRef, updatedFeeDoc, { merge: true });
 
       transaction.update(userRef, {
-        feesAmount: expectedTotal,
-        paidAmount: totalPaymentsReceived,
-        pendingAmount: finalPending,
-        feeStatus: computedStatus,
+        feesAmount: totalFeeDue,
+        paidAmount: totalPaid,
+        pendingAmount: remainingBalance,
+        feeStatus: status,
         monthsActive: monthsActive,
+        monthlyFee: monthlyFee, // ensure current monthlyFee is synced back to profile
         updatedAt: new Date().toISOString()
       });
 
-      result = {
-        feesAmount: expectedTotal,
-        paidAmount: totalPaymentsReceived,
-        pendingAmount: finalPending,
-        feeStatus: computedStatus
-      };
+      result = updatedFeeDoc;
     });
 
     return result;

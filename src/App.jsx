@@ -18,7 +18,11 @@ import Attendance from './pages/dashboard/Attendance';
 import Schedule from './pages/dashboard/Schedule';
 import Community from './pages/dashboard/Community';
 import Profile from './pages/dashboard/Profile';
-import NotFound from './pages/public/NotFound';
+import FeesAndPayments from './pages/dashboard/FeesAndPayments';
+import { 
+  NotFoundPage, StudentNotFoundPage, PaymentFailedPage, 
+  UnauthorizedPage, MaintenancePage, NetworkOfflinePage, ServerErrorPage 
+} from './pages/errors/ErrorPages';
 
 import { ThemeProvider } from './theme/ThemeProvider';
 
@@ -69,8 +73,15 @@ function App() {
               <Route path="mini-games" element={<MiniGames />} />
               <Route path="community" element={<Community />} />
               <Route path="profile" element={<Profile />} />
+              <Route path="fees" element={<FeesAndPayments />} />
             </Route>
-            <Route path="*" element={<NotFound />} />
+            <Route path="/error/unauthorized" element={<UnauthorizedPage />} />
+            <Route path="/error/student-not-found" element={<StudentNotFoundPage />} />
+            <Route path="/error/payment-failed" element={<PaymentFailedPage />} />
+            <Route path="/error/maintenance" element={<MaintenancePage />} />
+            <Route path="/error/offline" element={<NetworkOfflinePage />} />
+            <Route path="/error/server-error" element={<ServerErrorPage />} />
+            <Route path="*" element={<NotFoundPage />} />
           </Routes>
           <ChatAssistant />
         </Router>

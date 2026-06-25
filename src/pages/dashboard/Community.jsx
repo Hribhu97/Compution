@@ -17,24 +17,7 @@ const Community = () => {
   const location = useLocation();
   const { showToast } = useToast();
   const [activeTab, setActiveTab] = useState('board'); // 'board' | 'chat'
-  const [isDarkMode, setIsDarkMode] = useState(() => {
-    if (!user?.uid) return false;
-    return localStorage.getItem(`isDarkMode_${user.uid}`) === 'true';
-  });
-
-  useEffect(() => {
-    const syncTheme = () => {
-      if (user?.uid) {
-        setIsDarkMode(localStorage.getItem(`isDarkMode_${user.uid}`) === 'true');
-      }
-    };
-    window.addEventListener('themechange', syncTheme);
-    window.addEventListener('storage', syncTheme);
-    return () => {
-      window.removeEventListener('themechange', syncTheme);
-      window.removeEventListener('storage', syncTheme);
-    };
-  }, [user]);
+  const isDarkMode = false;
 
   // Post Board state
   const [posts, setPosts] = useState([]);

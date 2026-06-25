@@ -611,90 +611,7 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover {
   }
 }
 
-/* =================== DARK THEME STYLING =================== */
-.dark-theme,
-html.dark-theme,
-body.dark-theme,
-[data-theme="dark"] {
-  /* System mode tokens: Dark Mode */
-  --bg: #121417;
-  --surface: #1B1F26;
-  --surface-elevated: #232936;
-  --text-primary: #F4F4F5;
-  --text-secondary: #A1A8B8;
-  --border: #313847;
-  --primary: #6D7CFF;
-  --success: #4CAF7D;
-  --warning: #F4B860;
-  --danger: #FF6B6B;
-  --text-muted: #7C8394;
-  
-  /* Semantic helper tokens */
-  --text-on-primary: #FFFFFF;
-  --text-on-primary-muted: rgba(255, 255, 255, 0.6);
-  --text-on-primary-active-bg: rgba(255, 255, 255, 0.2);
-  --surface-card: var(--surface-elevated);
-  --surface-input: var(--surface-elevated);
-  --surface-table: var(--surface-elevated);
-  
-  /* Core brand tokens & backward compatibility mappings */
-  --primary-dark: #5C6AFF;
-  --primary-light: rgba(109, 124, 255, 0.08);
-  --accent: #6D7CFF;
-  --border-strong: var(--border);
-  --text-light: #7C8394;
-  --primary-blue: var(--primary);
-  --accent-green: var(--success);
-
-  --white: var(--surface-elevated);       /* Maps legacy cards to elevated dark cards */
-  --dark: var(--text-primary);            /* Maps default headings/text to primary light text */
-  --text-main: var(--text-primary);       /* Maps body texts to primary light text */
-  --navbar-bg: rgba(26, 29, 34, 0.92);
-  --navbar-border: var(--border);
-  --footer-bg: var(--surface);
-  --shadow-sm: none;
-  --shadow-md: none;
-  --shadow-lg: none;
-  --shadow-primary: none;
-}
-
-body.dark-theme, .dark-theme body {
-  background: var(--bg) !important;
-  color: var(--text-primary) !important;
-}
-
-body.dark-theme select,
-body.dark-theme option,
-body.dark-theme input,
-body.dark-theme textarea {
-  color: var(--text-primary) !important;
-  background-color: var(--surface-card) !important;
-  border-color: var(--border) !important;
-}
-
-body.dark-theme .admissions-cta {
-  background: linear-gradient(135deg, #1B1B1B 0%, #121212 100%);
-  border: 1px solid var(--border);
-}
-
-body.dark-theme .dash-shell {
-  background: var(--bg);
-}
-
-body.dark-theme .dash-bottom-nav {
-  background: var(--surface-card);
-  border-top: 1px solid var(--border);
-  box-shadow: none;
-}
-
-body.dark-theme .dash-bottom-nav a {
-  color: var(--text-muted);
-}
-
-body.dark-theme .dash-bottom-nav a.active {
-  color: var(--primary-blue);
-  background: var(--primary-light);
-}
+/* =================== DARK THEME STYLING REMOVED =================== */
 
 /* =================== STUDENT WORKSPACE CHILD THEME SCOPED =================== */
 .student-workspace-theme-scoped {
@@ -724,9 +641,7 @@ body.dark-theme .dash-bottom-nav a.active {
   overflow: hidden;
 }
 
-.student-workspace-theme-scoped.dark-theme .candy-progress-track {
-  background: #202D45;
-}
+
 
 .student-workspace-theme-scoped .candy-progress-fill {
   height: 100%;

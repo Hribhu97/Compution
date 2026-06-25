@@ -444,3 +444,143 @@ exports.onCommunityPostCreated = functions.firestore
     return null;
   });
 
+exports.sendMonthlyOverdueReminders = functions.pubsub
+  .schedule('0 9 * * *')
+  .timeZone('Asia/Kolkata')
+  .onRun(async (context) => {
+    const now = new Date();
+    const istOffset = 5.5 * 60 * 60 * 1000;
+    const nowIst = new Date(now.getTime() + istOffset);
+    const dayOfMonth = nowIst.getDate();
+
+    // Reminder schedule: 11th, 15th, 20th, 25th days only
+    const allowedDays = [11, 15, 20, 25];
+    if (!allowedDays.includes(dayOfMonth)) {
+      console.log(`Today is the ${dayOfMonth}th. Reminders are scheduled for the 11th, 15th, 20th, and 25th of the month. Skipping.`);
+      return null;
+    }
+
+    const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    const currentMonth = months[nowIst.getMonth()];
+
+    // Fetch all pending billing profiles
+    const feesSnap = await db.collection('fees').where('status', '==', 'Pending').get();
+    if (feesSnap.empty) {
+      console.log("No pending fees records found today.");
+      return null;
+    }
+
+    const promises = [];
+
+    feesSnap.forEach(docSnap => {
+      const feeDoc = docSnap.data();
+      const studentId = docSnap.id;
+      const outstandingAmount = feeDoc.remainingBalance || 0;
+
+      if (outstandingAmount <= 0) return; // double check edge case
+
+      promises.push((async () => {
+        // Fetch student profile details
+        const studentDoc = await db.collection('users').doc(studentId).get();
+        if (!studentDoc.exists) {
+          console.log(`Student record ${studentId} missing.`);
+          return;
+        }
+
+        const studentData = studentDoc.data();
+        if (studentData.role !== 'student') return;
+
+        const studentName = studentData.displayName || studentData.name || 'Student';
+        const contactPhone = studentData.phone || studentData.guardianPhone || '';
+        const studentEmail = studentData.email || '';
+
+        const paymentLink = `https://compution.vercel.app/dashboard/fees`;
+        const qrCodeLink = `https://upi.pe/9674035542@ibl?pn=Biswajit+Maity`;
+
+        const alertMessage = `Friendly reminder: Hi ${studentName}, your outstanding tuition fee of ₹${outstandingAmount} for the month of ${currentMonth} is pending. Please pay using the link: ${paymentLink} or scan our UPI QR: ${qrCodeLink}. Thank you, Compution Academy.`;
+
+        const reminderId = `overdue_${studentId}_${nowIst.getFullYear()}_${nowIst.getMonth() + 1}_${dayOfMonth}`;
+        const notificationRef = db.collection('notificationHistory').doc(reminderId);
+
+        const logSnap = await notificationRef.get();
+        if (logSnap.exists) {
+          console.log(`Reminder already logged for ${studentName} today.`);
+          return;
+        }
+
+        const notificationLog = {
+          studentId,
+          studentName,
+          phone: contactPhone,
+          email: studentEmail,
+          type: 'overdue_reminder',
+          message: alertMessage,
+          timestamp: admin.firestore.FieldValue.serverTimestamp(),
+          status: 'pending',
+          metadata: {
+            outstandingAmount,
+            currentMonth,
+            paymentLink,
+            qrCodeLink
+          }
+        };
+
+        // Send Email
+        try {
+          console.log(`[EMAIL SEND] To: ${studentEmail || 'N/A'}, Message: "${alertMessage}"`);
+          notificationLog.emailStatus = 'sent_email';
+        } catch (emailErr) {
+          console.error(`Email reminder failed for ${studentName}:`, emailErr);
+          notificationLog.emailStatus = 'failed';
+        }
+
+        // Send SMS/WhatsApp via Twilio
+        if (contactPhone) {
+          try {
+            const formattedPhone = contactPhone.startsWith('+') ? contactPhone : `+91${contactPhone}`;
+            if (twilioClient && twilioPhone) {
+              await twilioClient.messages.create({
+                body: alertMessage,
+                to: formattedPhone,
+                from: twilioPhone
+              });
+              notificationLog.status = 'sent_sms';
+              notificationLog.provider = 'twilio';
+              console.log(`SMS Alert sent to student ${studentName} at ${formattedPhone}`);
+
+              try {
+                const fromWhatsApp = twilioPhone.startsWith('whatsapp:') ? twilioPhone : `whatsapp:${twilioPhone}`;
+                const toWhatsApp = formattedPhone.startsWith('whatsapp:') ? formattedPhone : `whatsapp:${formattedPhone}`;
+                
+                await twilioClient.messages.create({
+                  body: alertMessage,
+                  to: toWhatsApp,
+                  from: fromWhatsApp
+                });
+                console.log(`WhatsApp Alert sent to student ${studentName} at ${formattedPhone}`);
+                notificationLog.status = 'sent_whatsapp';
+              } catch (waErr) {
+                console.error(`WhatsApp send failed, sent via SMS:`, waErr);
+              }
+            } else {
+              notificationLog.status = 'simulated';
+              notificationLog.provider = 'mock_api';
+              console.log(`Twilio config missing. Simulated alert logged for ${studentName}: "${alertMessage}"`);
+            }
+          } catch (err) {
+            console.error(`Error sending alert for ${studentName}:`, err);
+            notificationLog.status = 'failed';
+            notificationLog.error = err.message;
+          }
+        } else {
+          notificationLog.status = 'no_phone';
+        }
+
+        await notificationRef.set(notificationLog);
+      })());
+    });
+
+    await Promise.all(promises);
+    return null;
+  });
+

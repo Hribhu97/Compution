@@ -11,7 +11,7 @@ import {
   LayoutDashboard, BookOpen, ClipboardList,
   FileText, Settings, LogOut, Search, Bell,
   CalendarCheck, Calendar, MessageSquare, User, Sparkles, ShieldAlert, Loader2,
-  Video, Gamepad2
+  Video, Gamepad2, CreditCard
 } from 'lucide-react';
 
 const ADMISSION_SUBJECTS = [
@@ -55,6 +55,7 @@ const NAV_MAIN = [
   { to: '/dashboard/attendance', label: 'Attendance', icon: CalendarCheck },
   { to: '/dashboard/assignments', label: 'Assignments', icon: FileText },
   { to: '/dashboard/community', label: 'Community', icon: MessageSquare },
+  { to: '/dashboard/fees', label: 'Fees & Payments', icon: CreditCard },
 ];
 
 import FeesPayment from '../../components/FeesPayment';
@@ -333,8 +334,8 @@ const DashboardLayout = () => {
     { to: '/dashboard', label: 'Home', icon: LayoutDashboard, exact: true },
     { to: '/dashboard/courses', label: 'Courses', icon: BookOpen },
     { to: '/dashboard/schedule', label: 'Schedule', icon: Calendar },
-    { to: '/dashboard/assignments', label: 'Tasks', icon: FileText },
     { to: '/dashboard/community', label: 'Chat', icon: MessageSquare },
+    { to: '/dashboard/fees', label: 'Fees', icon: CreditCard },
   ];
 
 
@@ -522,7 +523,7 @@ const DashboardLayout = () => {
             
             {user?.role === 'student' && user?.feeStatus !== 'Paid' && user?.pendingAmount > 0 && (
               <button 
-                onClick={() => setIsFeePaymentOpen(true)}
+                onClick={() => navigate('/dashboard/fees')}
                 style={{ 
                   padding: '6px 14px', background: 'var(--danger)', color: 'white', 
                   borderRadius: '100px', fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer',

@@ -271,14 +271,13 @@ const AdminDashboard = () => {
       console.error("AdminDashboard: notifications listener creation failed", err);
     }
 
-    // 7. Fees collectionGroup real-time listener
+    // 7. Fees collection real-time listener
     try {
-      if (user?.role === 'admin') {
-        unsubFees = onSnapshot(collectionGroup(db, 'fees'), (snap) => {
+      if (user?.role === 'admin' || user?.role === 'faculty' || user?.role === 'member') {
+        unsubFees = onSnapshot(collection(db, 'fees'), (snap) => {
           const list = [];
           snap.forEach(doc => {
-            const studentId = doc.ref.parent.parent.id;
-            list.push({ id: doc.id, studentId, ...doc.data() });
+            list.push({ id: doc.id, studentId: doc.id, ...doc.data() });
           });
           setAllFees(list);
         }, (err) => {
@@ -489,10 +488,22 @@ const AdminDashboard = () => {
     let unsubProgressReport = () => {};
 
     try {
-      unsubStudentFees = onSnapshot(collection(db, 'users', selectedStudentDetails.id, 'fees'), (snap) => {
-        const list = [];
-        snap.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
-        setSelectedStudentFees(list);
+      unsubStudentFees = onSnapshot(doc(db, 'fees', selectedStudentDetails.id), (docSnap) => {
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          const history = data.paymentHistory || [];
+          setSelectedStudentFees(history.map((tx, idx) => ({
+            id: tx.transactionId || String(idx),
+            feeName: tx.feeName || 'Tuition',
+            month: new Date(tx.date).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' }),
+            amount: tx.amount,
+            paidAmount: tx.amount,
+            status: 'Paid',
+            ...tx
+          })));
+        } else {
+          setSelectedStudentFees([]);
+        }
       }, (err) => {
         console.error("AdminDashboard: student fees listener error:", err);
       });
@@ -1755,29 +1766,54 @@ const AdminDashboard = () => {
       }
       
       const userData = userSnap.data();
-      const pendingAmount = Number(userData.pendingAmount) || 0;
       const oldStatus = userData.feeStatus || 'Pending';
-      
-      if (status === 'Paid' && pendingAmount > 0) {
-        // Auto-generate payment record for full pending amount
-        const payRef = collection(db, 'paymentHistory');
-        await addDoc(payRef, {
-          studentId,
-          amount: pendingAmount,
-          date: new Date().toISOString(),
-          mode: 'Admin Override',
-          transactionId: 'AUTO-' + Date.now(),
-          remarks: 'Manually marked as paid by Admin',
-          status: 'Approved'
-        });
+      const feeRef = doc(db, 'fees', studentId);
+      const feeSnap = await getDoc(feeRef);
+      let remaining = 0;
+
+      if (feeSnap.exists()) {
+        remaining = feeSnap.data().remainingBalance;
+      } else {
+        remaining = userData.pendingAmount || 0;
       }
 
-      await updateDoc(userRef, {
-        feeStatus: status,
-        statusSource: 'manual',
-        updatedAt: new Date().toISOString()
-      });
-      
+      if (status === 'Paid') {
+        if (remaining > 0) {
+          // Auto-generate payment record for full pending amount in the paymentHistory collection
+          await addDoc(collection(db, 'paymentHistory'), {
+            studentId,
+            studentName: userData.displayName || userData.name || 'Student',
+            amount: remaining,
+            date: new Date().toISOString(),
+            mode: 'Cash Override',
+            transactionId: 'AUTO-' + Date.now(),
+            remarks: 'Manually marked as paid by Admin (Cash/Override)',
+            feeName: 'Tuition',
+            status: 'Approved'
+          });
+        }
+      } else if (status === 'Pending') {
+        // Revert overrides: delete Cash Override and Admin Override transactions from paymentHistory collection
+        const paySnap = await getDocs(query(
+          collection(db, 'paymentHistory'),
+          where('studentId', '==', studentId)
+        ));
+        const batch = writeBatch(db);
+        let deletedAny = false;
+        paySnap.forEach(d => {
+          const data = d.data();
+          if (data.mode === 'Cash Override' || data.mode === 'Admin Override') {
+            batch.delete(d.ref);
+            deletedAny = true;
+          }
+        });
+        if (deletedAny) {
+          await batch.commit();
+        } else {
+          triggerToast('Student has paid all normal dues. Add a fee/charge item to increase balance.', 'info');
+        }
+      }
+
       // Resync to recalculate balances and strictly apply status logic
       await syncStudentFeeAggregates(studentId);
 
@@ -1871,10 +1907,21 @@ const AdminDashboard = () => {
 
   // ── SEND WHATSAPP REMINDER ──
   const handleSendWhatsAppNotification = (student) => {
+    const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    const currentMonth = months[new Date().getMonth()];
+    const text = encodeURIComponent(
+      `Hi ${student.displayName},\n\n` +
+      `This is a friendly reminder that your outstanding tuition fee of *₹${student.pendingAmount || student.feesAmount || 0}* for the month of *${currentMonth}* is overdue.\n\n` +
+      `Please clear the balance at the earliest to prevent any platform restriction.\n\n` +
+      `Payment Link: https://compution.vercel.app/dashboard/fees\n` +
+      `UPI ID QR: 9674035542@ibl\n\n` +
+      `Thank you,\n` +
+      `Compution Academy`
+    );
     const phone = student.phone || '';
     const cleanPhone = phone.replace(/\D/g, '');
-    const text = encodeURIComponent(`Hi ${student.displayName}, this is a reminder from Compution Academy regarding your pending fee payment of ₹${student.feesAmount || 2400} for the course ${student.course}. Please clear it at the earliest.`);
-    const url = cleanPhone ? `https://wa.me/${cleanPhone}?text=${text}` : `https://wa.me/916290935898?text=${text}`;
+    const num = cleanPhone ? cleanPhone : '9196740035542';
+    const url = `https://wa.me/${num.startsWith('91') ? num : '91' + num}?text=${text}`;
     window.open(url, '_blank');
     triggerToast(`WhatsApp reminder opened for ${student.displayName}!`, 'success');
   };
@@ -2137,7 +2184,7 @@ const AdminDashboard = () => {
   // ── COLLECT PAYMENT SUBMIT ──
   const handleCollectPaymentSubmit = async (e) => {
     e.preventDefault();
-    if (!selectedStudentDetails || !selectedFeeItem || isRecordingPayment) return;
+    if (!selectedStudentDetails || isRecordingPayment) return;
 
     const paymentVal = Number(paymentForm.amountPaid);
     if (isNaN(paymentVal) || paymentVal <= 0) {
@@ -2148,78 +2195,29 @@ const AdminDashboard = () => {
     setIsRecordingPayment(true);
 
     try {
-      await runTransaction(db, async (transaction) => {
-        const feeRef = doc(db, 'users', selectedStudentDetails.id, 'fees', selectedFeeItem.id);
-        const feeSnap = await transaction.get(feeRef);
-        if (!feeSnap.exists()) {
-          throw new Error('Fee item not found');
-        }
-
-        const feeData = feeSnap.data();
-        const currentAmount = Number(feeData.amount) || 0;
-        const currentPaid = Number(feeData.paidAmount) || 0;
-        const remaining = currentAmount - currentPaid;
-
-        if (paymentVal > remaining) {
-          throw new Error(`Payment exceeds remaining fee balance of ₹${remaining}`);
-        }
-
-        const newPaidAmount = currentPaid + paymentVal;
-        let newStatus = 'Pending';
-        if (newPaidAmount === currentAmount) {
-          newStatus = 'Paid';
-        } else if (newPaidAmount > 0) {
-          newStatus = 'Partial';
-        }
-
-        // 1. Update the fee document inside transaction
-        transaction.update(feeRef, {
-          paidAmount: newPaidAmount,
-          status: newStatus
-        });
-
-        // 2. Add to paymentHistory inside transaction
-        const histRef = doc(collection(db, 'paymentHistory'));
-        transaction.set(histRef, {
-          studentId: selectedStudentDetails.id,
-          studentName: selectedStudentDetails.displayName,
-          feeId: selectedFeeItem.id,
-          feeName: selectedFeeItem.feeName,
-          amount: paymentVal,
-          month: selectedFeeItem.month || 'May 2026',
-          paidBy: 'Admin',
-          timestamp: new Date().toISOString(),
-          paymentMethod: paymentForm.paymentMethod,
-          notes: paymentForm.notes
-        });
+      // 1. Add to paymentHistory collection
+      await addDoc(collection(db, 'paymentHistory'), {
+        studentId: selectedStudentDetails.id,
+        studentName: selectedStudentDetails.displayName,
+        amount: paymentVal,
+        date: new Date().toISOString(),
+        mode: paymentForm.paymentMethod,
+        transactionId: 'CASH-' + Date.now(),
+        remarks: paymentForm.notes || 'Recorded manually by Admin',
+        feeName: selectedFeeItem?.feeName || 'Tuition',
+        status: 'Approved',
+        timestamp: new Date().toISOString()
       });
 
-      // Recalculate aggregates outside the transaction block
+      // 2. Recalculate aggregates
       await syncStudentFeeAggregates(selectedStudentDetails.id);
 
-      // Local state update for drawer
-      setSelectedStudentDetails(prev => {
-        const updatedPaid = (prev.paidAmount || 0) + paymentVal;
-        const updatedPending = Math.max(0, (prev.feesAmount || 0) - updatedPaid);
-        let updatedStatus = prev.statusSource === 'manual' ? prev.feeStatus : 'Pending';
-        if (prev.statusSource !== 'manual') {
-          if (updatedPending <= 0) updatedStatus = 'Paid';
-          else if (updatedPaid > 0) updatedStatus = 'Partial';
-        }
-        return {
-          ...prev,
-          paidAmount: updatedPaid,
-          pendingAmount: updatedPending,
-          feeStatus: updatedStatus
-        };
-      });
-
-      await logAdminAction('collect_payment', selectedStudentDetails.id, { feeId: selectedFeeItem.id, feeName: selectedFeeItem.feeName, amountPaid: paymentVal, paymentMethod: paymentForm.paymentMethod });
-      triggerToast(`Successfully collected ₹${paymentVal} for ${selectedFeeItem.feeName}!`, 'success');
+      await logAdminAction('collect_payment', selectedStudentDetails.id, { feeId: selectedFeeItem?.id || 'manual', feeName: selectedFeeItem?.feeName || 'Tuition', amountPaid: paymentVal, paymentMethod: paymentForm.paymentMethod });
+      triggerToast(`Successfully collected ₹${paymentVal} for ${selectedFeeItem?.feeName || 'Tuition'}!`, 'success');
       setIsCollectPaymentOpen(false);
       setPaymentForm({ amountPaid: '', paymentMethod: 'Cash', notes: '' });
     } catch (err) {
-      console.error("Error collecting payment in transaction:", err);
+      console.error("Error collecting payment:", err);
       triggerToast(err.message || 'Failed to record payment', 'danger');
     } finally {
       setIsRecordingPayment(false);
@@ -2238,25 +2236,23 @@ const AdminDashboard = () => {
     }
 
     try {
-      const feeId = `${feeForm.feeName.toLowerCase().replace(/\s+/g, '_')}_${Date.now()}`;
-      const newFee = {
-        feeName: feeForm.feeName,
-        amount: feeAmt,
-        paidAmount: 0,
-        month: feeForm.month,
-        status: 'Pending',
-        createdAt: new Date().toISOString()
-      };
+      const userRef = doc(db, 'users', selectedStudentDetails.id);
+      const userSnap = await getDoc(userRef);
+      if (!userSnap.exists()) {
+        throw new Error('Student profile not found');
+      }
+      const userData = userSnap.data();
+      const currentAdminCharges = Number(userData.adminCharges) || 0;
+      const newAdminCharges = currentAdminCharges + feeAmt;
 
-      await setDoc(doc(db, 'users', selectedStudentDetails.id, 'fees', feeId), newFee);
+      // Update adminCharges on user profile
+      await updateDoc(userRef, {
+        adminCharges: newAdminCharges,
+        updatedAt: new Date().toISOString()
+      });
+
+      // Recalculate billing aggregates
       await syncStudentFeeAggregates(selectedStudentDetails.id);
-
-      // Trigger local state updates
-      setSelectedStudentDetails(prev => ({
-        ...prev,
-        feesAmount: (prev.feesAmount || 0) + feeAmt,
-        pendingAmount: (prev.pendingAmount || 0) + feeAmt
-      }));
 
       await logAdminAction('fee_item_add', selectedStudentDetails.id, { feeName: feeForm.feeName, amount: feeAmt, month: feeForm.month });
       triggerToast(`Added fee item ${feeForm.feeName} of ₹${feeAmt}`, 'success');
@@ -2271,32 +2267,35 @@ const AdminDashboard = () => {
   // ── DELETE FEE ITEM ──
   const handleDeleteFeeItem = async (feeItem) => {
     if (!selectedStudentDetails) return;
-    if (window.confirm(`Delete fee item "${feeItem.feeName}" (Amount: ₹${feeItem.amount})? This is irreversible.`)) {
+    if (feeItem.id === 'pending_tuition_balance') {
+      triggerToast('Cannot delete the outstanding balance item.', 'danger');
+      return;
+    }
+    if (window.confirm(`Delete payment transaction "${feeItem.feeName}" (Amount: ₹${feeItem.amount})? This will reduce total paid and restore student dues.`)) {
       try {
-        await deleteDoc(doc(db, 'users', selectedStudentDetails.id, 'fees', feeItem.id));
-        await syncStudentFeeAggregates(selectedStudentDetails.id);
+        // Find document in paymentHistory collection with this transactionId/id
+        const paySnap = await getDocs(query(
+          collection(db, 'paymentHistory'),
+          where('studentId', '==', selectedStudentDetails.id),
+          where('transactionId', '==', feeItem.id)
+        ));
 
-        // Local state update for drawer
-        setSelectedStudentDetails(prev => {
-          const updatedFees = Math.max(0, (prev.feesAmount || 0) - feeItem.amount);
-          const updatedPaid = Math.max(0, (prev.paidAmount || 0) - feeItem.paidAmount);
-          const updatedPending = Math.max(0, updatedFees - updatedPaid);
-          let updatedStatus = prev.statusSource === 'manual' ? prev.feeStatus : 'Pending';
-          if (prev.statusSource !== 'manual') {
-            if (updatedFees > 0 && updatedPending <= 0) updatedStatus = 'Paid';
-            else if (updatedPaid > 0) updatedStatus = 'Partial';
-          }
-          return {
-            ...prev,
-            feesAmount: updatedFees,
-            paidAmount: updatedPaid,
-            pendingAmount: updatedPending,
-            feeStatus: updatedStatus
-          };
+        const batch = writeBatch(db);
+        let deletedAny = false;
+        paySnap.forEach(d => {
+          batch.delete(d.ref);
+          deletedAny = true;
         });
 
+        if (deletedAny) {
+          await batch.commit();
+        }
+
+        // Recalculate aggregates
+        await syncStudentFeeAggregates(selectedStudentDetails.id);
+
         await logAdminAction('fee_item_delete', selectedStudentDetails.id, { feeId: feeItem.id, feeName: feeItem.feeName, amount: feeItem.amount });
-        triggerToast(`Deleted fee item ${feeItem.feeName}`, 'success');
+        triggerToast(`Deleted payment transaction ${feeItem.feeName}`, 'success');
       } catch (err) {
         console.error("Error deleting fee item:", err);
         triggerToast('Failed to delete fee item', 'danger');
@@ -2307,20 +2306,42 @@ const AdminDashboard = () => {
   // ── GET BILLING TREND DATA ──
   const getBillingTrendData = () => {
     const monthlyData = {};
-    activeFees.forEach(fee => {
-      const m = fee.month || 'Other';
-      if (!monthlyData[m]) {
-        monthlyData[m] = { month: m, billed: 0, collected: 0, pending: 0 };
-      }
-      monthlyData[m].billed += Number(fee.amount) || 0;
-      monthlyData[m].collected += Number(fee.paidAmount) || 0;
-      monthlyData[m].pending += (Number(fee.amount) || 0) - (Number(fee.paidAmount) || 0);
-    });
-
     const monthsOrder = [
       'January 2026', 'February 2026', 'March 2026', 'April 2026', 'May 2026', 'June 2026',
       'July 2026', 'August 2026', 'September 2026', 'October 2026', 'November 2026', 'December 2026'
     ];
+
+    allFees.forEach(fee => {
+      const history = fee.paymentHistory || [];
+      history.forEach(tx => {
+        const txDate = new Date(tx.date);
+        const m = txDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }); // e.g. "June 2026"
+        if (!monthlyData[m]) {
+          monthlyData[m] = { month: m, billed: 0, collected: 0, pending: 0 };
+        }
+        monthlyData[m].collected += Number(tx.amount) || 0;
+      });
+
+      // Distribute billed amount based on monthlyFee for active months
+      const start = fee.createdAt ? new Date(fee.createdAt) : new Date(2026, 0, 1);
+      const end = new Date();
+      let temp = new Date(start.getTime());
+      while (temp <= end) {
+        const m = temp.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+        if (monthsOrder.includes(m)) {
+          if (!monthlyData[m]) {
+            monthlyData[m] = { month: m, billed: 0, collected: 0, pending: 0 };
+          }
+          monthlyData[m].billed += Number(fee.monthlyFee) || 500;
+        }
+        temp.setMonth(temp.getMonth() + 1);
+      }
+    });
+
+    // Calculate pending for each month
+    Object.keys(monthlyData).forEach(m => {
+      monthlyData[m].pending = Math.max(0, monthlyData[m].billed - monthlyData[m].collected);
+    });
 
     return Object.values(monthlyData).sort((a, b) => {
       const indexA = monthsOrder.indexOf(a.month);
@@ -2354,12 +2375,12 @@ const AdminDashboard = () => {
   const totalMembers = membersList.length;
   const activeChatRooms = chatRoomsList.length;
 
-  const pendingFeesTotal = studentsList.reduce((acc, s) => {
-    return acc + (Number(s.pendingAmount) || 0);
+  const pendingFeesTotal = activeFees.reduce((acc, f) => {
+    return acc + (Number(f.remainingBalance) || 0);
   }, 0);
 
-  const totalMonthlyFees = studentsList.reduce((acc, s) => {
-    return acc + (Number(s.feesAmount) || 0);
+  const totalMonthlyFees = activeFees.reduce((acc, f) => {
+    return acc + (Number(f.monthlyFee) || 0);
   }, 0);
 
   const courseDensityData = () => {
@@ -2378,9 +2399,9 @@ const AdminDashboard = () => {
     const rate = totalAtt > 0 ? Math.round((presentAtt / totalAtt) * 100) : 92; // default high attendance representation if logs are empty
 
     // Revenue collections
-    const totalBilled = activeFees.reduce((acc, f) => acc + (Number(f.amount) || 0), 0);
-    const totalCollected = activeFees.reduce((acc, f) => acc + (Number(f.paidAmount) || 0), 0);
-    const totalPending = totalBilled - totalCollected;
+    const totalBilled = activeFees.reduce((acc, f) => acc + (Number(f.totalFeeDue) || 0), 0);
+    const totalCollected = activeFees.reduce((acc, f) => acc + (Number(f.totalPaid) || 0), 0);
+    const totalPending = activeFees.reduce((acc, f) => acc + (Number(f.remainingBalance) || 0), 0);
     const collectionPercent = totalBilled > 0 ? Math.round((totalCollected / totalBilled) * 100) : 80;
 
     return (
@@ -3147,6 +3168,22 @@ const AdminDashboard = () => {
     );
   };
 
+  const currentStudentDetails = selectedStudentDetails
+    ? allUsers.find(u => u.id === selectedStudentDetails.id) || selectedStudentDetails
+    : null;
+
+  const feesToShow = [...selectedStudentFees];
+  if (currentStudentDetails && currentStudentDetails.pendingAmount > 0) {
+    feesToShow.unshift({
+      id: 'pending_tuition_balance',
+      feeName: 'Pending Tuition Balance',
+      month: new Date().toLocaleDateString('en-IN', { month: 'long', year: 'numeric' }),
+      amount: currentStudentDetails.pendingAmount,
+      paidAmount: 0,
+      status: 'Pending'
+    });
+  }
+
   return (
     <motion.div variants={stagger} initial="hidden" animate="show" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
       
@@ -3317,17 +3354,11 @@ const AdminDashboard = () => {
                   const currentFeesAmount = student.feesAmount !== undefined ? student.feesAmount : 2400;
                   const colorMap = {
                     'Paid': 'var(--success)',
-                    'Partial': 'var(--primary)',
-                    'Partially Paid': 'var(--primary)',
-                    'Pending': 'var(--danger)',
-                    'Delayed': 'var(--danger)'
+                    'Pending': 'var(--danger)'
                   };
                   const bgMap = {
                     'Paid': 'rgba(102,187,106,0.15)',
-                    'Partial': 'rgba(94, 107, 255, 0.15)',
-                    'Partially Paid': 'rgba(94, 107, 255, 0.15)',
-                    'Pending': 'rgba(245,158,11,0.15)',
-                    'Delayed': 'rgba(239,83,80,0.15)'
+                    'Pending': 'rgba(239,83,80,0.15)'
                   };
 
                   return (
@@ -3430,44 +3461,6 @@ const AdminDashboard = () => {
                             >
                               Pending
                             </button>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleUpdateFeeStatus(student.id, 'Delayed');
-                              }}
-                              style={{
-                                padding: '4px 10px',
-                                background: feeStatus === 'Delayed' ? 'rgba(239,83,80,0.15)' : 'var(--surface)',
-                                color: 'var(--danger)',
-                                border: feeStatus === 'Delayed' ? '1px solid var(--danger)' : '1px solid var(--border)',
-                                borderRadius: '6px',
-                                fontSize: '0.75rem',
-                                fontWeight: 600,
-                                cursor: 'pointer',
-                                transition: 'all 0.2s',
-                              }}
-                            >
-                              Delayed
-                            </button>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleUpdateFeeStatus(student.id, 'Partial');
-                              }}
-                              style={{
-                                padding: '4px 10px',
-                                background: feeStatus === 'Partial' ? 'rgba(94, 107, 255, 0.15)' : 'var(--surface)',
-                                color: 'var(--primary)',
-                                border: feeStatus === 'Partial' ? '1px solid var(--primary)' : '1px solid var(--border)',
-                                borderRadius: '6px',
-                                fontSize: '0.75rem',
-                                fontWeight: 600,
-                                cursor: 'pointer',
-                                transition: 'all 0.2s',
-                              }}
-                            >
-                              Partial
-                            </button>
                             {feeStatus !== 'Paid' && (
                               <button
                                 onClick={(e) => {
@@ -3566,10 +3559,10 @@ const AdminDashboard = () => {
               {/* Widgets Row */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
                 {[
-                  { label: 'Total Collected', value: `₹${studentsList.reduce((acc, s) => acc + (Number(s.paidAmount) || 0), 0).toLocaleString('en-IN')}`, color: 'var(--success)' },
-                  { label: 'Total Pending', value: `₹${studentsList.reduce((acc, s) => acc + (Number(s.pendingAmount) || 0), 0).toLocaleString('en-IN')}`, color: 'var(--danger)' },
-                  { label: 'Pending Students', value: studentsList.filter(s => (s.pendingAmount || 0) > 0 || s.feeStatus !== 'Paid').length, color: '#F59E0B' },
-                  { label: 'Total Billed', value: `₹${studentsList.reduce((acc, s) => acc + (Number(s.feesAmount) || 0), 0).toLocaleString('en-IN')}`, color: 'var(--primary)' }
+                  { label: 'Total Collected', value: `₹${activeFees.reduce((acc, f) => acc + (Number(f.totalPaid) || 0), 0).toLocaleString('en-IN')}`, color: 'var(--success)' },
+                  { label: 'Total Pending', value: `₹${activeFees.reduce((acc, f) => acc + (Number(f.remainingBalance) || 0), 0).toLocaleString('en-IN')}`, color: 'var(--danger)' },
+                  { label: 'Pending Students', value: activeFees.filter(f => f.status === 'Pending').length, color: '#F59E0B' },
+                  { label: 'Total Billed', value: `₹${activeFees.reduce((acc, f) => acc + (Number(f.totalFeeDue) || 0), 0).toLocaleString('en-IN')}`, color: 'var(--primary)' }
                 ].map((widget, i) => (
                   <div key={i} style={{ padding: '16px', background: 'var(--surface)', borderRadius: '12px', border: '1px solid var(--border)' }}>
                     <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 600, marginBottom: '6px' }}>{widget.label}</div>
@@ -3668,17 +3661,11 @@ const AdminDashboard = () => {
                         const feeStatus = student.feeStatus || 'Pending';
                         const colorMap = {
                           'Paid': 'var(--success)',
-                          'Partial': 'var(--primary)',
-                          'Partially Paid': 'var(--primary)',
-                          'Pending': 'var(--danger)',
-                          'Delayed': 'var(--danger)'
+                          'Pending': 'var(--danger)'
                         };
                         const bgMap = {
                           'Paid': 'rgba(102,187,106,0.1)',
-                          'Partial': 'rgba(94, 107, 255, 0.1)',
-                          'Partially Paid': 'rgba(94, 107, 255, 0.1)',
-                          'Pending': 'rgba(239,83,80,0.1)',
-                          'Delayed': 'rgba(239,83,80,0.1)'
+                          'Pending': 'rgba(239,83,80,0.1)'
                         };
 
                         return (
@@ -3803,17 +3790,11 @@ const AdminDashboard = () => {
 
                                 const colorMap = {
                                   'Paid': 'var(--success)',
-                                  'Partial': 'var(--primary)',
-                                  'Partially Paid': 'var(--primary)',
-                                  'Pending': 'var(--danger)',
-                                  'Delayed': 'var(--danger)'
+                                  'Pending': 'var(--danger)'
                                 };
                                 const bgMap = {
                                   'Paid': 'rgba(102,187,106,0.1)',
-                                  'Partial': 'rgba(94, 107, 255, 0.1)',
-                                  'Partially Paid': 'rgba(94, 107, 255, 0.1)',
-                                  'Pending': 'rgba(239,83,80,0.1)',
-                                  'Delayed': 'rgba(239,83,80,0.1)'
+                                  'Pending': 'rgba(239,83,80,0.1)'
                                 };
 
                                 return (
@@ -4932,18 +4913,18 @@ const AdminDashboard = () => {
                           </tr>
                         </thead>
                         <tbody>
-                          {selectedStudentFees.length === 0 ? (
+                          {feesToShow.length === 0 ? (
                             <tr>
                               <td colSpan={user?.role === 'admin' ? 7 : 6} style={{ padding: '16px', textAlign: 'center', color: 'var(--text-muted)' }}>
                                 No custom fee items.
                               </td>
                             </tr>
                           ) : (
-                            selectedStudentFees.map((fee) => {
+                            feesToShow.map((fee) => {
                               const remaining = fee.amount - fee.paidAmount;
                               const feeStatus = fee.status || 'Pending';
-                              const colorMap = { 'Paid': 'var(--success)', 'Partial': 'var(--primary)', 'Partially Paid': 'var(--primary)', 'Pending': 'var(--danger)' };
-                              const bgMap = { 'Paid': 'rgba(102,187,106,0.1)', 'Partial': 'rgba(94, 107, 255, 0.1)', 'Partially Paid': 'rgba(94, 107, 255, 0.1)', 'Pending': 'rgba(239,83,80,0.1)' };
+                              const colorMap = { 'Paid': 'var(--success)', 'Pending': 'var(--danger)' };
+                              const bgMap = { 'Paid': 'rgba(102,187,106,0.1)', 'Pending': 'rgba(239,83,80,0.1)' };
 
                               return (
                                 <tr key={fee.id} style={{ borderBottom: '1px solid var(--border)' }}>
