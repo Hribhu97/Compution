@@ -68,7 +68,17 @@ service cloud.firestore {
           (
             request.auth.uid == userId &&
             !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'permissions']) &&
-            !request.resource.data.diff(resource.data).affectedKeys().hasAny(['assignedFacultyIds', 'assignedFaculty', 'feesAmount', 'paidAmount', 'pendingAmount', 'feeStatus']) &&
+            !request.resource.data.diff(resource.data).affectedKeys().hasAny(['assignedFacultyIds', 'assignedFaculty']) &&
+            (
+              !request.resource.data.diff(resource.data).affectedKeys().hasAny(['feesAmount', 'paidAmount', 'pendingAmount', 'feeStatus']) ||
+              (
+                exists(/databases/$(database)/documents/fees/$(userId)) &&
+                request.resource.data.feesAmount == get(/databases/$(database)/documents/fees/$(userId)).data.totalFeeDue &&
+                request.resource.data.paidAmount == get(/databases/$(database)/documents/fees/$(userId)).data.totalPaid &&
+                request.resource.data.pendingAmount == get(/databases/$(database)/documents/fees/$(userId)).data.remainingBalance &&
+                request.resource.data.feeStatus == get(/databases/$(database)/documents/fees/$(userId)).data.status
+              )
+            ) &&
             (
               !resource.data.keys().hasAll(['studentGroup']) ||
               resource.data.studentGroup == '' ||
@@ -393,6 +403,42 @@ service cloud.firestore {
         if signedIn();
       allow read, update, delete:
         if isAdmin();
+    }
+
+    match /fees/{studentId} {
+      allow read:
+        if signedIn() && (request.auth.uid == studentId || isAdmin() || isFaculty());
+
+      allow create:
+        if isAdmin() || (
+          signedIn() && request.auth.uid == studentId &&
+          request.resource.data.paymentHistory.size() == 0
+        );
+
+      allow update:
+        if isAdmin() || (
+          signedIn() && request.auth.uid == studentId &&
+          (!resource.exists || request.resource.data.paymentHistory == resource.data.paymentHistory)
+        );
+
+      allow delete:
+        if isAdmin();
+    }
+
+    match /paymentRequests/{requestId} {
+      allow create:
+        if signedIn() && request.resource.data.studentId == request.auth.uid;
+
+      allow read, update, delete:
+        if isAdmin();
+    }
+
+    match /enquiries/{enquiryId} {
+      allow create:
+        if true;
+
+      allow read, update, delete:
+        if isAdmin() || isMember();
     }
   }
 }
