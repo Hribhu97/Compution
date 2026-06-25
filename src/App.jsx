@@ -4,6 +4,7 @@ import { BrowserRouter as Router, Routes, Route, Outlet, Navigate } from 'react-
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ToastProvider } from './contexts/ToastContext';
 import ChatAssistant from './components/ChatAssistant';
+import { Analytics } from '@vercel/analytics/react';
 
 import Home from './pages/public/Home';
 import Staff from './pages/public/Staff';
@@ -84,6 +85,7 @@ function App() {
             <Route path="*" element={<NotFoundPage />} />
           </Routes>
           <ChatAssistant />
+          <Analytics />
         </Router>
       </ToastProvider>
     </AuthProvider>
