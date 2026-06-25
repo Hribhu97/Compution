@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate, Link } from 'react-router-dom';
-import { ArrowRight, Eye, EyeOff, Code, CheckCircle, Mail, RefreshCw, UserPlus, Gamepad2 } from 'lucide-react';
+import { ArrowRight, Eye, EyeOff, Code, CheckCircle, Mail, RefreshCw, UserPlus, Gamepad2, Phone, ArrowLeft } from 'lucide-react';
 import {
   signInWithPopup,
   signInWithEmailAndPassword,
@@ -13,6 +13,7 @@ import {
 } from 'firebase/auth';
 import { auth, googleProvider } from '../../firebase';
 import { useAuth } from '../../contexts/AuthContext';
+import { authService } from '../../services/authService';
 
 /* ── Friendly error messages ── */
 const friendlyError = (code) => {
@@ -24,6 +25,17 @@ const friendlyError = (code) => {
     'auth/wrong-password': 'Incorrect password. Try again or reset it.',
     'auth/invalid-credential': 'Invalid email or password. Please try again.',
     'auth/too-many-requests': 'Too many attempts. Please wait a moment and try again.',
+    'auth/network-request-failed': 'Network error. Check your internet connection.',
+  };
+  return map[code] || 'Something went wrong. Please try again.';
+};
+
+const friendlyPhoneError = (code) => {
+  const map = {
+    'auth/invalid-phone-number': 'Please enter a valid phone number.',
+    'auth/too-many-requests': 'SMS quota exceeded or too many attempts. Please try again later.',
+    'auth/invalid-verification-code': 'Invalid OTP. Please check the code and try again.',
+    'auth/code-expired': 'OTP Expired. Please request a new one.',
     'auth/network-request-failed': 'Network error. Check your internet connection.',
   };
   return map[code] || 'Something went wrong. Please try again.';
@@ -46,22 +58,22 @@ const Spinner = ({ size = 20 }) => (
   </motion.div>
 );
 
-/* ──────────────────────────────────────────────────── */
-/* ── LOGIN / REGISTER PAGE                          ── */
-/* ──────────────────────────────────────────────────── */
 const Login = () => {
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, registerMobileUser } = useAuth();
   const navigate = useNavigate();
 
-  useEffect(() => {
-    if (!authLoading && user) {
-      navigate('/dashboard', { replace: true });
-    }
-  }, [user, authLoading, navigate]);
-
-  // View: 'login' | 'register' | 'verify' | 'success'
+  // Login view controller: 'login' | 'register' | 'verify' | 'success' | 'otp-verify' | 'register-profile' | 'forgot' | 'reset-success'
   const [view, setView] = useState('login');
+  // Login method: 'email' | 'mobile'
+  const [loginMethod, setLoginMethod] = useState('email');
+
+  // Input states
   const [form, setForm] = useState({ email: '', password: '', name: '' });
+  const [phoneNumber, setPhoneNumber] = useState('');
+  const [countryCode, setCountryCode] = useState('+91');
+  const [otp, setOtp] = useState(['', '', '', '', '', '']);
+
+  // UI/Status states
   const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
@@ -69,6 +81,58 @@ const Login = () => {
   const [verifyEmail, setVerifyEmail] = useState('');
   const [resending, setResending] = useState(false);
   const [resent, setResent] = useState(false);
+  
+  // Mobile OTP States
+  const [confirmationResult, setConfirmationResult] = useState(null);
+  const [timer, setTimer] = useState(0);
+  const [mobileStatus, setMobileStatus] = useState('');
+
+  // Refs for OTP boxes
+  const otpRefs = useRef([]);
+  const nameInputRef = useRef(null);
+
+  useEffect(() => {
+    if (!authLoading && user) {
+      if (user.needsRegistration) {
+        setView('register-profile');
+      } else {
+        setView('success');
+        setTimeout(() => navigate('/dashboard'), 900);
+      }
+    }
+  }, [user, authLoading, navigate]);
+
+  // Handle countdown timer for Resend OTP
+  useEffect(() => {
+    if (timer > 0) {
+      const interval = setInterval(() => {
+        setTimer(t => t - 1);
+      }, 1000);
+      return () => clearInterval(interval);
+    }
+  }, [timer]);
+
+  // Auto-focus OTP inputs when view changes
+  useEffect(() => {
+    if (view === 'otp-verify') {
+      setTimeout(() => {
+        if (otpRefs.current[0]) {
+          otpRefs.current[0].focus();
+        }
+      }, 100);
+    }
+  }, [view]);
+
+  // Auto-focus Name input on Complete Registration view
+  useEffect(() => {
+    if (view === 'register-profile') {
+      setTimeout(() => {
+        if (nameInputRef.current) {
+          nameInputRef.current.focus();
+        }
+      }, 100);
+    }
+  }, [view]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -96,9 +160,6 @@ const Login = () => {
         setLoading(false);
         return;
       }
-
-      setView('success');
-      setTimeout(() => navigate('/dashboard'), 900);
     } catch (err) {
       setError(friendlyError(err.code));
     } finally {
@@ -145,9 +206,6 @@ const Login = () => {
     setError('');
     try {
       await signInWithPopup(auth, googleProvider);
-      // Google accounts are always verified
-      setView('success');
-      setTimeout(() => navigate('/dashboard'), 900);
     } catch (err) {
       setGoogleLoading(false);
       if (err.code === 'auth/popup-closed-by-user') return;
@@ -160,13 +218,11 @@ const Login = () => {
     setResending(true);
     setResent(false);
     try {
-      // Temporarily sign in to get user object, send verification, then sign out
       const result = await signInWithEmailAndPassword(auth, form.email || verifyEmail, form.password);
       await sendEmailVerification(result.user);
       await signOut(auth);
       setResent(true);
     } catch {
-      // If we can't resend (e.g. no password stored), just show a helpful message
       setResent(true);
     } finally {
       setResending(false);
@@ -194,8 +250,186 @@ const Login = () => {
     }
   };
 
+  /* ──────────────────────────────────────────────────── */
+  /* ── MOBILE OTP AUTHENTICATION FLOWS                ── */
+  /* ──────────────────────────────────────────────────── */
+
+  const handleSendOTP = async (e) => {
+    if (e) e.preventDefault();
+    if (!phoneNumber.trim()) { setError('Please enter your phone number'); return; }
+    if (phoneNumber.trim().length < 8) { setError('Please enter a valid phone number'); return; }
+
+    setLoading(true);
+    setMobileStatus('Sending OTP...');
+    setError('');
+
+    const fullPhone = `${countryCode}${phoneNumber.trim()}`;
+
+    try {
+      // 1. Check for duplicate phone number
+      const isDuplicate = await authService.checkDuplicatePhoneNumber(fullPhone);
+      if (isDuplicate) {
+        setError('This phone number is already registered under another account. Please use a different number or log in via email.');
+        setLoading(false);
+        setMobileStatus('');
+        return;
+      }
+
+      // 2. Setup invisible reCAPTCHA
+      let verifier = window.recaptchaVerifier;
+      if (!verifier) {
+        window.recaptchaVerifier = authService.setupRecaptcha('recaptcha-container');
+        verifier = window.recaptchaVerifier;
+      }
+
+      // 3. Send OTP
+      const result = await authService.sendOTP(fullPhone, verifier);
+      setConfirmationResult(result);
+      setView('otp-verify');
+      setTimer(30);
+      setMobileStatus('');
+    } catch (err) {
+      console.error("Error in handleSendOTP:", err);
+      if (window.recaptchaVerifier) {
+        try {
+          window.recaptchaVerifier.clear();
+          window.recaptchaVerifier = null;
+        } catch (e) {
+          console.error("Error clearing recaptcha:", e);
+        }
+      }
+      setError(friendlyPhoneError(err.code));
+      setMobileStatus('');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResendOTP = async () => {
+    if (timer > 0) return;
+
+    setLoading(true);
+    setMobileStatus('Sending OTP...');
+    setError('');
+
+    const fullPhone = `${countryCode}${phoneNumber.trim()}`;
+
+    try {
+      let verifier = window.recaptchaVerifier;
+      if (!verifier) {
+        window.recaptchaVerifier = authService.setupRecaptcha('recaptcha-container');
+        verifier = window.recaptchaVerifier;
+      }
+
+      const result = await authService.sendOTP(fullPhone, verifier);
+      setConfirmationResult(result);
+      setTimer(30);
+      setOtp(['', '', '', '', '', '']);
+      setMobileStatus('');
+      setError('');
+    } catch (err) {
+      console.error("Error in handleResendOTP:", err);
+      if (window.recaptchaVerifier) {
+        try {
+          window.recaptchaVerifier.clear();
+          window.recaptchaVerifier = null;
+        } catch (e) {
+          console.error("Error clearing recaptcha:", e);
+        }
+      }
+      setError(friendlyPhoneError(err.code));
+      setMobileStatus('');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleVerifyOTP = async (e) => {
+    if (e) e.preventDefault();
+    const otpCode = otp.join('');
+    if (otpCode.length < 6) { setError('Please enter the 6-digit OTP'); return; }
+
+    setLoading(true);
+    setMobileStatus('Verifying...');
+    setError('');
+
+    try {
+      if (!confirmationResult) {
+        throw new Error("No verification code confirmation context found. Please request OTP again.");
+      }
+
+      await confirmationResult.confirm(otpCode);
+      setMobileStatus('');
+    } catch (err) {
+      console.error("Error in handleVerifyOTP:", err);
+      if (err.code === 'auth/invalid-verification-code') {
+        setError('Invalid OTP. Please check the code and try again.');
+      } else if (err.code === 'auth/code-expired') {
+        setError('OTP Expired. Please request a new one.');
+      } else {
+        setError(friendlyPhoneError(err.code));
+      }
+      setMobileStatus('');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCompleteRegistration = async (e) => {
+    e.preventDefault();
+    if (!form.name.trim()) { setError('Please enter your name'); return; }
+    if (!form.email.trim()) { setError('Please enter your email'); return; }
+
+    setLoading(true);
+    setError('');
+    try {
+      const fullPhone = `${countryCode}${phoneNumber.trim()}`;
+      await registerMobileUser(form.name, form.email, fullPhone);
+    } catch (err) {
+      console.error("Error during registration:", err);
+      setError(err.message || 'Failed to complete registration. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleOtpChange = (element, index) => {
+    if (isNaN(element.value)) return false;
+
+    const newOtp = [...otp];
+    newOtp[index] = element.value;
+    setOtp(newOtp);
+
+    setError('');
+
+    // Auto-focus next input
+    if (element.value !== '' && index < 5) {
+      otpRefs.current[index + 1].focus();
+    }
+  };
+
+  const handleOtpKeyDown = (e, index) => {
+    if (e.key === 'Backspace' && otp[index] === '' && index > 0) {
+      otpRefs.current[index - 1].focus();
+    }
+  };
+
+  const handleOtpPaste = (e) => {
+    e.preventDefault();
+    const pasteData = e.clipboardData.getData('text').trim();
+    if (pasteData.length === 6 && /^\d+$/.test(pasteData)) {
+      const newOtp = pasteData.split('');
+      setOtp(newOtp);
+      otpRefs.current[5].focus();
+      setError('');
+    }
+  };
+
   return (
     <div className="login-layout">
+      {/* Invisible reCAPTCHA container */}
+      <div id="recaptcha-container" style={{ display: 'none' }}></div>
+
       <div className="login-panel">
         <Link to="/" style={{ fontFamily: 'var(--font-heading)', fontWeight: 900, fontSize: '1.4rem', letterSpacing: '-0.04em', color: 'var(--dark)' }}>
           COMP<span style={{ color: 'var(--primary)' }}>UTION</span>
@@ -391,71 +625,184 @@ const Login = () => {
                   transition={{ duration: 0.3 }}
                 >
                   <h1 style={{ fontSize: '2.25rem', marginBottom: '8px' }}>Welcome back</h1>
-                  <p style={{ color: 'var(--text-muted)', marginBottom: '36px', fontSize: '1rem' }}>
+                  <p style={{ color: 'var(--text-muted)', marginBottom: '28px', fontSize: '1rem' }}>
                     Sign in to your student workspace.
                   </p>
 
-                  <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                    {/* Email */}
-                    <div>
-                      <label className="form-label">Email</label>
-                      <input
-                        name="email" type="email"
-                        value={form.email} onChange={handleChange}
-                        className="form-input"
-                        placeholder="you@example.com"
-                        autoComplete="email"
-                      />
-                    </div>
+                  {/* Unified Toggle Selector */}
+                  <div style={{ display: 'flex', gap: '8px', marginBottom: '28px', background: 'rgba(83,109,254,0.06)', padding: '4px', borderRadius: '12px' }}>
+                    <button
+                      type="button"
+                      onClick={() => { setLoginMethod('email'); setError(''); }}
+                      style={{
+                        flex: 1,
+                        padding: '12px 16px',
+                        borderRadius: '8px',
+                        fontSize: '0.9rem',
+                        fontWeight: 700,
+                        background: loginMethod === 'email' ? 'var(--white)' : 'none',
+                        color: loginMethod === 'email' ? 'var(--primary)' : 'var(--text-muted)',
+                        border: 'none',
+                        boxShadow: loginMethod === 'email' ? '0 2px 8px rgba(83,109,254,0.1)' : 'none',
+                        cursor: 'pointer',
+                        transition: '0.2s ease',
+                        fontFamily: 'var(--font-heading)'
+                      }}
+                    >
+                      <Mail size={16} style={{ display: 'inline', marginRight: '6px', verticalAlign: 'text-bottom' }} /> Continue with Email
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setLoginMethod('mobile'); setError(''); }}
+                      style={{
+                        flex: 1,
+                        padding: '12px 16px',
+                        borderRadius: '8px',
+                        fontSize: '0.9rem',
+                        fontWeight: 700,
+                        background: loginMethod === 'mobile' ? 'var(--white)' : 'none',
+                        color: loginMethod === 'mobile' ? 'var(--primary)' : 'var(--text-muted)',
+                        border: 'none',
+                        boxShadow: loginMethod === 'mobile' ? '0 2px 8px rgba(83,109,254,0.1)' : 'none',
+                        cursor: 'pointer',
+                        transition: '0.2s ease',
+                        fontFamily: 'var(--font-heading)'
+                      }}
+                    >
+                      <Phone size={16} style={{ display: 'inline', marginRight: '6px', verticalAlign: 'text-bottom' }} /> Continue with Mobile
+                    </button>
+                  </div>
 
-                    {/* Password */}
-                    <div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                        <label className="form-label">Password</label>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setView('forgot');
-                            setError('');
-                          }}
-                          style={{ fontSize: '0.88rem', color: 'var(--primary)', fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
-                        >
-                          Forgot password?
-                        </button>
-                      </div>
-                      <div style={{ position: 'relative' }}>
+                  {loginMethod === 'email' ? (
+                    /* Email Login Form */
+                    <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                      <div>
+                        <label className="form-label">Email</label>
                         <input
-                          name="password" type={showPass ? 'text' : 'password'}
-                          value={form.password} onChange={handleChange}
+                          name="email" type="email"
+                          value={form.email} onChange={handleChange}
                           className="form-input"
-                          placeholder="••••••••"
-                          autoComplete="current-password"
-                          style={{ paddingRight: '48px' }}
+                          placeholder="you@example.com"
+                          autoComplete="email"
                         />
-                        <button type="button" onClick={() => setShowPass(v => !v)}
-                          style={{ position: 'absolute', right: '14px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }}>
-                          {showPass ? <EyeOff size={18} /> : <Eye size={18} />}
-                        </button>
                       </div>
-                    </div>
 
-                    {/* Error */}
-                    <AnimatePresence>
-                      {error && (
-                        <motion.div
-                          initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
-                          style={{ background: 'rgba(239,83,80,0.08)', border: '1px solid rgba(239,83,80,0.2)', borderRadius: 'var(--radius-md)', padding: '12px 16px', color: 'var(--danger)', fontSize: '0.9rem', fontWeight: 500 }}
-                        >{error}</motion.div>
-                      )}
-                    </AnimatePresence>
+                      <div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <label className="form-label">Password</label>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setView('forgot');
+                              setError('');
+                            }}
+                            style={{ fontSize: '0.88rem', color: 'var(--primary)', fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+                          >
+                            Forgot password?
+                          </button>
+                        </div>
+                        <div style={{ position: 'relative' }}>
+                          <input
+                            name="password" type={showPass ? 'text' : 'password'}
+                            value={form.password} onChange={handleChange}
+                            className="form-input"
+                            placeholder="••••••••"
+                            autoComplete="current-password"
+                            style={{ paddingRight: '48px' }}
+                          />
+                          <button type="button" onClick={() => setShowPass(v => !v)}
+                            style={{ position: 'absolute', right: '14px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }}>
+                            {showPass ? <EyeOff size={18} /> : <Eye size={18} />}
+                          </button>
+                        </div>
+                      </div>
 
-                    {/* Submit */}
-                    <motion.button type="submit" className="btn btn-primary" whileTap={{ scale: 0.97 }}
-                      disabled={loading}
-                      style={{ padding: '16px', fontSize: '1.05rem', marginTop: '4px', width: '100%', justifyContent: 'center' }}>
-                      {loading ? <Spinner /> : <>Sign In <ArrowRight size={20} /></>}
-                    </motion.button>
-                  </form>
+                      <AnimatePresence>
+                        {error && (
+                          <motion.div
+                            initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
+                            style={{ background: 'rgba(239,83,80,0.08)', border: '1px solid rgba(239,83,80,0.2)', borderRadius: 'var(--radius-md)', padding: '12px 16px', color: 'var(--danger)', fontSize: '0.9rem', fontWeight: 500 }}
+                          >{error}</motion.div>
+                        )}
+                      </AnimatePresence>
+
+                      <motion.button type="submit" className="btn btn-primary" whileTap={{ scale: 0.97 }}
+                        disabled={loading}
+                        style={{ padding: '16px', fontSize: '1.05rem', marginTop: '4px', width: '100%', justifyContent: 'center' }}>
+                        {loading ? <Spinner /> : <>Sign In <ArrowRight size={20} /></>}
+                      </motion.button>
+                    </form>
+                  ) : (
+                    /* Mobile OTP Login Form */
+                    <form onSubmit={handleSendOTP} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                      <div>
+                        <label className="form-label">Mobile Number</label>
+                        <div style={{ display: 'flex' }}>
+                          <select
+                            value={countryCode}
+                            onChange={(e) => setCountryCode(e.target.value)}
+                            style={{
+                              padding: '14px',
+                              borderRadius: 'var(--radius-md) 0 0 var(--radius-md)',
+                              border: '1.5px solid var(--border-strong)',
+                              borderRight: 'none',
+                              background: 'rgba(83,109,254,0.02)',
+                              color: 'var(--dark)',
+                              fontWeight: 600,
+                              outline: 'none',
+                              cursor: 'pointer',
+                              width: '90px',
+                              fontSize: '0.95rem'
+                            }}
+                          >
+                            <option value="+91">+91 (IN)</option>
+                            <option value="+1">+1 (US)</option>
+                            <option value="+44">+44 (GB)</option>
+                            <option value="+61">+61 (AU)</option>
+                            <option value="+971">+971 (AE)</option>
+                          </select>
+                          <input
+                            type="tel"
+                            value={phoneNumber}
+                            onChange={(e) => { setPhoneNumber(e.target.value.replace(/\D/g, '')); setError(''); }}
+                            className="form-input"
+                            placeholder="Enter 10-digit number"
+                            maxLength={10}
+                            style={{
+                              borderRadius: '0 var(--radius-md) var(--radius-md) 0',
+                              flex: 1
+                            }}
+                          />
+                        </div>
+                      </div>
+
+                      <AnimatePresence>
+                        {error && (
+                          <motion.div
+                            initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
+                            style={{ background: 'rgba(239,83,80,0.08)', border: '1px solid rgba(239,83,80,0.2)', borderRadius: 'var(--radius-md)', padding: '12px 16px', color: 'var(--danger)', fontSize: '0.9rem', fontWeight: 500 }}
+                          >{error}</motion.div>
+                        )}
+                      </AnimatePresence>
+
+                      <AnimatePresence>
+                        {mobileStatus && (
+                          <motion.div
+                            initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}
+                            style={{ color: 'var(--primary)', fontSize: '0.9rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}
+                          >
+                            <Spinner size={16} /> {mobileStatus}
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+
+                      <motion.button type="submit" className="btn btn-primary" whileTap={{ scale: 0.97 }}
+                        disabled={loading}
+                        style={{ padding: '16px', fontSize: '1.05rem', marginTop: '4px', width: '100%', justifyContent: 'center' }}>
+                        {loading ? <Spinner /> : <>Send OTP <ArrowRight size={20} /></>}
+                      </motion.button>
+                    </form>
+                  )}
 
                   {/* OR Divider */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: '16px', margin: '28px 0' }}>
@@ -622,6 +969,193 @@ const Login = () => {
                       Sign In →
                     </button>
                   </p>
+                </motion.div>
+              )}
+
+              {/* ════════════ MOBILE OTP VERIFY VIEW ════════════ */}
+              {view === 'otp-verify' && (
+                <motion.div key="otp-verify-form"
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  transition={{ duration: 0.3 }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => { setView('login'); setError(''); setOtp(['', '', '', '', '', '']); }}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: '6px',
+                      background: 'none', border: 'none', color: 'var(--text-muted)',
+                      fontWeight: 600, fontSize: '0.9rem', cursor: 'pointer',
+                      padding: 0, marginBottom: '24px'
+                    }}
+                  >
+                    <ArrowLeft size={16} /> Back to Login
+                  </button>
+
+                  <h1 style={{ fontSize: '2.25rem', marginBottom: '8px' }}>Verify OTP</h1>
+                  <p style={{ color: 'var(--text-muted)', marginBottom: '32px', fontSize: '1rem', lineHeight: 1.6 }}>
+                    We've sent a 6-digit code to <strong style={{ color: 'var(--dark)' }}>{countryCode} {phoneNumber}</strong>.
+                  </p>
+
+                  <form onSubmit={handleVerifyOTP} style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                    {/* 6-box OTP entry */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px' }} onPaste={handleOtpPaste}>
+                      {otp.map((digit, idx) => (
+                        <input
+                          key={idx}
+                          ref={el => otpRefs.current[idx] = el}
+                          type="text"
+                          pattern="[0-9]*"
+                          inputMode="numeric"
+                          maxLength={1}
+                          value={digit}
+                          onChange={(e) => handleOtpChange(e.target, idx)}
+                          onKeyDown={(e) => handleOtpKeyDown(e, idx)}
+                          style={{
+                            width: '48px',
+                            height: '52px',
+                            borderRadius: '12px',
+                            border: '1.5px solid var(--border-strong)',
+                            textAlign: 'center',
+                            fontSize: '1.4rem',
+                            fontWeight: 700,
+                            background: 'var(--white)',
+                            color: 'var(--dark)',
+                            outline: 'none',
+                            transition: 'all 0.2s',
+                            boxShadow: '0 2px 4px rgba(0,0,0,0.02)'
+                          }}
+                          onFocus={(e) => {
+                            e.target.style.borderColor = 'var(--primary)';
+                            e.target.style.boxShadow = '0 0 0 3px rgba(83,109,254,0.15)';
+                          }}
+                          onBlur={(e) => {
+                            e.target.style.borderColor = 'var(--border-strong)';
+                            e.target.style.boxShadow = 'none';
+                          }}
+                        />
+                      ))}
+                    </div>
+
+                    <AnimatePresence>
+                      {error && (
+                        <motion.div
+                          initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
+                          style={{ background: 'rgba(239,83,80,0.08)', border: '1px solid rgba(239,83,80,0.2)', borderRadius: 'var(--radius-md)', padding: '12px 16px', color: 'var(--danger)', fontSize: '0.9rem', fontWeight: 500 }}
+                        >{error}</motion.div>
+                      )}
+                    </AnimatePresence>
+
+                    <AnimatePresence>
+                      {mobileStatus && (
+                        <motion.div
+                          initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}
+                          style={{ color: 'var(--primary)', fontSize: '0.9rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}
+                        >
+                          <Spinner size={16} /> {mobileStatus}
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+
+                    <motion.button type="submit" className="btn btn-primary" whileTap={{ scale: 0.97 }}
+                      disabled={loading}
+                      style={{ padding: '16px', fontSize: '1.05rem', width: '100%', justifyContent: 'center' }}>
+                      {loading ? <Spinner /> : 'Verify & Login'}
+                    </motion.button>
+                  </form>
+
+                  {/* Resend timer */}
+                  <div style={{ textAlign: 'center', marginTop: '28px', fontSize: '0.95rem' }}>
+                    {timer > 0 ? (
+                      <span style={{ color: 'var(--text-muted)' }}>
+                        Resend code in <strong style={{ color: 'var(--primary)', fontWeight: 700 }}>{timer}s</strong>
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={handleResendOTP}
+                        disabled={loading}
+                        style={{
+                          background: 'none', border: 'none', color: 'var(--primary)',
+                          fontWeight: 700, cursor: 'pointer', padding: 0
+                        }}
+                      >
+                        Resend OTP
+                      </button>
+                    )}
+                  </div>
+                </motion.div>
+              )}
+
+              {/* ════════════ MOBILE COMPLETE REGISTRATION VIEW ════════════ */}
+              {view === 'register-profile' && (
+                <motion.div key="register-profile-form"
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.3 }}
+                >
+                  <h1 style={{ fontSize: '2.25rem', marginBottom: '8px' }}>Complete Profile</h1>
+                  <p style={{ color: 'var(--text-muted)', marginBottom: '32px', fontSize: '1rem', lineHeight: 1.6 }}>
+                    Create your account profile to complete registration.
+                  </p>
+
+                  <form onSubmit={handleCompleteRegistration} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                    {/* Full Name */}
+                    <div>
+                      <label className="form-label">Full Name</label>
+                      <input
+                        ref={nameInputRef}
+                        name="name" value={form.name} onChange={handleChange}
+                        className="form-input" placeholder="e.g. Arjun Sen"
+                        autoComplete="name"
+                        required
+                      />
+                    </div>
+
+                    {/* Email */}
+                    <div>
+                      <label className="form-label">Email Address</label>
+                      <input
+                        name="email" type="email"
+                        value={form.email} onChange={handleChange}
+                        className="form-input"
+                        placeholder="you@example.com"
+                        autoComplete="email"
+                        required
+                      />
+                    </div>
+
+                    {/* Verified Mobile */}
+                    <div>
+                      <label className="form-label">Verified Mobile Number</label>
+                      <input
+                        type="text"
+                        value={`${countryCode} ${phoneNumber}`}
+                        disabled
+                        className="form-input"
+                        style={{ background: 'rgba(83,109,254,0.02)', color: 'var(--text-light)', borderStyle: 'dashed' }}
+                      />
+                    </div>
+
+                    {/* Error */}
+                    <AnimatePresence>
+                      {error && (
+                        <motion.div
+                          initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
+                          style={{ background: 'rgba(239,83,80,0.08)', border: '1px solid rgba(239,83,80,0.2)', borderRadius: 'var(--radius-md)', padding: '12px 16px', color: 'var(--danger)', fontSize: '0.9rem', fontWeight: 500 }}
+                        >{error}</motion.div>
+                      )}
+                    </AnimatePresence>
+
+                    {/* Submit */}
+                    <motion.button type="submit" className="btn btn-primary" whileTap={{ scale: 0.97 }}
+                      disabled={loading}
+                      style={{ padding: '16px', fontSize: '1.05rem', marginTop: '4px', width: '100%', justifyContent: 'center' }}>
+                      {loading ? <Spinner /> : <><UserPlus size={20} /> Complete Registration</>}
+                    </motion.button>
+                  </form>
                 </motion.div>
               )}
 

@@ -1,6 +1,6 @@
 import { initializeApp } from "firebase/app";
 import { getAnalytics } from "firebase/analytics";
-import { getAuth, GoogleAuthProvider, setPersistence, browserLocalPersistence } from "firebase/auth";
+import { getAuth, GoogleAuthProvider, RecaptchaVerifier, signInWithPhoneNumber } from "firebase/auth";
 import { 
   getFirestore, collection, doc, getDoc, getDocs, enableIndexedDbPersistence, query, where,
   addDoc as fsAddDoc, setDoc as fsSetDoc, updateDoc as fsUpdateDoc, 
@@ -20,9 +20,6 @@ export const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const analytics = getAnalytics(app);
 const auth = getAuth(app);
-setPersistence(auth, browserLocalPersistence).catch((err) => {
-  console.error("Auth persistence failed:", err);
-});
 const db = getFirestore(app);
 
 enableIndexedDbPersistence(db).catch((err) => {
@@ -114,4 +111,4 @@ export const syncStudentFeeAggregates = async (studentId) => {
   return null;
 };;
 
-export { app, analytics, auth, db, googleProvider };
+export { app, analytics, auth, db, googleProvider, RecaptchaVerifier, signInWithPhoneNumber };
