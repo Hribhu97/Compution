@@ -31,6 +31,7 @@ export default function Overview() {
   const isDarkMode = false;
 
   // UI layout mode switcher
+  // UI layout mode switcher
   const [uiMode, setUiMode] = useState(() => {
     if (!user?.uid) return 'default';
     const saved = localStorage.getItem(`uiMode_${user.uid}`);
@@ -42,23 +43,12 @@ export default function Overview() {
     return 'default';
   });
 
-  // Shared state variables synchronized in localStorage
-  const [xp, setXp] = useState(() => {
-    if (!user?.uid) return 0;
-    return parseInt(localStorage.getItem(`xp_${user.uid}`) || '0');
-  });
-  const [level, setLevel] = useState(() => {
-    if (!user?.uid) return 1;
-    return parseInt(localStorage.getItem(`level_${user.uid}`) || '1');
-  });
-  const [rankPoints, setRankPoints] = useState(() => {
-    if (!user?.uid) return 0;
-    return parseInt(localStorage.getItem(`rankPoints_${user.uid}`) || '0');
-  });
-  const [streak, setStreak] = useState(() => {
-    if (!user?.uid) return 0;
-    return parseInt(localStorage.getItem(`streak_${user.uid}`) || '0');
-  });
+  // Derived state from Firestore-backed user profile
+  const xp = user?.xp || 0;
+  const level = user?.level || 1;
+  const rankPoints = user?.rankPoints || 0;
+  const streak = user?.streak || 0;
+
   const [friends, setFriends] = useState(() => {
     if (!user?.uid) return [];
     const saved = localStorage.getItem(`friends_${user.uid}`);
@@ -77,15 +67,11 @@ export default function Overview() {
   useEffect(() => {
     if (user?.uid) {
       localStorage.setItem(`uiMode_${user.uid}`, uiMode);
-      localStorage.setItem(`xp_${user.uid}`, xp);
-      localStorage.setItem(`level_${user.uid}`, level);
-      localStorage.setItem(`rankPoints_${user.uid}`, rankPoints);
-      localStorage.setItem(`streak_${user.uid}`, streak);
       localStorage.setItem(`friends_${user.uid}`, JSON.stringify(friends));
       localStorage.setItem(`studentHasCrown_${user.uid}`, studentHasCrown);
       localStorage.setItem(`hasPlayedGame_${user.uid}`, hasPlayedGame);
     }
-  }, [uiMode, xp, level, rankPoints, streak, friends, studentHasCrown, hasPlayedGame, user?.uid]);
+  }, [uiMode, friends, studentHasCrown, hasPlayedGame, user?.uid]);
 
   const getReferralCode = () => {
     if (!user?.studentId) return 'COMP2K260000';

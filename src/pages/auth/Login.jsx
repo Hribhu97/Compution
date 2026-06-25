@@ -10,8 +10,11 @@ import {
   signOut,
   updateProfile,
   sendPasswordResetEmail,
+  PhoneAuthProvider,
+  linkWithCredential
 } from 'firebase/auth';
-import { auth, googleProvider } from '../../firebase';
+import { collection, query, where, getDocs, doc } from 'firebase/firestore';
+import { auth, googleProvider, db, updateDoc } from '../../firebase';
 import { useAuth } from '../../contexts/AuthContext';
 import { authService } from '../../services/authService';
 
@@ -32,32 +35,20 @@ const friendlyError = (code) => {
 
 const friendlyPhoneError = (code, message) => {
   const map = {
-    'auth/invalid-phone-number': 'Invalid phone number. Please enter a valid number in E.164 format (e.g. +91XXXXXXXXXX).',
-    'auth/too-many-requests': 'SMS quota exceeded or too many attempts. Please wait a few minutes and try again.',
-    'auth/invalid-verification-code': 'Invalid OTP. Please check the code and try again.',
-    'auth/code-expired': 'OTP has expired. Please request a new one.',
-    'auth/network-request-failed': 'Network error. Please check your internet connection and try again.',
-    'auth/operation-not-allowed': 'Phone Sign-In is not enabled for this Firebase project. The admin must enable it in Firebase Console → Authentication → Sign-in method → Phone.',
-    'auth/captcha-check-failed': 'reCAPTCHA verification failed. This domain may not be authorized. Check Firebase Console → Authentication → Settings → Authorized domains.',
-    'auth/billing-not-enabled': 'Firebase billing is not enabled. Phone Authentication requires the Blaze (pay-as-you-go) plan.',
-    'auth/quota-exceeded': 'SMS quota for this project has been exceeded. Please try again later or contact the admin.',
-    'auth/user-disabled': 'This user account has been disabled by an administrator.',
-    'auth/invalid-app-credential': 'The reCAPTCHA token is invalid or has expired. Please refresh the page and try again.',
-    'auth/missing-phone-number': 'Phone number is missing. Please enter your phone number.',
-    'auth/argument-error': 'Invalid arguments passed to Phone Auth. Check that the phone number format and reCAPTCHA are correct.',
-    'auth/internal-error': 'Firebase internal error. This could indicate a server-side issue or misconfigured project.',
+    'auth/invalid-phone-number': 'Please enter a valid mobile number.',
+    'auth/invalid-verification-code': 'Invalid OTP entered. Try again.',
+    'auth/code-expired': 'This OTP has expired. Please request a new OTP.',
+    'auth/too-many-requests': 'Too many attempts detected. Please wait before requesting another OTP.',
+    'auth/quota-exceeded': 'Too many attempts detected. Please wait before requesting another OTP.',
+    'auth/network-request-failed': 'Network connection lost. Please try again.',
+    'auth/internal-error': 'Authentication service temporarily unavailable.',
+    'auth/operation-not-allowed': 'Authentication service temporarily unavailable.',
+    'account-not-found': 'No account found for this mobile number.'
   };
   if (code && map[code]) {
     return map[code];
   }
-  // Never show generic "Something went wrong" — always show the actual error
-  if (code) {
-    return `Firebase Error [${code}]: ${message || 'No additional details.'}`;
-  }
-  if (message) {
-    return `Error: ${message}`;
-  }
-  return 'An unknown error occurred. Check the browser console for details.';
+  return message || 'Authentication service temporarily unavailable.';
 };
 
 /* ── Google Logo SVG ── */
@@ -91,6 +82,11 @@ const Login = () => {
   const [phoneNumber, setPhoneNumber] = useState('');
   const [countryCode, setCountryCode] = useState('+91');
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
+
+  // Account linking states
+  const [pendingPhoneCredential, setPendingPhoneCredential] = useState(null);
+  const [pendingLinkEmail, setPendingLinkEmail] = useState('');
+  const [linkPassword, setLinkPassword] = useState('');
 
   // UI/Status states
   const [showPass, setShowPass] = useState(false);
@@ -402,9 +398,9 @@ const Login = () => {
     }
   };
 
-  const handleVerifyOTP = async (e) => {
+  const handleVerifyOTP = async (e, overrideOtp = null) => {
     if (e) e.preventDefault();
-    const otpCode = otp.join('');
+    const otpCode = (overrideOtp || otp).join('');
     if (otpCode.length < 6) { setError('Please enter the 6-digit OTP'); return; }
 
     setLoading(true);
@@ -423,10 +419,48 @@ const Login = () => {
       }
 
       console.log('[Phone Auth Flow] Calling confirmationResult.confirm()...');
-      await confirmationResult.confirm(otpCode);
+      const userCredential = await confirmationResult.confirm(otpCode);
       
       // Debug Log: OTP verified
       console.log('[Phone Auth Debug] OTP verified');
+
+      // Check if this phone number is already registered under another account in Firestore
+      const fullPhone = `${countryCode}${phoneNumber.trim()}`;
+      const usersRef = collection(db, 'users');
+      
+      const qPhone = query(usersRef, where('phone', '==', fullPhone));
+      const qMobile = query(usersRef, where('mobileNumber', '==', fullPhone));
+      
+      const [snapPhone, snapMobile] = await Promise.all([
+        getDocs(qPhone),
+        getDocs(qMobile)
+      ]);
+      
+      let existingUserDoc = null;
+      snapPhone.forEach(d => { existingUserDoc = { id: d.id, ...d.data() }; });
+      if (!existingUserDoc) {
+        snapMobile.forEach(d => { existingUserDoc = { id: d.id, ...d.data() }; });
+      }
+
+      if (existingUserDoc && existingUserDoc.id !== userCredential.user.uid) {
+        console.log('[Phone Auth Flow] Phone number registered to existing profile:', existingUserDoc.id);
+        console.log('[Phone Auth Flow] Authenticated UID:', userCredential.user.uid);
+        console.log('[Phone Auth Flow] Triggering Account Linking Flow...');
+
+        const credential = PhoneAuthProvider.credential(confirmationResult.verificationId, otpCode);
+        setPendingPhoneCredential(credential);
+        setPendingLinkEmail(existingUserDoc.email || '');
+        setLinkPassword('');
+
+        // Sign out of temp account
+        await signOut(auth);
+        
+        // Show linking screen
+        setView('link-account');
+        setMobileStatus('');
+        setLoading(false);
+        return;
+      }
       
       setMobileStatus('');
     } catch (err) {
@@ -436,6 +470,71 @@ const Login = () => {
       console.error('[Phone Auth Error] Full error:', err);
       setError(friendlyPhoneError(err.code, err.message));
       setMobileStatus('');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleLinkAccount = async (e) => {
+    e.preventDefault();
+    if (!linkPassword.trim()) { setError('Please enter your password'); return; }
+
+    setLoading(true);
+    setError('');
+    console.log('[Phone Auth Flow] ── handleLinkAccount START ──');
+
+    try {
+      console.log('[Phone Auth Flow] Signing in to existing email account:', pendingLinkEmail);
+      const emailCredential = await signInWithEmailAndPassword(auth, pendingLinkEmail, linkPassword);
+      
+      console.log('[Phone Auth Flow] Linking phone credential to email user:', emailCredential.user.uid);
+      await linkWithCredential(emailCredential.user, pendingPhoneCredential);
+      console.log('[Phone Auth Flow] Account linking SUCCESS!');
+
+      // Update the existing profile to store the linked phone number
+      const userRef = doc(db, 'users', emailCredential.user.uid);
+      const fullPhone = `${countryCode}${phoneNumber.trim()}`;
+      await updateDoc(userRef, {
+        phone: fullPhone,
+        phoneNumber: fullPhone,
+        lastLogin: new Date().toISOString()
+      });
+
+      setView('success');
+      setTimeout(() => navigate('/dashboard'), 900);
+    } catch (err) {
+      console.error('[Phone Auth Error] Account linking failed:', err);
+      setError(friendlyPhoneError(err.code, err.message));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleLinkGoogle = async () => {
+    setLoading(true);
+    setError('');
+    console.log('[Phone Auth Flow] ── handleLinkGoogle START ──');
+    try {
+      console.log('[Phone Auth Flow] Signing in with Google to link...');
+      const googleResult = await signInWithPopup(auth, googleProvider);
+      
+      console.log('[Phone Auth Flow] Linking phone credential to Google user:', googleResult.user.uid);
+      await linkWithCredential(googleResult.user, pendingPhoneCredential);
+      console.log('[Phone Auth Flow] Google Account linking SUCCESS!');
+
+      const userRef = doc(db, 'users', googleResult.user.uid);
+      const fullPhone = `${countryCode}${phoneNumber.trim()}`;
+      await updateDoc(userRef, {
+        phone: fullPhone,
+        phoneNumber: fullPhone,
+        lastLogin: new Date().toISOString()
+      });
+
+      setView('success');
+      setTimeout(() => navigate('/dashboard'), 900);
+    } catch (err) {
+      console.error('[Phone Auth Error] Google account linking failed:', err);
+      setError(friendlyPhoneError(err.code, err.message));
     } finally {
       setLoading(false);
     }
