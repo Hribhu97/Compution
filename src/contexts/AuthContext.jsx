@@ -180,13 +180,31 @@ export const AuthProvider = ({ children }) => {
                 };
               }
               await setDoc(userRef, newProfile);
+            } else {
+              // Phone provider: Create user profile automatically
+              console.log(`[Phone Auth Debug] Profile not found. Automatically creating profile for phone user: ${firebaseUser.uid}`);
+              const fullPhone = firebaseUser.phoneNumber;
+              const newProfile = {
+                uid: firebaseUser.uid,
+                phoneNumber: fullPhone,
+                phone: fullPhone, // stored for backward compatibility
+                role: 'student',
+                createdAt: serverTimestamp(),
+                lastLogin: serverTimestamp()
+              };
+              await setDoc(userRef, newProfile);
+              console.log(`[Phone Auth Debug] User profile created: ${firebaseUser.uid}`);
             }
           } else {
             // Document exists, update lastLogin
             await setDoc(userRef, { lastLogin: serverTimestamp() }, { merge: true });
           }
         } catch (error) {
-          console.error("Error checking or creating user profile document:", error);
+          if (error.code === 'permission-denied' || error.message?.toLowerCase().includes('permission')) {
+            console.error(`[Firestore Permission Error] Failed checking/creating profile for user ${firebaseUser.uid}:`, error);
+          } else {
+            console.error("Error checking or creating user profile document:", error);
+          }
         }
 
         // Set up snapshot listener
@@ -208,7 +226,11 @@ export const AuthProvider = ({ children }) => {
             }
             setLoading(false);
           }, (error) => {
-            console.error("Profile snapshot listener error:", error);
+            if (error.code === 'permission-denied' || error.message?.toLowerCase().includes('permission')) {
+              console.error(`[Firestore Permission Error] Snapshot listener failed for user ${firebaseUser.uid}:`, error);
+            } else {
+              console.error("Profile snapshot listener error:", error);
+            }
             setLoading(false);
           });
         } catch (err) {

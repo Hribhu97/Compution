@@ -275,14 +275,23 @@ const Login = () => {
 
   const handleSendOTP = async (e) => {
     if (e) e.preventDefault();
-    if (!phoneNumber.trim()) { setError('Please enter your phone number'); return; }
-    if (phoneNumber.trim().length < 8) { setError('Please enter a valid phone number'); return; }
+    
+    const trimmedPhone = phoneNumber.trim();
+    if (!trimmedPhone) { setError('Please enter your phone number'); return; }
+    if (countryCode === '+91' && trimmedPhone.length !== 10) {
+      setError('Please enter a valid 10-digit mobile number');
+      return;
+    }
+    if (trimmedPhone.length < 8) { setError('Please enter a valid phone number'); return; }
+
+    // Debug Log: OTP requested
+    console.log('[Phone Auth Debug] OTP requested');
 
     setLoading(true);
     setMobileStatus('Sending OTP...');
     setError('');
 
-    const fullPhone = `${countryCode}${phoneNumber.trim()}`;
+    const fullPhone = `${countryCode}${trimmedPhone}`;
 
     console.log('[Phone Auth Flow] ── handleSendOTP START ──');
     console.log('[Phone Auth Flow] Full phone number:', fullPhone);
@@ -291,19 +300,8 @@ const Login = () => {
     console.log('[Phone Auth Flow] Current user:', auth?.currentUser?.uid || 'NONE (expected for new login)');
 
     try {
-      // Step 1: Duplicate check
-      console.log('[Phone Auth Flow] Step 1: Checking for duplicate phone number...');
-      const isDuplicate = await authService.checkDuplicatePhoneNumber(fullPhone);
-      console.log('[Phone Auth Flow] Duplicate check result:', isDuplicate);
-      if (isDuplicate) {
-        setError('This phone number is already registered under another account. Please use a different number or log in via email.');
-        setLoading(false);
-        setMobileStatus('');
-        return;
-      }
-
-      // Step 2: Setup invisible reCAPTCHA
-      console.log('[Phone Auth Flow] Step 2: Setting up reCAPTCHA...');
+      // Step 1: Setup invisible reCAPTCHA
+      console.log('[Phone Auth Flow] Setting up reCAPTCHA...');
       let verifier = window.recaptchaVerifier;
       if (!verifier) {
         console.log('[Phone Auth Flow] No existing verifier found. Creating new RecaptchaVerifier...');
@@ -314,10 +312,13 @@ const Login = () => {
       }
       console.log('[Phone Auth Flow] reCAPTCHA verifier ready:', !!verifier);
 
-      // Step 3: Send OTP
-      console.log('[Phone Auth Flow] Step 3: Calling sendOTP()...');
+      // Step 2: Send OTP
+      console.log('[Phone Auth Flow] Calling sendOTP()...');
       const result = await authService.sendOTP(fullPhone, verifier);
-      console.log('[Phone Auth Flow] OTP sent successfully! ConfirmationResult:', !!result);
+      
+      // Debug Log: OTP sent
+      console.log('[Phone Auth Debug] OTP sent');
+      
       setConfirmationResult(result);
       setView('otp-verify');
       setTimer(30);
@@ -327,7 +328,6 @@ const Login = () => {
       console.error('[Phone Auth Error] Error code:', err.code || 'NO_CODE');
       console.error('[Phone Auth Error] Error message:', err.message || 'NO_MESSAGE');
       console.error('[Phone Auth Error] Error name:', err.name || 'NO_NAME');
-      console.error('[Phone Auth Error] Error customData:', err.customData || 'NONE');
       console.error('[Phone Auth Error] Full error:', err);
 
       // Clean up reCAPTCHA on failure
@@ -350,6 +350,9 @@ const Login = () => {
   const handleResendOTP = async () => {
     if (timer > 0) return;
 
+    // Debug Log: OTP requested
+    console.log('[Phone Auth Debug] OTP requested');
+
     setLoading(true);
     setMobileStatus('Sending OTP...');
     setError('');
@@ -369,7 +372,10 @@ const Login = () => {
 
       console.log('[Phone Auth Flow] Calling sendOTP() for resend...');
       const result = await authService.sendOTP(fullPhone, verifier);
-      console.log('[Phone Auth Flow] Resend OTP success!');
+      
+      // Debug Log: OTP sent
+      console.log('[Phone Auth Debug] OTP sent');
+      
       setConfirmationResult(result);
       setTimer(30);
       setOtp(['', '', '', '', '', '']);
@@ -418,7 +424,10 @@ const Login = () => {
 
       console.log('[Phone Auth Flow] Calling confirmationResult.confirm()...');
       await confirmationResult.confirm(otpCode);
-      console.log('[Phone Auth Flow] OTP verification SUCCESS!');
+      
+      // Debug Log: OTP verified
+      console.log('[Phone Auth Debug] OTP verified');
+      
       setMobileStatus('');
     } catch (err) {
       console.error('[Phone Auth Flow] ── handleVerifyOTP FAILED ──');
@@ -485,7 +494,7 @@ const Login = () => {
   return (
     <div className="login-layout">
       {/* Invisible reCAPTCHA container */}
-      <div id="recaptcha-container" style={{ display: 'none' }}></div>
+      <div id="recaptcha-container"></div>
 
       <div className="login-panel">
         <Link to="/" style={{ fontFamily: 'var(--font-heading)', fontWeight: 900, fontSize: '1.4rem', letterSpacing: '-0.04em', color: 'var(--dark)' }}>
