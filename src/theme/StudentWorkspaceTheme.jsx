@@ -1,9 +1,9 @@
 import React from 'react';
 
-export const StudentWorkspaceTheme = ({ children, isDark }) => {
+export const StudentWorkspaceTheme = ({ children }) => {
   return (
     <div 
-      className={`student-workspace-theme-scoped ${isDark ? 'dark-theme' : ''}`}
+      className="student-workspace-theme-scoped"
       style={{
         width: '100%',
         height: '100%',

@@ -27,7 +27,7 @@ export default function Overview() {
   const { showToast } = useToast();
   
   const { theme, resolvedTheme, setTheme } = useTheme();
-  const isDarkMode = resolvedTheme === 'dark';
+  const isDarkMode = false;
 
   // UI layout mode switcher
   const [uiMode, setUiMode] = useState(() => {
@@ -171,30 +171,11 @@ export default function Overview() {
               💼 Default UI
             </button>
           </div>
-
-          {/* Light/Dark mode switcher */}
-          <button
-            onClick={() => setTheme(isDarkMode ? 'light' : 'dark')}
-            style={{
-              padding: '8px 12px',
-              borderRadius: '10px',
-              background: 'var(--surface-elevated)',
-              color: 'var(--text-primary)',
-              fontWeight: 700,
-              fontSize: '0.78rem',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px'
-            }}
-          >
-            {isDarkMode ? '☀️ Light' : '🌙 Dark'}
-          </button>
         </div>
       </div>
 
       {uiMode === 'child' ? (
-        <StudentWorkspaceTheme isDark={isDarkMode}>
+        <StudentWorkspaceTheme>
           <ChildDashboard 
             user={user} 
             showToast={showToast} 

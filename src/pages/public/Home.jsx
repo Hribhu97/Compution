@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import {
   BookOpen, Terminal, Code, Trophy, Users, Clock,
   ArrowRight, CheckCircle, Star, ChevronRight,
@@ -11,7 +11,7 @@ import Modal from '../../components/Modal';
 import LeadCaptureSystem from '../../components/LeadCaptureSystem';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../theme/useTheme';
-import { collection, onSnapshot } from 'firebase/firestore';
+import { collection, onSnapshot, addDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../firebase';
 
 /* ── FADE IN VARIANTS ─────────────────────────────── */
@@ -38,197 +38,270 @@ const ADMISSION_SUBJECTS = [
 
 /* ── ADMISSION POPUP ───────────────────────────────── */
 const AdmissionApplicationModal = ({ isOpen, onClose, triggerToast, initialSubject }) => {
-  const [form, setForm] = useState({ name: '', contact: '', subject: 'Basic+AI (Prompt Engn)' });
-  const [status, setStatus] = useState('idle'); // 'idle' | 'submitting' | 'success'
+  const navigate = useNavigate();
+  const [step, setStep] = useState(1);
+  const [formData, setFormData] = useState({
+    name: '',
+    mobile: '',
+    email: '',
+    courseClass: '',
+    school: '',
+    courseInterested: '',
+    message: ''
+  });
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
+      setStep(1);
+      // Determine initial subject
       let matchedSubject = ADMISSION_SUBJECTS[0];
       if (initialSubject && typeof initialSubject === 'string') {
         const found = ADMISSION_SUBJECTS.find(s => 
           s.toLowerCase().startsWith(initialSubject.toLowerCase()) || 
           initialSubject.toLowerCase().startsWith(s.toLowerCase())
         );
-        if (found) {
-          matchedSubject = found;
-        }
+        if (found) matchedSubject = found;
       }
-      setForm(prev => ({
-        ...prev,
-        subject: matchedSubject
-      }));
+      setFormData({
+        name: '',
+        mobile: '',
+        email: '',
+        courseClass: '',
+        school: '',
+        courseInterested: matchedSubject,
+        message: ''
+      });
     }
   }, [isOpen, initialSubject]);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    setStatus('submitting');
-
-    setTimeout(() => {
-      setStatus('success');
-
-      setTimeout(() => {
-        const text = `Hello, I would like to apply for admission.%0AName: ${form.name}%0AContact: ${form.contact}%0ASubject: ${form.subject}`;
-        triggerToast("Opening WhatsApp to complete your application...");
-        window.open(`https://wa.me/919674035542?text=${text}`, '_blank');
-        window.open(`https://wa.me/916290935898?text=${text}`, '_blank');
-        onClose();
-        setForm({ name: '', contact: '', subject: 'Basic+AI (Prompt Engn)' });
-        setStatus('idle');
-      }, 1000);
-    }, 1500);
+    setSubmitting(true);
+    try {
+      await addDoc(collection(db, 'enquiries'), {
+        name: formData.name.trim(),
+        phone: formData.mobile.trim(),
+        email: formData.email.trim().toLowerCase(),
+        class: formData.courseClass.trim(),
+        school: formData.school.trim(),
+        courseInterested: formData.courseInterested,
+        message: formData.message.trim(),
+        createdAt: serverTimestamp()
+      });
+      setSubmitting(false);
+      setStep(3); // success screen
+    } catch (err) {
+      console.error("Error submitting inquiry:", err);
+      triggerToast("Failed to submit inquiry. Please try again.");
+      setSubmitting(false);
+    }
   };
 
   const handleClose = () => {
-    if (status === 'idle') {
+    if (!submitting) {
       onClose();
     }
   };
 
   const containerVariants = {
     hidden: {},
-    show: {
-      transition: {
-        staggerChildren: 0.08
-      }
-    }
+    show: { transition: { staggerChildren: 0.05 } }
   };
 
   const itemVariants = {
     hidden: { opacity: 0, y: 15 },
-    show: { 
-      opacity: 1, 
-      y: 0, 
-      transition: { 
-        type: 'spring', 
-        stiffness: 260, 
-        damping: 24 
-      } 
-    }
+    show: { opacity: 1, y: 0, transition: { type: 'spring', stiffness: 260, damping: 24 } }
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={handleClose} title="Apply for Admission">
+    <Modal isOpen={isOpen} onClose={handleClose} title={step === 1 ? "Welcome to Compution" : step === 2 ? "Student Inquiry Form" : "Inquiry Generated Successfully"}>
       <AnimatePresence mode="wait">
-        <motion.div
-          key="form-container"
-          variants={containerVariants}
-          initial="hidden"
-          animate="show"
-        >
-          <motion.p 
-            variants={itemVariants} 
-            style={{ color: 'var(--text-muted)', fontSize: '0.95rem', marginBottom: '20px', lineHeight: 1.6 }}
+        {step === 1 && (
+          <motion.div
+            key="step1"
+            variants={containerVariants}
+            initial="hidden"
+            animate="show"
+            exit={{ opacity: 0, y: -15 }}
+            style={{ display: 'flex', flexDirection: 'column', gap: '20px', padding: '10px 0' }}
           >
-            Fill in your details and we&apos;ll reach out on WhatsApp to confirm your seat.
-          </motion.p>
-          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-            <motion.div variants={itemVariants}>
-              <label className="form-label">Name</label>
-              <input
-                required
-                disabled={status !== 'idle'}
-                className="form-input"
-                value={form.name}
-                onChange={e => setForm({ ...form, name: e.target.value })}
-                placeholder="Enter your full name"
-                style={{
-                  transition: 'var(--transition)'
-                }}
-              />
-            </motion.div>
-            
-            <motion.div variants={itemVariants}>
-              <label className="form-label">Contact Number</label>
-              <input
-                required
-                type="tel"
-                disabled={status !== 'idle'}
-                className="form-input"
-                value={form.contact}
-                onChange={e => setForm({ ...form, contact: e.target.value })}
-                placeholder="e.g. +91 9876543210"
-                style={{
-                  transition: 'var(--transition)'
-                }}
-              />
-            </motion.div>
-            
-            <motion.div variants={itemVariants}>
-              <label className="form-label">Subject of Interest</label>
-              <select
-                disabled={status !== 'idle'}
-                className="form-input"
-                value={form.subject}
-                onChange={e => setForm({ ...form, subject: e.target.value })}
-                style={{
-                  transition: 'var(--transition)'
+            <motion.p variants={itemVariants} style={{ color: 'var(--text-muted)', fontSize: '0.95rem', textAlign: 'center', lineHeight: 1.6 }}>
+              Are you an existing student of Compution?
+            </motion.p>
+            <motion.div variants={itemVariants} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <button
+                type="button"
+                className="btn btn-primary"
+                style={{ width: '100%', padding: '14px', justifyContent: 'center' }}
+                onClick={() => {
+                  onClose();
+                  navigate('/login');
                 }}
               >
-                {ADMISSION_SUBJECTS.map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
+                Existing Student
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                style={{ width: '100%', padding: '14px', justifyContent: 'center' }}
+                onClick={() => setStep(2)}
+              >
+                New Student
+              </button>
             </motion.div>
+          </motion.div>
+        )}
 
-            <motion.div variants={itemVariants}>
-              {status === 'idle' && (
-                <button 
-                  type="submit" 
-                  className="btn btn-primary" 
-                  style={{ width: '100%', padding: '14px', fontSize: '1rem', marginTop: '4px' }}
+        {step === 2 && (
+          <motion.div
+            key="step2"
+            variants={containerVariants}
+            initial="hidden"
+            animate="show"
+            exit={{ opacity: 0, y: -15 }}
+          >
+            <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <motion.div variants={itemVariants}>
+                <label className="form-label">Full Name *</label>
+                <input
+                  required
+                  placeholder="Enter your name"
+                  className="form-input"
+                  value={formData.name}
+                  onChange={e => setFormData({ ...formData, name: e.target.value })}
+                />
+              </motion.div>
+              <motion.div variants={itemVariants} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div>
+                  <label className="form-label">Mobile Number *</label>
+                  <input
+                    required
+                    type="tel"
+                    maxLength={10}
+                    placeholder="10-digit number"
+                    className="form-input"
+                    value={formData.mobile}
+                    onChange={e => setFormData({ ...formData, mobile: e.target.value.replace(/\D/g, '') })}
+                  />
+                </div>
+                <div>
+                  <label className="form-label">Email Address *</label>
+                  <input
+                    required
+                    type="email"
+                    placeholder="Enter email"
+                    className="form-input"
+                    value={formData.email}
+                    onChange={e => setFormData({ ...formData, email: e.target.value })}
+                  />
+                </div>
+              </motion.div>
+              <motion.div variants={itemVariants} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div>
+                  <label className="form-label">Class / Grade *</label>
+                  <input
+                    required
+                    placeholder="e.g. Class 11"
+                    className="form-input"
+                    value={formData.courseClass}
+                    onChange={e => setFormData({ ...formData, courseClass: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="form-label">School Name *</label>
+                  <input
+                    required
+                    placeholder="Enter school name"
+                    className="form-input"
+                    value={formData.school}
+                    onChange={e => setFormData({ ...formData, school: e.target.value })}
+                  />
+                </div>
+              </motion.div>
+              <motion.div variants={itemVariants}>
+                <label className="form-label">Course Interested *</label>
+                <select
+                  required
+                  className="form-input"
+                  value={formData.courseInterested}
+                  onChange={e => setFormData({ ...formData, courseInterested: e.target.value })}
                 >
-                  Submit Application
+                  {ADMISSION_SUBJECTS.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </motion.div>
+              <motion.div variants={itemVariants}>
+                <label className="form-label">Message / Note *</label>
+                <textarea
+                  required
+                  rows={3}
+                  placeholder="Enter message"
+                  className="form-input"
+                  value={formData.message}
+                  onChange={e => setFormData({ ...formData, message: e.target.value })}
+                  style={{ resize: 'none' }}
+                />
+              </motion.div>
+              <motion.div variants={itemVariants}>
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="btn btn-primary"
+                  style={{ width: '100%', padding: '14px', justifyContent: 'center' }}
+                >
+                  {submitting ? "Submitting Inquiry..." : "Submit Inquiry"}
                 </button>
-              )}
-              {status === 'submitting' && (
-                <button 
-                  type="button" 
-                  disabled
-                  className="btn btn-primary" 
-                  style={{ 
-                    width: '100%', 
-                    padding: '14px', 
-                    fontSize: '1rem', 
-                    marginTop: '4px',
-                    cursor: 'not-allowed',
-                    opacity: 0.85,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '10px'
-                  }}
-                >
-                  <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: "linear" }} style={{ display: 'flex' }}>
-                    <Loader2 size={18} />
-                  </motion.div>
-                  Processing Application...
-                </button>
-              )}
-              {status === 'success' && (
-                <motion.div 
-                  initial={{ scale: 0.95, opacity: 0 }}
-                  animate={{ scale: 1, opacity: 1 }}
-                  className="btn" 
-                  style={{ 
-                    width: '100%', 
-                    padding: '14px', 
-                    fontSize: '1rem', 
-                    marginTop: '4px',
-                    background: 'var(--success)',
-                    color: 'var(--text-on-primary)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '10px',
-                    boxShadow: '0 8px 24px rgba(102, 187, 106, 0.25)'
-                  }}
-                >
-                  <CheckCircle size={18} />
-                  Seat Reserved! Redirecting...
-                </motion.div>
-              )}
+              </motion.div>
+            </form>
+          </motion.div>
+        )}
+
+        {step === 3 && (
+          <motion.div
+            key="step3"
+            variants={containerVariants}
+            initial="hidden"
+            animate="show"
+            exit={{ opacity: 0 }}
+            style={{ textAlign: 'center', padding: '20px 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '20px' }}
+          >
+            <motion.div
+              variants={itemVariants}
+              style={{
+                width: '64px', height: '64px', borderRadius: '50%',
+                background: 'rgba(67, 164, 108, 0.1)', color: 'var(--success)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center'
+              }}
+            >
+              <CheckCircle size={36} />
             </motion.div>
-          </form>
-        </motion.div>
+            <motion.div variants={itemVariants} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <h4 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-primary)' }}>Inquiry Generated Successfully</h4>
+              <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', lineHeight: 1.5 }}>
+                Thank you for contacting Compution. Our team will reach out within 10 hours.
+              </p>
+            </motion.div>
+            <motion.div variants={itemVariants} style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <a
+                href="https://wa.me/9196740035542"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn btn-primary"
+                style={{ width: '100%', padding: '14px', justifyContent: 'center' }}
+              >
+                Chat With Our Agent
+              </a>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                style={{ width: '100%', padding: '14px', justifyContent: 'center' }}
+                onClick={onClose}
+              >
+                Close
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
       </AnimatePresence>
     </Modal>
   );
@@ -296,47 +369,10 @@ const Navbar = ({ onOpenAdmission, isDarkMode, toggleTheme }) => {
             ))}
           </div>
           <div className="hide-mobile" style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-            <button
-              onClick={toggleTheme}
-              style={{
-                padding: '8px',
-                borderRadius: '50%',
-                color: 'var(--text-main)',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                transition: 'var(--transition)',
-                background: 'var(--surface)',
-                border: '1px solid var(--border)'
-              }}
-              onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.08)'}
-              onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
-              title={isDarkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
-            >
-              {isDarkMode ? <Sun size={18} /> : <Moon size={18} />}
-            </button>
             <Link to="/login" className="btn btn-ghost" style={{ padding: '10px 20px' }}>Login</Link>
             <button type="button" className="btn btn-primary" style={{ padding: '10px 20px' }} onClick={onOpenAdmission}>Enroll Now</button>
           </div>
           <div className="hide-desktop hide-desktop--flex" style={{ gap: '8px', alignItems: 'center' }}>
-            <button
-              onClick={toggleTheme}
-              style={{
-                padding: '8px',
-                borderRadius: '50%',
-                color: 'var(--text-main)',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                transition: 'var(--transition)',
-                background: 'var(--surface)',
-                border: '1px solid var(--border)'
-              }}
-            >
-              {isDarkMode ? <Sun size={18} /> : <Moon size={18} />}
-            </button>
             <button
               type="button"
               onClick={() => setMenuOpen(v => !v)}
@@ -369,25 +405,6 @@ const Navbar = ({ onOpenAdmission, isDarkMode, toggleTheme }) => {
                   <a key={item.label} href={item.href} onClick={closeMenu}>{item.label}</a>
                 )
               ))}
-              <div className="divider" style={{ margin: '12px 0' }} />
-              <button
-                onClick={() => { toggleTheme(); }}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '12px',
-                  padding: '14px 16px',
-                  borderRadius: 'var(--radius-md)',
-                  color: 'var(--text-main)',
-                  fontWeight: 600,
-                  fontSize: '1rem',
-                  width: '100%',
-                  background: 'var(--surface)'
-                }}
-              >
-                {isDarkMode ? <Sun size={18} /> : <Moon size={18} />}
-                <span>{isDarkMode ? 'Light Mode' : 'Dark Mode'}</span>
-              </button>
               <div className="divider" style={{ margin: '12px 0' }} />
               <Link to="/login" className="btn btn-ghost" style={{ width: '100%' }} onClick={closeMenu}>Login</Link>
               <button type="button" className="btn btn-primary" style={{ width: '100%' }} onClick={() => { closeMenu(); onOpenAdmission(); }}>Enroll Now</button>
@@ -557,7 +574,7 @@ const Hero = ({ onOpenAdmission }) => {
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '24px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
                   <span style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-secondary)' }}>Mob:</span>
-                  {['9143048483', '9804789733'].map(num => (
+                  {['9674035542'].map(num => (
                     <a 
                       key={num}
                       href={`tel:${num}`}
@@ -583,10 +600,10 @@ const Hero = ({ onOpenAdmission }) => {
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                   <span style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-secondary)' }}>Email:</span>
                   <a 
-                    href="mailto:icc@introductionitacademy.com" 
+                    href="mailto:compution.kolkata@gmail.com" 
                     style={{ fontSize: '0.9rem', fontWeight: 800, color: 'var(--dark)', textDecoration: 'none' }}
                   >
-                    icc@introductionitacademy.com
+                    compution.kolkata@gmail.com
                   </a>
                 </div>
               </div>
@@ -1742,12 +1759,8 @@ const Home = () => {
   const [selectedCourse, setSelectedCourse] = useState('');
   const [toast, setToast] = useState(null);
 
-  const { theme, resolvedTheme, setTheme } = useTheme();
-  const isDarkMode = resolvedTheme === 'dark';
-
-  const toggleTheme = () => {
-    setTheme(isDarkMode ? 'light' : 'dark');
-  };
+  const isDarkMode = false;
+  const toggleTheme = () => {};
 
   const openAdmission = (courseName = '') => {
     const course = typeof courseName === 'string' ? courseName : '';
@@ -1769,7 +1782,7 @@ const Home = () => {
 
   return (
     <>
-      <Navbar onOpenAdmission={openAdmission} isDarkMode={isDarkMode} toggleTheme={toggleTheme} />
+      <Navbar onOpenAdmission={openAdmission} isDarkMode={false} toggleTheme={toggleTheme} />
       <Hero onOpenAdmission={openAdmission} />
       <WhyCompution />
       <CoursesSection onOpenAdmission={openAdmission} />

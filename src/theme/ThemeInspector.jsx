@@ -105,25 +105,10 @@ export const ThemeInspector = () => {
         </div>
         
         {/* Toggle Theme Control */}
-        <div style={{ display: 'flex', gap: '6px', background: 'var(--surface-elevated)', padding: '4px', borderRadius: '12px' }}>
-          {['light', 'dark', 'system'].map((t) => (
-            <button
-              key={t}
-              onClick={() => setTheme(t)}
-              style={{
-                padding: '6px 14px',
-                borderRadius: '8px',
-                fontSize: '0.78rem',
-                fontWeight: 700,
-                cursor: 'pointer',
-                background: theme === t ? 'var(--primary)' : 'transparent',
-                color: theme === t ? 'var(--text-on-primary)' : 'var(--text-secondary)',
-                transition: 'all 0.2s'
-              }}
-            >
-              {t.toUpperCase()}
-            </button>
-          ))}
+        <div style={{ display: 'flex', gap: '6px', background: 'var(--surface-elevated)', padding: '6px 14px', borderRadius: '12px' }}>
+          <span style={{ fontSize: '0.78rem', fontWeight: 800, color: 'var(--primary)' }}>
+            LIGHT MODE ONLY
+          </span>
         </div>
       </div>
 

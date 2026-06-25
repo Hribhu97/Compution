@@ -1,7 +1,7 @@
 import { createContext } from 'react';
 
 export const ThemeContext = createContext({
-  theme: 'system',
+  theme: 'light',
   resolvedTheme: 'light',
   tokens: {},
   setTheme: () => {},
