@@ -13,11 +13,9 @@ import {
   auth, 
   db, 
   googleProvider, 
-  RecaptchaVerifier, 
   signInWithPhoneNumber 
 } from '../firebase';
-
-let globalRecaptchaVerifier = null;
+import { firebaseRecaptcha } from './firebaseRecaptcha';
 
 export const authService = {
   async loginWithEmail(email, password) {
@@ -29,69 +27,24 @@ export const authService = {
   },
 
   async logout() {
+    firebaseRecaptcha.destroy();
     await signOut(auth);
   },
 
   /**
    * Gets the existing RecaptchaVerifier instance or creates a new one.
-   * Reinitializes safely if the verifier becomes invalid or container is empty.
+   * Delegates to singleton firebaseRecaptcha service.
    * @param {string} containerId - The HTML element ID of the recaptcha container.
-   * @returns {RecaptchaVerifier}
    */
   getOrCreateRecaptchaVerifier(containerId = 'recaptcha-container') {
-    const containerEl = document.getElementById(containerId);
-    if (!containerEl) {
-      const err = new Error(`reCAPTCHA container element #${containerId} not found in DOM`);
-      console.error('[Phone Auth Error]', err);
-      throw err;
-    }
-
-    if (globalRecaptchaVerifier) {
-      // Reinitialize safely if the verifier's element was destroyed or cleared.
-      // Since invisible reCAPTCHA modifies the DOM, verify if it still contains children.
-      // If not (e.g. wiped by DOM updates), we clear and recreate it.
-      const hasRecaptchaWidgets = containerEl.querySelector('iframe') || containerEl.querySelector('.grecaptcha-badge');
-      if (!hasRecaptchaWidgets) {
-        console.log('[Phone Auth Debug] reCAPTCHA container is empty or has no widgets. Reinitializing verifier...');
-        this.clearRecaptchaVerifier();
-      } else {
-        console.log('[Phone Auth Debug] verifier reused');
-        return globalRecaptchaVerifier;
-      }
-    }
-
-    try {
-      globalRecaptchaVerifier = new RecaptchaVerifier(auth, containerId, {
-        size: 'invisible',
-        callback: (response) => {
-          console.log('[Phone Auth Debug] reCAPTCHA solved successfully. Token length:', response?.length || 0);
-        },
-        'expired-callback': () => {
-          console.warn('[Phone Auth Debug] reCAPTCHA token expired. User must re-verify.');
-        }
-      });
-      console.log('[Phone Auth Debug] verifier created');
-      return globalRecaptchaVerifier;
-    } catch (error) {
-      console.error('[Phone Auth Error] RecaptchaVerifier creation failed:', error);
-      globalRecaptchaVerifier = null;
-      throw error;
-    }
+    return firebaseRecaptcha.getOrCreate(containerId);
   },
 
   /**
    * Safely clears the global RecaptchaVerifier.
    */
   clearRecaptchaVerifier() {
-    if (globalRecaptchaVerifier) {
-      try {
-        globalRecaptchaVerifier.clear();
-        console.log('[Phone Auth Debug] verifier destroyed');
-      } catch (err) {
-        console.error('[Phone Auth Error] Error clearing RecaptchaVerifier:', err);
-      }
-      globalRecaptchaVerifier = null;
-    }
+    firebaseRecaptcha.destroy();
   },
 
   /**
@@ -101,28 +54,51 @@ export const authService = {
    * @returns {Promise<ConfirmationResult>}
    */
   async sendOTP(phoneNumber, containerId = 'recaptcha-container') {
-    // 9. Add detailed logging: OTP requested
-    console.log('[Phone Auth Debug] OTP requested');
+    // Add logs: [OTP REQUESTED]
+    console.log('[OTP REQUESTED]');
     console.log('[Phone Auth Debug] Phone number:', phoneNumber);
     console.log('[Phone Auth Debug] E.164 format valid:', /^\+[1-9]\d{6,14}$/.test(phoneNumber));
 
-    // 5. Verify recaptcha-container always exists before signInWithPhoneNumber()
-    const appVerifier = this.getOrCreateRecaptchaVerifier(containerId);
+    const appVerifier = firebaseRecaptcha.getOrCreate(containerId);
 
     try {
       console.log('[Phone Auth Debug] Calling signInWithPhoneNumber()...');
       const confirmationResult = await signInWithPhoneNumber(auth, phoneNumber, appVerifier);
       
-      // 9. Add detailed logging: OTP sent
-      console.log('[Phone Auth Debug] OTP sent');
+      // Add logs: [OTP SENT]
+      console.log('[OTP SENT]');
       return confirmationResult;
     } catch (error) {
-      console.error('[Phone Auth Error] signInWithPhoneNumber() FAILED');
-      console.error('[Phone Auth Error] Error code:', error.code || 'NO_CODE');
-      console.error('[Phone Auth Error] Error message:', error.message || 'NO_MESSAGE');
+      console.error('[Phone Auth Error] signInWithPhoneNumber() FAILED', error);
       
-      // Force recreation on subsequent attempts by cleaning up
-      this.clearRecaptchaVerifier();
+      const errorMessage = error.message || '';
+      const errorCode = error.code || '';
+      const isRecaptchaError = 
+        errorCode === 'auth/captcha-check-failed' ||
+        errorCode === 'auth/invalid-app-credential' ||
+        errorMessage.includes('reCAPTCHA') ||
+        errorMessage.includes('client element has been removed') ||
+        errorMessage.includes('widget');
+
+      if (isRecaptchaError) {
+        console.warn('[Phone Auth Debug] reCAPTCHA client/element invalid. Triggering recovery...');
+        console.log('[RECAPTCHA INVALIDATED]');
+        
+        firebaseRecaptcha.destroy();
+        
+        console.log('[RECAPTCHA RECOVERED]');
+        const recoveredVerifier = firebaseRecaptcha.getOrCreate(containerId);
+
+        console.log('[Phone Auth Debug] Retrying OTP send after recovery...');
+        try {
+          const confirmationResult = await signInWithPhoneNumber(auth, phoneNumber, recoveredVerifier);
+          console.log('[OTP SENT]');
+          return confirmationResult;
+        } catch (retryError) {
+          console.error('[Phone Auth Error] Retry after recovery failed:', retryError);
+          throw retryError;
+        }
+      }
 
       // Diagnostic hints based on known error codes
       if (error.code === 'auth/operation-not-allowed') {
@@ -137,8 +113,6 @@ export const authService = {
         console.error('[Phone Auth Diagnosis] >>> SMS quota exceeded or too many attempts.');
       } else if (error.code === 'auth/network-request-failed') {
         console.error('[Phone Auth Diagnosis] >>> Network request failed.');
-      } else if (!error.code) {
-        console.error('[Phone Auth Diagnosis] >>> Error has no Firebase code. This may be a reCAPTCHA initialization error, a DOM issue, or a network/CORS problem. Full error:', JSON.stringify(error, Object.getOwnPropertyNames(error)));
       }
 
       throw error;

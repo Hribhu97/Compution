@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import GuidedTour from '../../components/GuidedTour';
 import { motion, AnimatePresence } from 'framer-motion';
-import { signOut } from 'firebase/auth';
 import { auth, db } from '../../firebase';
+import { authService } from '../../services/authService';
 import { collection, onSnapshot, query, orderBy, limit, doc } from 'firebase/firestore';
 import { updateDoc, setDoc } from '../../firebase';;
 import { useAuth } from '../../contexts/AuthContext';
@@ -176,7 +176,7 @@ const DashboardLayout = () => {
   }, [user?.uid]);
 
   const handleLogout = async () => {
-    await signOut(auth);
+    await authService.logout();
     navigate('/login');
   };
 

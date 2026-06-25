@@ -117,14 +117,7 @@ const Login = () => {
     }
   }, [user, authLoading, navigate]);
 
-  // Handle countdown timer for Resend OTP
-  useEffect(() => {
-    // Cleanup recaptcha verifier on component unmount
-    return () => {
-      console.log('[Phone Auth Debug] Login component unmounting, cleaning up recaptcha...');
-      authService.clearRecaptchaVerifier();
-    };
-  }, []);
+
 
   useEffect(() => {
     if (timer > 0) {

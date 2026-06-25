@@ -3,6 +3,7 @@ import { onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc, onSnapshot, serverTimestamp } from 'firebase/firestore';
 import { setDoc } from '../firebase';;
 import { auth, db } from '../firebase';
+import { firebaseRecaptcha } from '../services/firebaseRecaptcha';
 
 const AuthContext = createContext(null);
 
@@ -256,6 +257,7 @@ export const AuthProvider = ({ children }) => {
           setLoading(false);
         }
       } else {
+        firebaseRecaptcha.destroy();
         setUser(null);
         setLoading(false);
       }

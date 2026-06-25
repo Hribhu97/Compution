@@ -84,6 +84,7 @@ function App() {
             <Route path="*" element={<NotFoundPage />} />
           </Routes>
           <ChatAssistant />
+          <div id="recaptcha-container"></div>
         </Router>
       </ToastProvider>
     </AuthProvider>
