@@ -6,13 +6,14 @@ import { useToast } from '../contexts/ToastContext';
 import { initializeApp } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
 import { collection, collectionGroup, doc, getDoc, getDocs, serverTimestamp, onSnapshot, query, where, orderBy, writeBatch, deleteField, arrayUnion, arrayRemove } from 'firebase/firestore';
-import { updateDoc, deleteDoc, addDoc, setDoc, runTransaction } from '../firebase';;
+import { updateDoc, deleteDoc, addDoc, setDoc, runTransaction } from '../firebase';
 import { Search, Download, Plus, MoreHorizontal, Eye, ArrowUpRight, Sparkles, ShieldCheck, Trash2, RefreshCw, CheckCircle, XCircle, AlertTriangle, Users, Bell, AlertCircle, Calendar, GraduationCap, ChevronDown, Mail, Send, Pencil, X, ShieldAlert, MessageSquare, Briefcase, UserCheck, Loader2, Check, CheckCheck, Info, UserMinus } from 'lucide-react';
 import Modal from './Modal';
 import SystemHealthPanel from './SystemHealthPanel';
 import ThemeInspector from '../theme/ThemeInspector';
 import { systemDoctorService } from '../services/systemDoctorService';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, PieChart, Pie } from 'recharts';
+import { clientMigrationService } from '../services/clientMigrationService';
 
 const stagger = { show: { transition: { staggerChildren: 0.05 } } };
 const item = { hidden: { opacity: 0, y: 10 }, show: { opacity: 1, y: 0, transition: { duration: 0.3 } } };
@@ -53,6 +54,14 @@ const AdminDashboard = () => {
   const { showToast } = useToast();
   // Navigation Tabs
   const [activePanelTab, setActivePanelTab] = useState('students'); 
+  // Account Migration States
+  const [migrationAudit, setMigrationAudit] = useState(null);
+  const [migrationRunning, setMigrationRunning] = useState(false);
+  const [migrationReport, setMigrationReport] = useState(null);
+  const [rollbackFileUsers, setRollbackFileUsers] = useState(null);
+  const [rollbackFileName, setRollbackFileName] = useState('');
+  const [rollbackRunning, setRollbackRunning] = useState(false);
+
   const [pendingRoleChanges, setPendingRoleChanges] = useState({});
   const [auditLogs, setAuditLogs] = useState([]);
   const [doctorRunning, setDoctorRunning] = useState(false);
@@ -75,18 +84,12 @@ const AdminDashboard = () => {
   const [paymentRequestsList, setPaymentRequestsList] = useState([]);
   const [selectedStudentFees, setSelectedStudentFees] = useState([]);
   const [selectedStudentAssignedFaculty, setSelectedStudentAssignedFaculty] = useState([]);
-
-  // Faculty assignment filter states
   const [facSearch, setFacSearch] = useState('');
   const [facSubjectFilter, setFacSubjectFilter] = useState('all');
   const [facAvailabilityFilter, setFacAvailabilityFilter] = useState('all');
-
-  // Search/Filters
   const [search, setSearch] = useState('');
   const [toast, setToast] = useState(null);
   const [loading, setLoading] = useState(true);
-
-  // Modals
   const [isAddStudentOpen, setIsAddStudentOpen] = useState(false);
   const [isAddFacultyOpen, setIsAddFacultyOpen] = useState(false);
   const [isAddMemberOpen, setIsAddMemberOpen] = useState(false);
@@ -3246,7 +3249,8 @@ const AdminDashboard = () => {
           { key: 'analytics', label: 'Analytics', roles: ['admin'] },
           { key: 'audit_logs', label: 'System Audits', roles: ['admin'] },
           { key: 'system_health', label: 'System Health', roles: ['admin'] },
-          { key: 'theme_inspector', label: 'Theme Inspector', roles: ['admin'] }
+          { key: 'theme_inspector', label: 'Theme Inspector', roles: ['admin'] },
+          { key: 'account_migration', label: 'Account Migration', roles: ['admin'] }
         ].filter(tab => tab.roles.includes(user?.role || 'student')).map(tab => (
           <button
             key={tab.key}
@@ -4444,6 +4448,284 @@ const AdminDashboard = () => {
                   <Check size={16} /> Save Changes
                 </button>
               </div>
+            </div>
+          )}
+
+          {/* ==================== 13. TABS: ACCOUNT MIGRATION ==================== */}
+          {activePanelTab === 'account_migration' && user?.role === 'admin' && (
+            <div className="card" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
+                <div style={{ background: 'rgba(239, 83, 80, 0.1)', padding: '10px', borderRadius: '12px', color: 'var(--danger)' }}>
+                  <ShieldAlert size={24} />
+                </div>
+                <div>
+                  <h2 style={{ fontSize: '1.25rem', fontWeight: 800, margin: 0, color: 'var(--text-primary)' }}>Account Linking & Schema Migration</h2>
+                  <p style={{ margin: '4px 0 0 0', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                    Extend user profiles in Firestore, link duplicate credentials, and manage safety backups/rollbacks.
+                  </p>
+                </div>
+              </div>
+
+              {/* Warning Alert */}
+              <div style={{ display: 'flex', gap: '12px', background: 'rgba(255, 152, 0, 0.08)', border: '1px solid rgba(255, 152, 0, 0.3)', padding: '16px', borderRadius: '12px', color: '#E65100' }}>
+                <AlertTriangle size={20} style={{ flexShrink: 0 }} />
+                <div style={{ fontSize: '0.9rem', lineHeight: 1.5 }}>
+                  <strong>CRITICAL PRODUCTION CONTROL:</strong> This utility will mutate Firestore profile documents to add extended schema fields (uid, authProviders, emailVerified, phoneVerified, updatedAt). Always run a <strong>Dry-Run Audit</strong> first, and ensure a <strong>Backup JSON</strong> is downloaded before committing any changes.
+                </div>
+              </div>
+
+              {/* Operations Console Grid */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px' }}>
+                {/* 1. Dry Run */}
+                <div style={{ border: '1px solid var(--border)', borderRadius: '12px', padding: '16px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: '12px' }}>
+                  <h3 style={{ fontSize: '0.95rem', fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>Step 1: System Audit (Dry-Run)</h3>
+                  <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: 0, flex: 1 }}>
+                    Analyze the users collection in Firestore, detecting duplicate records, linked accounts, and structural orphans. No database writes.
+                  </p>
+                  <button
+                    onClick={async () => {
+                      setMigrationRunning(true);
+                      try {
+                        const audit = await clientMigrationService.runDryRunAudit();
+                        setMigrationAudit(audit);
+                        showToast('System Audit Completed (Dry-Run)', 'success');
+                      } catch (err) {
+                        showToast('Audit failed: ' + err.message, 'danger');
+                      } finally {
+                        setMigrationRunning(false);
+                      }
+                    }}
+                    disabled={migrationRunning}
+                    className="btn btn-primary"
+                    style={{ width: '100%', justifyContent: 'center', background: 'var(--primary)' }}
+                  >
+                    {migrationRunning ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />} Run Audit
+                  </button>
+                </div>
+
+                {/* 2. Backup */}
+                <div style={{ border: '1px solid var(--border)', borderRadius: '12px', padding: '16px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: '12px' }}>
+                  <h3 style={{ fontSize: '0.95rem', fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>Step 2: Safety Backup</h3>
+                  <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: 0, flex: 1 }}>
+                    Create a rollback checkpoint. Downloads a JSON backup file to your local computer and stores a backup copy in Firestore settings.
+                  </p>
+                  <button
+                    onClick={async () => {
+                      if (!migrationAudit) {
+                        showToast('Please run the System Audit first.', 'danger');
+                        return;
+                      }
+                      setMigrationRunning(true);
+                      try {
+                        const { backupId, jsonString } = await clientMigrationService.createBackup(migrationAudit.rawUsers);
+                        
+                        // Download as JSON file
+                        const blob = new Blob([jsonString], { type: 'application/json' });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = `users_backup_${backupId}.json`;
+                        document.body.appendChild(a); 
+                        a.click();
+                        document.body.removeChild(a);
+                        URL.revokeObjectURL(url);
+                        
+                        showToast('Backup Created & Downloaded!', 'success');
+                      } catch (err) {
+                        showToast('Backup failed: ' + err.message, 'danger');
+                      } finally {
+                        setMigrationRunning(false);
+                      }
+                    }}
+                    disabled={!migrationAudit || migrationRunning}
+                    className="btn btn-success"
+                    style={{ width: '100%', justifyContent: 'center', background: 'var(--success)', color: 'white' }}
+                  >
+                    <Download size={16} /> Create Backup
+                  </button>
+                </div>
+
+                {/* 3. Migrate */}
+                <div style={{ border: '1px solid var(--border)', borderRadius: '12px', padding: '16px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: '12px' }}>
+                  <h3 style={{ fontSize: '0.95rem', fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>Step 3: Execute Migration</h3>
+                  <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: 0, flex: 1 }}>
+                    Run the database update. Creates a backup first, then updates all Firestore user documents to the extended schema in safe batches.
+                  </p>
+                  <button
+                    onClick={async () => {
+                      if (!migrationAudit) {
+                        showToast('Please run the System Audit first.', 'danger');
+                        return;
+                      }
+                      if (!window.confirm('WARNING: Are you sure you want to write these migration changes to the production database? This operation is irreversible without a backup.')) {
+                        return;
+                      }
+                      setMigrationRunning(true);
+                      try {
+                        const result = await clientMigrationService.runMigration(migrationAudit.rawUsers);
+                        setMigrationReport(result.reportMarkdown);
+                        showToast('Database Migration Executed Successfully!', 'success');
+                      } catch (err) {
+                        showToast('Migration failed: ' + err.message, 'danger');
+                      } finally {
+                        setMigrationRunning(false);
+                      }
+                    }}
+                    disabled={!migrationAudit || migrationRunning}
+                    className="btn"
+                    style={{ width: '100%', justifyContent: 'center', background: 'var(--danger)', color: 'white' }}
+                  >
+                    {migrationRunning ? <Loader2 size={16} className="animate-spin" /> : <ShieldCheck size={16} />} Execute Migration
+                  </button>
+                </div>
+
+                {/* 4. Rollback */}
+                <div style={{ border: '1px solid var(--border)', borderRadius: '12px', padding: '16px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: '12px' }}>
+                  <h3 style={{ fontSize: '0.95rem', fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>Rollback Restores</h3>
+                  <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: 0, flex: 1 }}>
+                    In case of anomalies, upload a previously downloaded backup JSON file to restore the entire users collection to its exact saved state.
+                  </p>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <input
+                      type="file"
+                      accept=".json"
+                      onChange={(e) => {
+                        const file = e.target.files[0];
+                        if (file) {
+                          setRollbackFileName(file.name);
+                          const reader = new FileReader();
+                          reader.onload = (event) => {
+                            try {
+                              const parsed = JSON.parse(event.target.result);
+                              if (Array.isArray(parsed)) {
+                                setRollbackFileUsers(parsed);
+                                showToast('Valid backup file parsed!', 'success');
+                              } else {
+                                showToast('Invalid file format. Must be an array of user objects.', 'danger');
+                                setRollbackFileUsers(null);
+                              }
+                            } catch (err) {
+                              showToast('Failed to parse JSON file.', 'danger');
+                              setRollbackFileUsers(null);
+                            }
+                          };
+                          reader.readAsText(file);
+                        }
+                      }} 
+                      style={{ fontSize: '0.8rem' }}
+                    />
+                    {rollbackFileUsers && (
+                      <button
+                        onClick={async () => {
+                          if (!window.confirm(`Are you sure you want to rollback all users in Firestore to the ${rollbackFileUsers.length} profiles stored in "${rollbackFileName}"?`)) {
+                            return;
+                          }
+                          setRollbackRunning(true);
+                          try {
+                            await clientMigrationService.runRollback(rollbackFileUsers);
+                            showToast('Rollback Executed Successfully!', 'success');
+                            setRollbackFileUsers(null);
+                            setRollbackFileName('');
+                          } catch (err) {
+                            showToast('Rollback failed: ' + err.message, 'danger');
+                          } finally {
+                            setRollbackRunning(false);
+                          }
+                        }}
+                        disabled={rollbackRunning}
+                        className="btn"
+                        style={{ width: '100%', justifyContent: 'center', background: '#37474F', color: 'white', padding: '10px' }}
+                      >
+                        {rollbackRunning ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />} Run Rollback (${rollbackFileUsers.length} users)
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Audit / Report Output Area */}
+              {(migrationAudit || migrationReport) && (
+                <div style={{ border: '1px solid var(--border)', borderRadius: '12px', padding: '20px', background: 'var(--bg)', marginTop: '12px' }}>
+                  {migrationReport ? (
+                    <div>
+                      <h3 style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--text-primary)', borderBottom: '1px solid var(--border)', paddingBottom: '8px', marginBottom: '12px' }}>
+                        Migration Execution Report
+                      </h3>
+                      <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'monospace', fontSize: '0.85rem', color: 'var(--text-primary)', background: 'var(--surface)', padding: '12px', borderRadius: '8px', overflowX: 'auto', maxHeight: '400px' }}>
+                        {migrationReport}
+                      </pre>
+                    </div>
+                  ) : (
+                    <div>
+                      <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-primary)', borderBottom: '1px solid var(--border)', paddingBottom: '8px', marginBottom: '16px' }}>
+                        Audit Inspection Report (Dry-Run)
+                      </h3>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px', marginBottom: '20px' }}>
+                        <div className="card" style={{ padding: '12px', background: 'var(--surface)', textAlign: 'center' }}>
+                          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Total Profiles</div>
+                          <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--primary)' }}>{migrationAudit.totalFirestoreProfiles}</div>
+                        </div>
+                        <div className="card" style={{ padding: '12px', background: 'var(--surface)', textAlign: 'center' }}>
+                          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Linked Profiles</div>
+                          <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--success)' }}>{migrationAudit.linkedAccounts.length}</div>
+                        </div>
+                        <div className="card" style={{ padding: '12px', background: 'var(--surface)', textAlign: 'center' }}>
+                          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Duplicate Emails</div>
+                          <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--danger)' }}>{migrationAudit.duplicateEmails.length}</div>
+                        </div>
+                        <div className="card" style={{ padding: '12px', background: 'var(--surface)', textAlign: 'center' }}>
+                          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Duplicate Phones</div>
+                          <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--danger)' }}>{migrationAudit.duplicatePhones.length}</div>
+                        </div>
+                        <div className="card" style={{ padding: '12px', background: 'var(--surface)', textAlign: 'center' }}>
+                          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Orphan Accounts</div>
+                          <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-light)' }}>{migrationAudit.orphanAccounts.length}</div>
+                        </div>
+                      </div>
+
+                      {/* Details of duplicates / orphans */}
+                      {migrationAudit.duplicateEmails.length > 0 && (
+                        <div style={{ marginBottom: '16px' }}>
+                          <h4 style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--danger)', margin: '0 0 8px 0' }}>Duplicate Emails Detected:</h4>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                            {migrationAudit.duplicateEmails.map((item, idx) => (
+                              <div key={idx} style={{ fontSize: '0.8rem', padding: '8px 12px', borderRadius: '6px', background: 'rgba(239, 83, 80, 0.04)', border: '1px solid rgba(239, 83, 80, 0.1)', color: 'var(--text-primary)' }}>
+                                Email: <strong>{item.email}</strong> is shared by: {item.uids.map(uid => `\`${uid}\``).join(', ')}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {migrationAudit.duplicatePhones.length > 0 && (
+                        <div style={{ marginBottom: '16px' }}>
+                          <h4 style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--danger)', margin: '0 0 8px 0' }}>Duplicate Phone Numbers Detected:</h4>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                            {migrationAudit.duplicatePhones.map((item, idx) => (
+                              <div key={idx} style={{ fontSize: '0.8rem', padding: '8px 12px', borderRadius: '6px', background: 'rgba(239, 83, 80, 0.04)', border: '1px solid rgba(239, 83, 80, 0.1)', color: 'var(--text-primary)' }}>
+                                Phone: <strong>{item.phone}</strong> is shared by: {item.uids.map(uid => `\`${uid}\``).join(', ')}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {migrationAudit.orphanAccounts.length > 0 && (
+                        <div>
+                          <h4 style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--text-light)', margin: '0 0 8px 0' }}>Orphan User Profiles:</h4>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '150px', overflowY: 'auto' }}>
+                            {migrationAudit.orphanAccounts.map((item, idx) => (
+                              <div key={idx} style={{ fontSize: '0.8rem', padding: '8px 12px', borderRadius: '6px', background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text-secondary)' }}>
+                                UID: \`{item.uid}\` - Name: {item.name} ({item.reason})
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 

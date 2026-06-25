@@ -13,7 +13,7 @@ import {
   PhoneAuthProvider,
   linkWithCredential
 } from 'firebase/auth';
-import { collection, query, where, getDocs, doc } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, serverTimestamp } from 'firebase/firestore';
 import { auth, googleProvider, db, updateDoc } from '../../firebase';
 import { useAuth } from '../../contexts/AuthContext';
 import { authService } from '../../services/authService';
@@ -390,21 +390,37 @@ const Login = () => {
         snapMobile.forEach(d => { existingUserDoc = { id: d.id, ...d.data() }; });
       }
 
-      if (existingUserDoc && existingUserDoc.id !== userCredential.user.uid) {
-        console.log('[Phone Auth Flow] Phone number registered to existing profile:', existingUserDoc.id);
-        console.log('[Phone Auth Flow] Authenticated UID:', userCredential.user.uid);
-        console.log('[Phone Auth Flow] Triggering Account Linking Flow...');
+      const credential = PhoneAuthProvider.credential(confirmationResult.verificationId, otpCode);
+      setPendingPhoneCredential(credential);
 
-        const credential = PhoneAuthProvider.credential(confirmationResult.verificationId, otpCode);
-        setPendingPhoneCredential(credential);
-        setPendingLinkEmail(existingUserDoc.email || '');
-        setLinkPassword('');
+      if (existingUserDoc) {
+        if (existingUserDoc.id !== userCredential.user.uid) {
+          console.log('[Phone Auth Flow] Phone number registered to existing profile:', existingUserDoc.id);
+          console.log('[Phone Auth Flow] Authenticated UID:', userCredential.user.uid);
+          console.log('[Phone Auth Flow] Triggering Account Linking Flow...');
 
+          setPendingLinkEmail(existingUserDoc.email || '');
+          setLinkPassword('');
+
+          // Sign out of temp account
+          await signOut(auth);
+          
+          // Show linking screen
+          setView('link-account');
+          setMobileStatus('');
+          setLoading(false);
+          return;
+        }
+      } else {
+        // Phone number is NOT registered to any profile in Firestore
+        console.log('[Phone Auth Flow] Phone number not found in Firestore. Prompting for registered email...');
+        setPendingLinkEmail('');
+        
         // Sign out of temp account
         await signOut(auth);
         
-        // Show linking screen
-        setView('link-account');
+        // Show prompt email screen
+        setView('prompt-link-email');
         setMobileStatus('');
         setLoading(false);
         return;
@@ -417,6 +433,46 @@ const Login = () => {
       console.error('[Phone Auth Error] Error message:', err.message || 'NO_MESSAGE');
       console.error('[Phone Auth Error] Full error:', err);
       setError(friendlyPhoneError(err.code, err.message));
+      setMobileStatus('');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleLinkEmailSubmit = async (e) => {
+    e.preventDefault();
+    if (!pendingLinkEmail.trim()) { setError('Please enter your email address'); return; }
+    
+    setLoading(true);
+    setMobileStatus('Searching email...');
+    setError('');
+    
+    try {
+      const emailLower = pendingLinkEmail.trim().toLowerCase();
+      // Search Firestore to see if this email exists!
+      const usersRef = collection(db, 'users');
+      const qEmail = query(usersRef, where('email', '==', emailLower));
+      const snapEmail = await getDocs(qEmail);
+      
+      let existingUserDoc = null;
+      snapEmail.forEach(d => { existingUserDoc = { id: d.id, ...d.data() }; });
+      
+      if (existingUserDoc) {
+        console.log('[Phone Auth Flow] Email belongs to existing profile:', existingUserDoc.id);
+        console.log('[Phone Auth Flow] Triggering Account Linking Flow...');
+        
+        setPendingLinkEmail(existingUserDoc.email || emailLower);
+        setLinkPassword('');
+        
+        // Switch view to link-account
+        setView('link-account');
+      } else {
+        setError("This email address is not registered. If you are new, click 'Create New Profile'.");
+      }
+      setMobileStatus('');
+    } catch (err) {
+      console.error("[Phone Auth Error] Error searching email:", err);
+      setError("An error occurred. Please try again.");
       setMobileStatus('');
     } finally {
       setLoading(false);
@@ -439,14 +495,22 @@ const Login = () => {
       await linkWithCredential(emailCredential.user, pendingPhoneCredential);
       console.log('[Phone Auth Flow] Account linking SUCCESS!');
 
-      // Update the existing profile to store the linked phone number
+      // Update the existing profile to store the linked phone number and extended schema
       const userRef = doc(db, 'users', emailCredential.user.uid);
       const fullPhone = `${countryCode}${phoneNumber.trim()}`;
-      await updateDoc(userRef, {
+      const providers = emailCredential.user.providerData.map(p => p.providerId);
+      
+      await setDoc(userRef, {
+        uid: emailCredential.user.uid,
+        email: emailCredential.user.email?.toLowerCase() || pendingLinkEmail.toLowerCase(),
         phone: fullPhone,
         phoneNumber: fullPhone,
-        lastLogin: new Date().toISOString()
-      });
+        emailVerified: emailCredential.user.emailVerified || false,
+        phoneVerified: true,
+        authProviders: providers,
+        lastLogin: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      }, { merge: true });
 
       setView('success');
       setTimeout(() => navigate('/dashboard'), 900);
@@ -472,11 +536,19 @@ const Login = () => {
 
       const userRef = doc(db, 'users', googleResult.user.uid);
       const fullPhone = `${countryCode}${phoneNumber.trim()}`;
-      await updateDoc(userRef, {
+      const providers = googleResult.user.providerData.map(p => p.providerId);
+      
+      await setDoc(userRef, {
+        uid: googleResult.user.uid,
+        email: googleResult.user.email?.toLowerCase() || '',
         phone: fullPhone,
         phoneNumber: fullPhone,
-        lastLogin: new Date().toISOString()
-      });
+        emailVerified: googleResult.user.emailVerified || false,
+        phoneVerified: true,
+        authProviders: providers,
+        lastLogin: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      }, { merge: true });
 
       setView('success');
       setTimeout(() => navigate('/dashboard'), 900);
@@ -1234,6 +1306,101 @@ const Login = () => {
                       </button>
                     )}
                   </div>
+                </motion.div>
+              )}
+
+              {/* ════════════ PROMPT LINK EMAIL VIEW ════════════ */}
+              {view === 'prompt-link-email' && (
+                <motion.div key="prompt-link-email"
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0 }}
+                  style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}
+                >
+                  <h1 style={{ fontSize: '2rem', marginBottom: '8px' }}>Link Existing Account</h1>
+                  <p style={{ color: 'var(--text-muted)', fontSize: '0.95rem', lineHeight: 1.6 }}>
+                    The phone number <strong style={{ color: 'var(--dark)' }}>{countryCode} {phoneNumber}</strong> is not registered to any profile.
+                  </p>
+                  <p style={{ color: 'var(--text-muted)', fontSize: '0.95rem', lineHeight: 1.6 }}>
+                    If you already have a registered email account, enter it below to link your mobile number. Otherwise, click 'Create New Profile' to set up a new account.
+                  </p>
+
+                  <form onSubmit={handleLinkEmailSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                    <div>
+                      <label className="form-label">Registered Email Address</label>
+                      <input
+                        type="email"
+                        value={pendingLinkEmail}
+                        onChange={(e) => { setPendingLinkEmail(e.target.value); setError(''); }}
+                        className="form-input"
+                        placeholder="you@example.com"
+                        required
+                      />
+                    </div>
+
+                    <AnimatePresence>
+                      {error && (
+                        <motion.div
+                          initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
+                          style={{ background: 'rgba(239,83,80,0.08)', border: '1px solid rgba(239,83,80,0.2)', borderRadius: 'var(--radius-md)', padding: '12px 16px', color: 'var(--danger)', fontSize: '0.9rem', fontWeight: 500 }}
+                        >{error}</motion.div>
+                      )}
+                    </AnimatePresence>
+
+                    <AnimatePresence>
+                      {mobileStatus && (
+                        <motion.div
+                          initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}
+                          style={{ color: 'var(--primary)', fontSize: '0.9rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}
+                        >
+                          <Spinner size={16} /> {mobileStatus}
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+
+                    <motion.button type="submit" className="btn btn-primary" whileTap={{ scale: 0.97 }}
+                      disabled={loading}
+                      style={{ padding: '16px', fontSize: '1.05rem', width: '100%', justifyContent: 'center' }}>
+                      {loading ? <Spinner /> : 'Link with Email'}
+                    </motion.button>
+                  </form>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '16px', margin: '10px 0' }}>
+                    <div style={{ flex: 1, height: '1px', background: 'var(--border-strong)' }} />
+                    <span style={{ color: 'var(--text-light)', fontSize: '0.82rem', fontWeight: 600 }}>OR</span>
+                    <div style={{ flex: 1, height: '1px', background: 'var(--border-strong)' }} />
+                  </div>
+
+                  <motion.button 
+                    onClick={() => {
+                      setError('');
+                      setView('register-profile');
+                    }}
+                    whileHover={{ scale: 1.015 }}
+                    whileTap={{ scale: 0.97 }}
+                    style={{
+                      width: '100%', padding: '14px', borderRadius: 'var(--radius-md)',
+                      border: '1.5px solid var(--border-strong)', background: 'var(--white)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontSize: '1rem', fontWeight: 600, fontFamily: 'var(--font-heading)',
+                      color: 'var(--dark)', cursor: 'pointer',
+                      transition: 'var(--transition)', boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+                    }}
+                  >
+                    Create New Profile
+                  </motion.button>
+
+                  <button
+                    type="button"
+                    onClick={() => { setView('login'); setError(''); setOtp(['', '', '', '', '', '']); }}
+                    style={{
+                      background: 'none', border: 'none', color: 'var(--text-muted)',
+                      fontWeight: 600, fontSize: '0.9rem', cursor: 'pointer',
+                      padding: 0, marginTop: '10px', textAlign: 'center'
+                    }}
+                  >
+                    Cancel and Back
+                  </button>
                 </motion.div>
               )}
 

@@ -34,7 +34,7 @@ export const AuthProvider = ({ children }) => {
       permissions = ['limited dashboard access', 'student support tools'];
     }
 
-    const nameVal = name.trim();
+    const providers = auth.currentUser?.providerData.map(p => p.providerId) || ['phone'];
     let newProfile = {
       uid: uid,
       name: nameVal,
@@ -44,9 +44,14 @@ export const AuthProvider = ({ children }) => {
       photoURL: '',
       phone: mobileNumber,
       mobileNumber: mobileNumber,
+      phoneNumber: mobileNumber,
+      emailVerified: auth.currentUser?.emailVerified || false,
+      phoneVerified: true,
+      authProviders: providers,
       role: targetRole,
       permissions: permissions,
       createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
       lastLogin: serverTimestamp(),
       isActive: true,
       assignedCourses: []
@@ -126,6 +131,8 @@ export const AuthProvider = ({ children }) => {
                 permissions = ['limited dashboard access', 'student support tools'];
               }
 
+              const providers = firebaseUser.providerData.map(p => p.providerId);
+              const phoneVal = firebaseUser.phoneNumber || '';
               const nameVal = firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'Student';
               let newProfile = {
                 uid: firebaseUser.uid,
@@ -134,11 +141,16 @@ export const AuthProvider = ({ children }) => {
                 fullName: nameVal,
                 email: firebaseUser.email || '',
                 photoURL: firebaseUser.photoURL || '',
-                phone: '',
-                mobileNumber: '',
+                phone: phoneVal,
+                mobileNumber: phoneVal,
+                phoneNumber: phoneVal,
+                emailVerified: firebaseUser.emailVerified || false,
+                phoneVerified: firebaseUser.phoneNumber ? true : false,
+                authProviders: providers,
                 role: targetRole,
                 permissions: permissions,
                 createdAt: serverTimestamp(),
+                updatedAt: serverTimestamp(),
                 lastLogin: serverTimestamp(),
                 isActive: true,
                 assignedCourses: []
@@ -187,8 +199,23 @@ export const AuthProvider = ({ children }) => {
               console.log(`[Phone Auth Debug] Profile not found for phone user: ${firebaseUser.uid}. Needs registration.`);
             }
           } else {
-            // Document exists, update lastLogin
-            await setDoc(userRef, { lastLogin: serverTimestamp() }, { merge: true });
+            // Document exists, merge schema updates and lastLogin
+            const providers = firebaseUser.providerData.map(p => p.providerId);
+            const phoneVal = firebaseUser.phoneNumber || userSnap.data()?.phoneNumber || userSnap.data()?.phone || '';
+            const emailVal = firebaseUser.email?.toLowerCase() || userSnap.data()?.email || '';
+            
+            await setDoc(userRef, {
+              uid: firebaseUser.uid,
+              email: emailVal,
+              phoneNumber: phoneVal,
+              phone: phoneVal,
+              mobileNumber: phoneVal,
+              emailVerified: firebaseUser.emailVerified || false,
+              phoneVerified: firebaseUser.phoneNumber ? true : (userSnap.data()?.phoneVerified || false),
+              authProviders: providers,
+              lastLogin: serverTimestamp(),
+              updatedAt: serverTimestamp()
+            }, { merge: true });
           }
         } catch (error) {
           if (error.code === 'permission-denied' || error.message?.toLowerCase().includes('permission')) {
