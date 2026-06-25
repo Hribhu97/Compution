@@ -30,15 +30,34 @@ const friendlyError = (code) => {
   return map[code] || 'Something went wrong. Please try again.';
 };
 
-const friendlyPhoneError = (code) => {
+const friendlyPhoneError = (code, message) => {
   const map = {
-    'auth/invalid-phone-number': 'Please enter a valid phone number.',
-    'auth/too-many-requests': 'SMS quota exceeded or too many attempts. Please try again later.',
+    'auth/invalid-phone-number': 'Invalid phone number. Please enter a valid number in E.164 format (e.g. +91XXXXXXXXXX).',
+    'auth/too-many-requests': 'SMS quota exceeded or too many attempts. Please wait a few minutes and try again.',
     'auth/invalid-verification-code': 'Invalid OTP. Please check the code and try again.',
-    'auth/code-expired': 'OTP Expired. Please request a new one.',
-    'auth/network-request-failed': 'Network error. Check your internet connection.',
+    'auth/code-expired': 'OTP has expired. Please request a new one.',
+    'auth/network-request-failed': 'Network error. Please check your internet connection and try again.',
+    'auth/operation-not-allowed': 'Phone Sign-In is not enabled for this Firebase project. The admin must enable it in Firebase Console → Authentication → Sign-in method → Phone.',
+    'auth/captcha-check-failed': 'reCAPTCHA verification failed. This domain may not be authorized. Check Firebase Console → Authentication → Settings → Authorized domains.',
+    'auth/billing-not-enabled': 'Firebase billing is not enabled. Phone Authentication requires the Blaze (pay-as-you-go) plan.',
+    'auth/quota-exceeded': 'SMS quota for this project has been exceeded. Please try again later or contact the admin.',
+    'auth/user-disabled': 'This user account has been disabled by an administrator.',
+    'auth/invalid-app-credential': 'The reCAPTCHA token is invalid or has expired. Please refresh the page and try again.',
+    'auth/missing-phone-number': 'Phone number is missing. Please enter your phone number.',
+    'auth/argument-error': 'Invalid arguments passed to Phone Auth. Check that the phone number format and reCAPTCHA are correct.',
+    'auth/internal-error': 'Firebase internal error. This could indicate a server-side issue or misconfigured project.',
   };
-  return map[code] || 'Something went wrong. Please try again.';
+  if (code && map[code]) {
+    return map[code];
+  }
+  // Never show generic "Something went wrong" — always show the actual error
+  if (code) {
+    return `Firebase Error [${code}]: ${message || 'No additional details.'}`;
+  }
+  if (message) {
+    return `Error: ${message}`;
+  }
+  return 'An unknown error occurred. Check the browser console for details.';
 };
 
 /* ── Google Logo SVG ── */
@@ -265,9 +284,17 @@ const Login = () => {
 
     const fullPhone = `${countryCode}${phoneNumber.trim()}`;
 
+    console.log('[Phone Auth Flow] ── handleSendOTP START ──');
+    console.log('[Phone Auth Flow] Full phone number:', fullPhone);
+    console.log('[Phone Auth Flow] E.164 format valid:', /^\+[1-9]\d{6,14}$/.test(fullPhone));
+    console.log('[Phone Auth Flow] Auth instance exists:', !!auth);
+    console.log('[Phone Auth Flow] Current user:', auth?.currentUser?.uid || 'NONE (expected for new login)');
+
     try {
-      // 1. Check for duplicate phone number
+      // Step 1: Duplicate check
+      console.log('[Phone Auth Flow] Step 1: Checking for duplicate phone number...');
       const isDuplicate = await authService.checkDuplicatePhoneNumber(fullPhone);
+      console.log('[Phone Auth Flow] Duplicate check result:', isDuplicate);
       if (isDuplicate) {
         setError('This phone number is already registered under another account. Please use a different number or log in via email.');
         setLoading(false);
@@ -275,30 +302,45 @@ const Login = () => {
         return;
       }
 
-      // 2. Setup invisible reCAPTCHA
+      // Step 2: Setup invisible reCAPTCHA
+      console.log('[Phone Auth Flow] Step 2: Setting up reCAPTCHA...');
       let verifier = window.recaptchaVerifier;
       if (!verifier) {
+        console.log('[Phone Auth Flow] No existing verifier found. Creating new RecaptchaVerifier...');
         window.recaptchaVerifier = authService.setupRecaptcha('recaptcha-container');
         verifier = window.recaptchaVerifier;
+      } else {
+        console.log('[Phone Auth Flow] Reusing existing RecaptchaVerifier');
       }
+      console.log('[Phone Auth Flow] reCAPTCHA verifier ready:', !!verifier);
 
-      // 3. Send OTP
+      // Step 3: Send OTP
+      console.log('[Phone Auth Flow] Step 3: Calling sendOTP()...');
       const result = await authService.sendOTP(fullPhone, verifier);
+      console.log('[Phone Auth Flow] OTP sent successfully! ConfirmationResult:', !!result);
       setConfirmationResult(result);
       setView('otp-verify');
       setTimer(30);
       setMobileStatus('');
     } catch (err) {
-      console.error("Error in handleSendOTP:", err);
+      console.error('[Phone Auth Flow] ── handleSendOTP FAILED ──');
+      console.error('[Phone Auth Error] Error code:', err.code || 'NO_CODE');
+      console.error('[Phone Auth Error] Error message:', err.message || 'NO_MESSAGE');
+      console.error('[Phone Auth Error] Error name:', err.name || 'NO_NAME');
+      console.error('[Phone Auth Error] Error customData:', err.customData || 'NONE');
+      console.error('[Phone Auth Error] Full error:', err);
+
+      // Clean up reCAPTCHA on failure
       if (window.recaptchaVerifier) {
         try {
           window.recaptchaVerifier.clear();
           window.recaptchaVerifier = null;
-        } catch (e) {
-          console.error("Error clearing recaptcha:", e);
+          console.log('[Phone Auth Flow] reCAPTCHA verifier cleared after error');
+        } catch (clearErr) {
+          console.error('[Phone Auth Error] Failed to clear reCAPTCHA:', clearErr);
         }
       }
-      setError(friendlyPhoneError(err.code));
+      setError(friendlyPhoneError(err.code, err.message));
       setMobileStatus('');
     } finally {
       setLoading(false);
@@ -314,30 +356,40 @@ const Login = () => {
 
     const fullPhone = `${countryCode}${phoneNumber.trim()}`;
 
+    console.log('[Phone Auth Flow] ── handleResendOTP START ──');
+    console.log('[Phone Auth Flow] Resending OTP to:', fullPhone);
+
     try {
       let verifier = window.recaptchaVerifier;
       if (!verifier) {
+        console.log('[Phone Auth Flow] Creating new RecaptchaVerifier for resend...');
         window.recaptchaVerifier = authService.setupRecaptcha('recaptcha-container');
         verifier = window.recaptchaVerifier;
       }
 
+      console.log('[Phone Auth Flow] Calling sendOTP() for resend...');
       const result = await authService.sendOTP(fullPhone, verifier);
+      console.log('[Phone Auth Flow] Resend OTP success!');
       setConfirmationResult(result);
       setTimer(30);
       setOtp(['', '', '', '', '', '']);
       setMobileStatus('');
       setError('');
     } catch (err) {
-      console.error("Error in handleResendOTP:", err);
+      console.error('[Phone Auth Flow] ── handleResendOTP FAILED ──');
+      console.error('[Phone Auth Error] Error code:', err.code || 'NO_CODE');
+      console.error('[Phone Auth Error] Error message:', err.message || 'NO_MESSAGE');
+      console.error('[Phone Auth Error] Full error:', err);
+
       if (window.recaptchaVerifier) {
         try {
           window.recaptchaVerifier.clear();
           window.recaptchaVerifier = null;
-        } catch (e) {
-          console.error("Error clearing recaptcha:", e);
+        } catch (clearErr) {
+          console.error('[Phone Auth Error] Failed to clear reCAPTCHA:', clearErr);
         }
       }
-      setError(friendlyPhoneError(err.code));
+      setError(friendlyPhoneError(err.code, err.message));
       setMobileStatus('');
     } finally {
       setLoading(false);
@@ -353,22 +405,27 @@ const Login = () => {
     setMobileStatus('Verifying...');
     setError('');
 
+    console.log('[Phone Auth Flow] ── handleVerifyOTP START ──');
+    console.log('[Phone Auth Flow] OTP code length:', otpCode.length);
+    console.log('[Phone Auth Flow] ConfirmationResult exists:', !!confirmationResult);
+
     try {
       if (!confirmationResult) {
-        throw new Error("No verification code confirmation context found. Please request OTP again.");
+        const msg = 'No verification code confirmation context found. Please request OTP again.';
+        console.error('[Phone Auth Error]', msg);
+        throw new Error(msg);
       }
 
+      console.log('[Phone Auth Flow] Calling confirmationResult.confirm()...');
       await confirmationResult.confirm(otpCode);
+      console.log('[Phone Auth Flow] OTP verification SUCCESS!');
       setMobileStatus('');
     } catch (err) {
-      console.error("Error in handleVerifyOTP:", err);
-      if (err.code === 'auth/invalid-verification-code') {
-        setError('Invalid OTP. Please check the code and try again.');
-      } else if (err.code === 'auth/code-expired') {
-        setError('OTP Expired. Please request a new one.');
-      } else {
-        setError(friendlyPhoneError(err.code));
-      }
+      console.error('[Phone Auth Flow] ── handleVerifyOTP FAILED ──');
+      console.error('[Phone Auth Error] Error code:', err.code || 'NO_CODE');
+      console.error('[Phone Auth Error] Error message:', err.message || 'NO_MESSAGE');
+      console.error('[Phone Auth Error] Full error:', err);
+      setError(friendlyPhoneError(err.code, err.message));
       setMobileStatus('');
     } finally {
       setLoading(false);
