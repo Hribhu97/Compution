@@ -4,6 +4,7 @@ import { BrowserRouter as Router, Routes, Route, Outlet, Navigate } from 'react-
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ToastProvider } from './contexts/ToastContext';
 import ChatAssistant from './components/ChatAssistant';
+import { SpeedInsights } from '@vercel/speed-insights/react';
 
 import Home from './pages/public/Home';
 import Staff from './pages/public/Staff';
@@ -85,6 +86,7 @@ function App() {
           </Routes>
           <ChatAssistant />
         </Router>
+        <SpeedInsights />
       </ToastProvider>
     </AuthProvider>
   </ThemeProvider>
