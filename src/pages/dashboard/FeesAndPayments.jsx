@@ -12,6 +12,7 @@ import {
   Download, Wallet, Calendar, AlertCircle
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
+import { FeesSkeleton } from '../../components/SkeletonLoader';
 
 const stagger = { show: { transition: { staggerChildren: 0.05 } } };
 const item = { hidden: { opacity: 0, y: 10 }, show: { opacity: 1, y: 0, transition: { duration: 0.3 } } };
@@ -93,6 +94,11 @@ export default function FeesAndPayments() {
       unsubRequests();
     };
   }, [isAdmin]);
+
+  const loading = isAdmin ? adminLoading : studentLoading;
+  if (loading) {
+    return <FeesSkeleton />;
+  }
 
   // --- STUDENT ACTION: SUBMIT PAYMENT PROOF ---
   const handlePaymentSubmit = async (e) => {

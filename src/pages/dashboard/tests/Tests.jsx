@@ -9,6 +9,7 @@ import {
   ChevronRight, CheckCircle2, FileText, ArrowLeft, Award, HelpCircle
 } from 'lucide-react';
 import Modal from '../../../components/Modal';
+import { TestsSkeleton } from '../../../components/SkeletonLoader';
 
 // Dynamically load local files added in /Test folder
 const localTestFiles = import.meta.glob('../../../../Test/*.json', { eager: true });
@@ -119,6 +120,10 @@ const Tests = () => {
     }, 1000);
     return () => clearTimeout(timer);
   }, [playingQuiz, quizTimeRemaining, quizFinished]);
+
+  if (loading) {
+    return <TestsSkeleton />;
+  }
 
   // Handle launch quiz
   const handleStartQuiz = (test) => {

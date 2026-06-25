@@ -8,6 +8,7 @@ import { CalendarCheck, UserX, Clock, CheckCircle2, Search, ArrowRight, BookOpen
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, PieChart, Pie } from 'recharts';
 import { format, parseISO } from 'date-fns';
 import Modal from '../../components/Modal';
+import { AttendanceSkeleton } from '../../components/SkeletonLoader';
 
 const stagger = { show: { transition: { staggerChildren: 0.08 } } };
 const item = { hidden: { opacity: 0, y: 14 }, show: { opacity: 1, y: 0, transition: { duration: 0.4, ease: [0.16, 1, 0.3, 1] } } };
@@ -180,6 +181,10 @@ const Attendance = () => {
       unsubTodayCal();
     };
   }, [user?.uid, canManage, attendanceDate, selectedSubject]);
+
+  if (loading) {
+    return <AttendanceSkeleton />;
+  }
 
   const triggerToast = (msg) => {
     setToast(msg);

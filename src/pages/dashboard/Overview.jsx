@@ -18,6 +18,7 @@ import ChildDashboard from '../../components/ChildDashboard';
 import Modal from '../../components/Modal';
 import { queryManager } from '../../utils/FirestoreQueryManager';
 import StudentOverview from '../../features/dashboard/StudentOverview';
+import { DashboardSkeleton } from '../../components/SkeletonLoader';
 import { useTheme } from '../../theme/useTheme';
 import { StudentWorkspaceTheme } from '../../theme/StudentWorkspaceTheme';
 
@@ -84,11 +85,7 @@ export default function Overview() {
   const referralLink = `https://compution.vercel.app/login?ref=${referralCode}`;
 
   if (loading) {
-    return (
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', minHeight: '50vh' }}>
-        <div className="spinning" style={{ width: '32px', height: '32px', border: '3px solid rgba(83,109,254,0.2)', borderTopColor: 'var(--primary)', borderRadius: '50%' }} />
-      </div>
-    );
+    return <DashboardSkeleton />;
   }
   
   const userRoleLower = user?.role?.toLowerCase();

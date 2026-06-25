@@ -90,11 +90,17 @@ const Toast = ({ message, onClose }) => {
   );
 };
 
+import { ProfileSkeleton } from '../../components/SkeletonLoader';
+
 const Profile = () => {
   const { user } = useAuth();
   
   const [toast, setToast] = useState(null);
   const [saving, setSaving] = useState(false);
+
+  if (!user) {
+    return <ProfileSkeleton />;
+  }
 
   const handleResetTour = async () => {
     try {

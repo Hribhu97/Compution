@@ -8,6 +8,8 @@ import {
   Gamepad2, Clock, Trophy, Play, CheckCircle, HelpCircle, 
   Terminal, Shield, Keyboard, Zap, Binary, Cpu, FileSpreadsheet, Brackets, Code
 } from 'lucide-react';
+import { getQuestionsForGame } from '../../../utils/questionPool';
+import { MiniGamesSkeleton } from '../../../components/SkeletonLoader';
 
 // Import JSON question data from mini games subfolders
 import progLogicData from '../../../../mini games/programming_logic/questions.json';
@@ -102,31 +104,38 @@ const MiniGames = () => {
   // RENDER GAME CONTROLLER
   // -----------------------------------------------------------------
   const renderActiveGame = () => {
+    // Get class-based rotated questions for the current game
+    const gameQuestions = getQuestionsForGame(activeGameId, user);
+
     switch (activeGameId) {
       case 'prog_logic':
-        return <QuizGame title="Programming Logic" questions={progLogicData.questions} onComplete={handleGameComplete} maxPoints={10} />;
+        return <QuizGame title="Programming Logic" questions={gameQuestions} onComplete={handleGameComplete} maxPoints={10} />;
       case 'comp_fund':
-        return <QuizGame title="Computer Fundamentals" questions={compFundData.questions} onComplete={handleGameComplete} maxPoints={5} />;
+        return <QuizGame title="Computer Fundamentals" questions={gameQuestions} onComplete={handleGameComplete} maxPoints={5} />;
       case 'hardware_quiz':
-        return <QuizGame title="Computer Hardware Quiz" questions={hardwareData.questions} onComplete={handleGameComplete} maxPoints={5} />;
+        return <QuizGame title="Computer Hardware Quiz" questions={gameQuestions} onComplete={handleGameComplete} maxPoints={5} />;
       case 'office_speed':
-        return <QuizGame title="MS Office Speed Challenge" questions={officeData.questions} onComplete={handleGameComplete} maxPoints={5} />;
+        return <QuizGame title="MS Office Speed Challenge" questions={gameQuestions} onComplete={handleGameComplete} maxPoints={5} />;
       case 'html_builder':
-        return <QuizGame title="HTML Builder" questions={htmlBuilderData.challenges.map(c => ({ q: c.target, options: c.options, a: c.options[c.correctIndex] }))} onComplete={handleGameComplete} maxPoints={10} />;
+        return <QuizGame title="HTML Builder" questions={gameQuestions} onComplete={handleGameComplete} maxPoints={10} />;
       case 'typing_chal':
-        return <TypingChallenge paragraphs={typingData.paragraphs} onComplete={handleGameComplete} maxPoints={10} />;
+        return <TypingChallenge paragraphs={gameQuestions} onComplete={handleGameComplete} maxPoints={10} />;
       case 'memory_match':
-        return <MemoryMatch pairs={memoryData.pairs} onComplete={handleGameComplete} maxPoints={10} />;
+        return <MemoryMatch pairs={gameQuestions} onComplete={handleGameComplete} maxPoints={10} />;
       case 'binary_conv':
-        return <BinaryConversion challenges={binaryData.challenges} onComplete={handleGameComplete} maxPoints={15} />;
+        return <BinaryConversion challenges={gameQuestions} onComplete={handleGameComplete} maxPoints={15} />;
       case 'shortcut_key':
-        return <ShortcutKeyChallenge shortcuts={shortcutData.shortcuts} onComplete={handleGameComplete} maxPoints={10} />;
+        return <ShortcutKeyChallenge shortcuts={gameQuestions} onComplete={handleGameComplete} maxPoints={10} />;
       case 'python_puzzle':
-        return <PythonPuzzle puzzles={pythonPuzzleData.puzzles} onComplete={handleGameComplete} maxPoints={15} />;
+        return <PythonPuzzle puzzles={gameQuestions} onComplete={handleGameComplete} maxPoints={15} />;
       default:
         return null;
     }
   };
+
+  if (loading) {
+    return <MiniGamesSkeleton />;
+  }
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: activeGameId ? '1fr' : '2.1fr 0.9fr', gap: '28px', color: 'var(--text-primary)' }} className="grid-2-col-mobile">

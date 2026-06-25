@@ -6,6 +6,7 @@ import { collection, onSnapshot, doc, serverTimestamp } from 'firebase/firestore
 import { addDoc, deleteDoc, updateDoc } from '../../firebase';;
 import { FileText, CheckCircle2, Clock, ChevronRight, Plus, FileEdit, Trash2, Filter, Award } from 'lucide-react';
 import Modal from '../../components/Modal';
+import { AssignmentsSkeleton } from '../../components/SkeletonLoader';
 
 const stagger = { show: { transition: { staggerChildren: 0.07 } } };
 const item = { hidden: { opacity: 0, y: 14 }, show: { opacity: 1, y: 0, transition: { duration: 0.4, ease: [0.16, 1, 0.3, 1] } } };
@@ -124,6 +125,10 @@ const Assignments = () => {
       unsubNote(); 
     };
   }, [user?.uid, user?.role]);
+
+  if (loading) {
+    return <AssignmentsSkeleton />;
+  }
 
   // Handle Admin creating a global assignment
   const handleCreateAssignment = async (e) => {

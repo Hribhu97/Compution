@@ -1,12 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Trophy, Gamepad2, Award, Sparkles, Plus, Search, Users, 
   Check, X, ChevronRight, Play, Swords, Star, UserPlus, Copy, Send, Flame, Share2
 } from 'lucide-react';
 import { db } from '../firebase';
-import { collection, serverTimestamp } from 'firebase/firestore';
-import { addDoc } from '../firebase';;
+import { collection, serverTimestamp, doc, updateDoc } from 'firebase/firestore';
+import { addDoc } from '../firebase';
+import { userRepository } from '../repositories/userRepository';
+import { gameService } from '../services/gameService';
+import { gameRepository } from '../repositories/gameRepository';
 
 const ChildDashboard = ({ 
   user, showToast, isDarkMode, xp, setXp, level, setLevel, 
@@ -16,6 +19,20 @@ const ChildDashboard = ({
 }) => {
   const [friendSearch, setFriendSearch] = useState('');
   const [newFriendName, setNewFriendName] = useState('');
+  const [leaderboard, setLeaderboard] = useState([]);
+
+  // Subscribe to Global Game Leaderboard
+  useEffect(() => {
+    console.log('[ChildDashboard] Subscribing to global leaderboard...');
+    const unsub = gameRepository.subscribeToGlobalGameLeaderboard((data) => {
+      console.log('[ChildDashboard] Global leaderboard updated, entries:', data.length);
+      setLeaderboard(data);
+    });
+    return () => {
+      console.log('[ChildDashboard] Cleaning up global leaderboard subscription');
+      unsub();
+    };
+  }, []);
   
   // Transients
   const [activeGame, setActiveGame] = useState(null);
@@ -150,10 +167,27 @@ const ChildDashboard = ({
       
       const newXp = xp + addedXp;
       const newPoints = rankPoints + addedPoints;
+      const newLevel = Math.max(1, Math.floor(newXp / 400) + 1);
       
-      setXp(newXp);
-      setRankPoints(newPoints);
-      setLevel(Math.max(1, Math.floor(newXp / 400) + 1));
+      // Save game score to Firestore
+      const gameTitle = activeGame === 'math' ? 'Math Master' : activeGame === 'lang' ? 'Language War' : 'History Heroes';
+      
+      gameService.submitGameScore(
+        user.uid,
+        user.displayName || user.name || 'Student',
+        activeGame,
+        gameTitle,
+        gameState.score,
+        30, // average time spent in seconds
+        addedPoints
+      ).then((res) => {
+        if (typeof setXp === 'function' && res.newXp) setXp(res.newXp);
+        if (typeof setRankPoints === 'function' && res.newPoints) setRankPoints(res.newPoints);
+        if (typeof setLevel === 'function' && res.newLevel) setLevel(res.newLevel);
+        if (typeof setStreak === 'function' && res.streak) setStreak(res.streak);
+      }).catch(err => {
+        console.error("[ChildDashboard] Failed to submit game score:", err);
+      });
 
       if (duelOpponentId) {
         const opponentScore = Math.floor(Math.random() * 4) + 1;
@@ -226,7 +260,7 @@ const ChildDashboard = ({
     }
   };
 
-  const handleStreakNext = () => {
+  const handleStreakNext = async () => {
     setStreakSelectedAns(null);
     setStreakAnsResult(null);
     if (streakQuizState.failed) {
@@ -237,10 +271,25 @@ const ChildDashboard = ({
     if (streakQuizState.questionIndex < 4) {
       setStreakQuizState(prev => ({ ...prev, questionIndex: prev.questionIndex + 1 }));
     } else {
-      setStreakQuizState(prev => ({ ...prev, completed: true }));
-      setStreak(streak + 1);
-      setXp(xp + 250);
-      showToast("Streak Saved! +250 XP added. 🔥", "success");
+      try {
+        const streakResult = await gameService.updateDailyStreak(user.uid);
+        const newXp = xp + 250;
+        const newLevel = Math.max(1, Math.floor(newXp / 400) + 1);
+        await userRepository.updateUserProfile(user.uid, {
+          xp: newXp,
+          level: newLevel
+        });
+
+        if (typeof setStreak === 'function') setStreak(streakResult?.streak || (streak + 1));
+        if (typeof setXp === 'function') setXp(newXp);
+        if (typeof setLevel === 'function') setLevel(newLevel);
+
+        setStreakQuizState(prev => ({ ...prev, completed: true }));
+        showToast("Streak Saved! +250 XP added. 🔥", "success");
+      } catch (err) {
+        console.error("Error saving daily streak:", err);
+        showToast("Failed to save daily streak", "error");
+      }
     }
   };
 
@@ -496,15 +545,38 @@ const ChildDashboard = ({
         {/* Daily Quests side-by-side with locked Leaderboard */}
         <div style={{ display: 'grid', gridTemplateColumns: '1.15fr 0.85fr', gap: '24px' }} className="grid-2-col-mobile">
           
-          {/* Leaderboard Lock card */}
-          <div className="card-premium-child" style={{ padding: '28px', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', minHeight: '220px', textAlign: 'center' }}>
-            <h3 className="text-offwhite-override" style={{ fontSize: '1.2rem', fontWeight: 900, marginBottom: '18px', display: 'flex', alignItems: 'center', gap: '8px', alignSelf: 'flex-start' }}>
-              🏆 Leaderboard
+          {/* Realtime Leaderboard */}
+          <div className="card-premium-child" style={{ padding: '28px', display: 'flex', flexDirection: 'column', minHeight: '220px' }}>
+            <h3 className="text-offwhite-override" style={{ fontSize: '1.2rem', fontWeight: 900, marginBottom: '18px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              🏆 Realtime Leaderboard
             </h3>
-            <div style={{ margin: 'auto' }}>
-              <div style={{ fontSize: '2.5rem', marginBottom: '8px' }}>🔒</div>
-              <div className="text-offwhite-override" style={{ fontSize: '1.05rem', fontWeight: 800 }}>This page will be available soon</div>
-              <div className="text-slate-muted-override" style={{ fontSize: '0.78rem', marginTop: '4px' }}>We are calibrating ranking data streams.</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', overflowY: 'auto', maxHeight: '250px', paddingRight: '4px' }}>
+              {leaderboard.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '20px', color: 'var(--text-secondary)', fontSize: '0.88rem' }}>
+                  Loading rankings...
+                </div>
+              ) : (
+                leaderboard.map((student, index) => (
+                  <div key={student.uid || index} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: student.uid === user?.uid ? 'rgba(83,109,254,0.06)' : 'var(--surface-elevated)', borderRadius: '14px', border: student.uid === user?.uid ? '1.5px solid rgba(83,109,254,0.2)' : '1px solid rgba(255,255,255,0.03)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <span style={{ fontWeight: 900, color: index === 0 ? '#FFD700' : index === 1 ? '#C0C0C0' : index === 2 ? '#CD7F32' : 'var(--text-secondary)', fontSize: '0.95rem', width: '20px' }}>
+                        {index + 1}
+                      </span>
+                      <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'linear-gradient(135deg, #FF6B6B 0%, #FF8E53 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-on-primary)', fontWeight: 800, fontSize: '0.75rem' }}>
+                        {(student.name || student.displayName || 'S').slice(0, 2).toUpperCase()}
+                      </div>
+                      <span className="text-offwhite-override" style={{ fontWeight: 700, fontSize: '0.85rem' }}>
+                        {student.name || student.displayName || 'Student'}
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ fontSize: '0.82rem', fontWeight: 800, color: '#00E5FF' }}>
+                        {(student.gamePoints || 0).toLocaleString()} pts
+                      </span>
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </div>
 

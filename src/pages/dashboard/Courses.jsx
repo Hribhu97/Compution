@@ -24,6 +24,8 @@ const COURSE_METADATA = {
   'Python Mastery': { subject: 'Programming', color: '#4F46E5', emoji: '🐍', nextLesson: 'Intro to Python & Syntax', totalLessons: 24, schedule: 'Mon, Wed · 5 PM' }
 };
 
+import { DashboardSkeleton } from '../../components/SkeletonLoader';
+
 const Courses = () => {
   const { user } = useAuth();
   const [tab, setTab] = useState('enrolled');
@@ -113,6 +115,10 @@ const Courses = () => {
       unsubUsers();
     };
   }, [user?.role]);
+
+  if (loading) {
+    return <DashboardSkeleton />;
+  }
 
   const isNew = simulatedPeriod === 'new';
 

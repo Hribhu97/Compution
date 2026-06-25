@@ -119,6 +119,14 @@ const Login = () => {
 
   // Handle countdown timer for Resend OTP
   useEffect(() => {
+    // Cleanup recaptcha verifier on component unmount
+    return () => {
+      console.log('[Phone Auth Debug] Login component unmounting, cleaning up recaptcha...');
+      authService.clearRecaptchaVerifier();
+    };
+  }, []);
+
+  useEffect(() => {
     if (timer > 0) {
       const interval = setInterval(() => {
         setTimer(t => t - 1);
@@ -280,9 +288,6 @@ const Login = () => {
     }
     if (trimmedPhone.length < 8) { setError('Please enter a valid phone number'); return; }
 
-    // Debug Log: OTP requested
-    console.log('[Phone Auth Debug] OTP requested');
-
     setLoading(true);
     setMobileStatus('Sending OTP...');
     setError('');
@@ -293,49 +298,17 @@ const Login = () => {
     console.log('[Phone Auth Flow] Full phone number:', fullPhone);
     console.log('[Phone Auth Flow] E.164 format valid:', /^\+[1-9]\d{6,14}$/.test(fullPhone));
     console.log('[Phone Auth Flow] Auth instance exists:', !!auth);
-    console.log('[Phone Auth Flow] Current user:', auth?.currentUser?.uid || 'NONE (expected for new login)');
 
     try {
-      // Step 1: Setup invisible reCAPTCHA
-      console.log('[Phone Auth Flow] Setting up reCAPTCHA...');
-      let verifier = window.recaptchaVerifier;
-      if (!verifier) {
-        console.log('[Phone Auth Flow] No existing verifier found. Creating new RecaptchaVerifier...');
-        window.recaptchaVerifier = authService.setupRecaptcha('recaptcha-container');
-        verifier = window.recaptchaVerifier;
-      } else {
-        console.log('[Phone Auth Flow] Reusing existing RecaptchaVerifier');
-      }
-      console.log('[Phone Auth Flow] reCAPTCHA verifier ready:', !!verifier);
-
-      // Step 2: Send OTP
-      console.log('[Phone Auth Flow] Calling sendOTP()...');
-      const result = await authService.sendOTP(fullPhone, verifier);
-      
-      // Debug Log: OTP sent
-      console.log('[Phone Auth Debug] OTP sent');
+      console.log('[Phone Auth Flow] Calling sendOTP() using authService...');
+      const result = await authService.sendOTP(fullPhone, 'recaptcha-container');
       
       setConfirmationResult(result);
       setView('otp-verify');
       setTimer(30);
       setMobileStatus('');
     } catch (err) {
-      console.error('[Phone Auth Flow] ── handleSendOTP FAILED ──');
-      console.error('[Phone Auth Error] Error code:', err.code || 'NO_CODE');
-      console.error('[Phone Auth Error] Error message:', err.message || 'NO_MESSAGE');
-      console.error('[Phone Auth Error] Error name:', err.name || 'NO_NAME');
-      console.error('[Phone Auth Error] Full error:', err);
-
-      // Clean up reCAPTCHA on failure
-      if (window.recaptchaVerifier) {
-        try {
-          window.recaptchaVerifier.clear();
-          window.recaptchaVerifier = null;
-          console.log('[Phone Auth Flow] reCAPTCHA verifier cleared after error');
-        } catch (clearErr) {
-          console.error('[Phone Auth Error] Failed to clear reCAPTCHA:', clearErr);
-        }
-      }
+      console.error('[Phone Auth Flow] ── handleSendOTP FAILED ──', err);
       setError(friendlyPhoneError(err.code, err.message));
       setMobileStatus('');
     } finally {
@@ -345,9 +318,6 @@ const Login = () => {
 
   const handleResendOTP = async () => {
     if (timer > 0) return;
-
-    // Debug Log: OTP requested
-    console.log('[Phone Auth Debug] OTP requested');
 
     setLoading(true);
     setMobileStatus('Sending OTP...');
@@ -359,18 +329,8 @@ const Login = () => {
     console.log('[Phone Auth Flow] Resending OTP to:', fullPhone);
 
     try {
-      let verifier = window.recaptchaVerifier;
-      if (!verifier) {
-        console.log('[Phone Auth Flow] Creating new RecaptchaVerifier for resend...');
-        window.recaptchaVerifier = authService.setupRecaptcha('recaptcha-container');
-        verifier = window.recaptchaVerifier;
-      }
-
       console.log('[Phone Auth Flow] Calling sendOTP() for resend...');
-      const result = await authService.sendOTP(fullPhone, verifier);
-      
-      // Debug Log: OTP sent
-      console.log('[Phone Auth Debug] OTP sent');
+      const result = await authService.sendOTP(fullPhone, 'recaptcha-container');
       
       setConfirmationResult(result);
       setTimer(30);
@@ -378,19 +338,7 @@ const Login = () => {
       setMobileStatus('');
       setError('');
     } catch (err) {
-      console.error('[Phone Auth Flow] ── handleResendOTP FAILED ──');
-      console.error('[Phone Auth Error] Error code:', err.code || 'NO_CODE');
-      console.error('[Phone Auth Error] Error message:', err.message || 'NO_MESSAGE');
-      console.error('[Phone Auth Error] Full error:', err);
-
-      if (window.recaptchaVerifier) {
-        try {
-          window.recaptchaVerifier.clear();
-          window.recaptchaVerifier = null;
-        } catch (clearErr) {
-          console.error('[Phone Auth Error] Failed to clear reCAPTCHA:', clearErr);
-        }
-      }
+      console.error('[Phone Auth Flow] ── handleResendOTP FAILED ──', err);
       setError(friendlyPhoneError(err.code, err.message));
       setMobileStatus('');
     } finally {
@@ -547,8 +495,38 @@ const Login = () => {
 
     setLoading(true);
     setError('');
+    const emailLower = form.email.trim().toLowerCase();
+    const fullPhone = `${countryCode}${phoneNumber.trim()}`;
+
     try {
-      const fullPhone = `${countryCode}${phoneNumber.trim()}`;
+      // Search Firestore to check if this email is already registered!
+      console.log('[Phone Auth Flow] Checking if email is already registered:', emailLower);
+      const usersRef = collection(db, 'users');
+      const qEmail = query(usersRef, where('email', '==', emailLower));
+      const snapEmail = await getDocs(qEmail);
+      
+      let existingUserDoc = null;
+      snapEmail.forEach(d => { existingUserDoc = { id: d.id, ...d.data() }; });
+      
+      if (existingUserDoc) {
+        console.log('[Phone Auth Flow] Email belongs to existing profile:', existingUserDoc.id);
+        console.log('[Phone Auth Flow] Triggering Account Linking Flow...');
+        
+        const otpCode = otp.join('');
+        const credential = PhoneAuthProvider.credential(confirmationResult.verificationId, otpCode);
+        setPendingPhoneCredential(credential);
+        setPendingLinkEmail(existingUserDoc.email || emailLower);
+        setLinkPassword('');
+        
+        // Sign out from temporary phone user
+        await signOut(auth);
+        
+        // Redirect to link account screen
+        setView('link-account');
+        setLoading(false);
+        return;
+      }
+
       await registerMobileUser(form.name, form.email, fullPhone);
     } catch (err) {
       console.error("Error during registration:", err);
@@ -571,6 +549,13 @@ const Login = () => {
     if (element.value !== '' && index < 5) {
       otpRefs.current[index + 1].focus();
     }
+
+    // Auto-verify when 6 digits are completed
+    const completedOtp = newOtp.join('');
+    if (completedOtp.length === 6) {
+      console.log('[Phone Auth Flow] OTP completed via typing. Triggering auto-verification...');
+      handleVerifyOTP(null, newOtp);
+    }
   };
 
   const handleOtpKeyDown = (e, index) => {
@@ -587,14 +572,13 @@ const Login = () => {
       setOtp(newOtp);
       otpRefs.current[5].focus();
       setError('');
+      console.log('[Phone Auth Flow] OTP completed via paste. Triggering auto-verification...');
+      handleVerifyOTP(null, newOtp);
     }
   };
 
   return (
     <div className="login-layout">
-      {/* Invisible reCAPTCHA container */}
-      <div id="recaptcha-container"></div>
-
       <div className="login-panel">
         <Link to="/" style={{ fontFamily: 'var(--font-heading)', fontWeight: 900, fontSize: '1.4rem', letterSpacing: '-0.04em', color: 'var(--dark)' }}>
           COMP<span style={{ color: 'var(--primary)' }}>UTION</span>
@@ -1250,6 +1234,90 @@ const Login = () => {
                       </button>
                     )}
                   </div>
+                </motion.div>
+              )}
+
+              {/* ════════════ LINK ACCOUNT VIEW ════════════ */}
+              {view === 'link-account' && (
+                <motion.div key="link-account"
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0 }}
+                  style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}
+                >
+                  <h1 style={{ fontSize: '2rem', marginBottom: '8px' }}>Link Your Account</h1>
+                  <p style={{ color: 'var(--text-muted)', fontSize: '0.95rem', lineHeight: 1.6 }}>
+                    The phone number <strong style={{ color: 'var(--dark)' }}>{countryCode} {phoneNumber}</strong> is already associated with the email <strong style={{ color: 'var(--primary)' }}>{pendingLinkEmail}</strong>.
+                  </p>
+                  <p style={{ color: 'var(--text-muted)', fontSize: '0.95rem', lineHeight: 1.6 }}>
+                    Please verify your password or link with Google to continue.
+                  </p>
+
+                  <form onSubmit={handleLinkAccount} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                    <div>
+                      <label className="form-label">Password for {pendingLinkEmail}</label>
+                      <div style={{ position: 'relative' }}>
+                        <input
+                          type={showPass ? 'text' : 'password'}
+                          value={linkPassword}
+                          onChange={(e) => { setLinkPassword(e.target.value); setError(''); }}
+                          className="form-input"
+                          placeholder="••••••••"
+                          required
+                        />
+                        <button type="button" onClick={() => setShowPass(v => !v)}
+                          style={{ position: 'absolute', right: '14px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', background: 'none', border: 'none', cursor: 'pointer' }}>
+                          {showPass ? <EyeOff size={18} /> : <Eye size={18} />}
+                        </button>
+                      </div>
+                    </div>
+
+                    <AnimatePresence>
+                      {error && (
+                        <motion.div
+                          initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
+                          style={{ background: 'rgba(239,83,80,0.08)', border: '1px solid rgba(239,83,80,0.2)', borderRadius: 'var(--radius-md)', padding: '12px 16px', color: 'var(--danger)', fontSize: '0.9rem', fontWeight: 500 }}
+                        >{error}</motion.div>
+                      )}
+                    </AnimatePresence>
+
+                    <motion.button type="submit" className="btn btn-primary" whileTap={{ scale: 0.97 }}
+                      disabled={loading}
+                      style={{ padding: '16px', fontSize: '1.05rem', width: '100%', justifyContent: 'center' }}>
+                      {loading ? <Spinner /> : 'Link Account'}
+                    </motion.button>
+                  </form>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '16px', margin: '10px 0' }}>
+                    <div style={{ flex: 1, height: '1px', background: 'var(--border-strong)' }} />
+                    <span style={{ color: 'var(--text-light)', fontSize: '0.82rem', fontWeight: 600 }}>OR</span>
+                    <div style={{ flex: 1, height: '1px', background: 'var(--border-strong)' }} />
+                  </div>
+
+                  <motion.button onClick={handleLinkGoogle} whileHover={{ scale: 1.015 }} whileTap={{ scale: 0.97 }}
+                    disabled={loading}
+                    style={{
+                      width: '100%', padding: '14px', borderRadius: 'var(--radius-md)',
+                      border: '1.5px solid var(--border-strong)', background: 'var(--white)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px',
+                      fontSize: '1rem', fontWeight: 600, fontFamily: 'var(--font-heading)',
+                      color: 'var(--dark)', cursor: 'pointer',
+                      transition: 'var(--transition)', boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+                    }}>
+                    <GoogleLogo /> Link with Google
+                  </motion.button>
+
+                  <button
+                    type="button"
+                    onClick={() => { setView('login'); setError(''); }}
+                    style={{
+                      background: 'none', border: 'none', color: 'var(--text-muted)',
+                      fontWeight: 600, fontSize: '0.9rem', cursor: 'pointer',
+                      padding: 0, marginTop: '10px', textAlign: 'center'
+                    }}
+                  >
+                    Cancel and Back
+                  </button>
                 </motion.div>
               )}
 

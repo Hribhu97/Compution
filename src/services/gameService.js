@@ -100,6 +100,7 @@ export const gameService = {
 
       await userRepository.updateUserProfile(userId, {
         gamePoints: newPoints,
+        rankPoints: newPoints,
         xp: newXp,
         level: newLevel
       });

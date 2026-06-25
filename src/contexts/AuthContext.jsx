@@ -181,19 +181,10 @@ export const AuthProvider = ({ children }) => {
               }
               await setDoc(userRef, newProfile);
             } else {
-              // Phone provider: Create user profile automatically
-              console.log(`[Phone Auth Debug] Profile not found. Automatically creating profile for phone user: ${firebaseUser.uid}`);
-              const fullPhone = firebaseUser.phoneNumber;
-              const newProfile = {
-                uid: firebaseUser.uid,
-                phoneNumber: fullPhone,
-                phone: fullPhone, // stored for backward compatibility
-                role: 'student',
-                createdAt: serverTimestamp(),
-                lastLogin: serverTimestamp()
-              };
-              await setDoc(userRef, newProfile);
-              console.log(`[Phone Auth Debug] User profile created: ${firebaseUser.uid}`);
+              // We do NOT write an automatic profile for phone users here anymore,
+              // to prevent duplicate/orphaned records during linking.
+              // They will be marked with needsRegistration: true in the snapshot listener below.
+              console.log(`[Phone Auth Debug] Profile not found for phone user: ${firebaseUser.uid}. Needs registration.`);
             }
           } else {
             // Document exists, update lastLogin
