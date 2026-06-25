@@ -1,4 +1,5 @@
-import { doc, getDoc, updateDoc, collection, getDocs, onSnapshot } from 'firebase/firestore';
+import { doc, getDoc, collection, getDocs, onSnapshot } from 'firebase/firestore';
+import { updateDoc } from '../firebase';;
 import { db } from '../firebase';
 import { queryManager } from '../utils/FirestoreQueryManager';
 

@@ -5,7 +5,8 @@ import {
   Check, X, ChevronRight, Play, Swords, Star, UserPlus, Copy, Send, Flame, Share2
 } from 'lucide-react';
 import { db } from '../firebase';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, serverTimestamp } from 'firebase/firestore';
+import { addDoc } from '../firebase';;
 
 const ChildDashboard = ({ 
   user, showToast, isDarkMode, xp, setXp, level, setLevel, 

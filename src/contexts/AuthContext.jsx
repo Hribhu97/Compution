@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
-import { doc, getDoc, setDoc, onSnapshot, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, onSnapshot, serverTimestamp } from 'firebase/firestore';
+import { setDoc } from '../firebase';;
 import { auth, db } from '../firebase';
 
 const AuthContext = createContext(null);
@@ -86,7 +87,8 @@ export const AuthProvider = ({ children }) => {
                 stream: '',
                 autoGroup: '',
                 customGroupException: '',
-                feeStatus: 'Pending',
+                feeStatus: 'pending',
+                feeTarget: baseMonthly,
                 monthlyFee: baseMonthly,
                 registrationFee: regFee,
                 admissionFee: admFee,

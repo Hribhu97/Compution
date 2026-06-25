@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../../contexts/AuthContext';
 import { db } from '../../firebase';
-import { doc, updateDoc, setDoc } from 'firebase/firestore';
+import { doc } from 'firebase/firestore';
+import { updateDoc, setDoc } from '../../firebase';;
 import {
   User, Mail, Phone, MapPin, Sparkles, CheckCircle, X,
   ShieldCheck, Loader2, Edit3, Compass, CreditCard, Bell, Info

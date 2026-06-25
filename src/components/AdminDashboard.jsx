@@ -5,7 +5,8 @@ import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { initializeApp } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
-import { collection, collectionGroup, doc, getDoc, updateDoc, deleteDoc, getDocs, addDoc, setDoc, serverTimestamp, onSnapshot, query, where, orderBy, runTransaction, writeBatch, deleteField, arrayUnion, arrayRemove } from 'firebase/firestore';
+import { collection, collectionGroup, doc, getDoc, getDocs, serverTimestamp, onSnapshot, query, where, orderBy, writeBatch, deleteField, arrayUnion, arrayRemove } from 'firebase/firestore';
+import { updateDoc, deleteDoc, addDoc, setDoc, runTransaction } from '../firebase';;
 import { Search, Download, Plus, MoreHorizontal, Eye, ArrowUpRight, Sparkles, ShieldCheck, Trash2, RefreshCw, CheckCircle, XCircle, AlertTriangle, Users, Bell, AlertCircle, Calendar, GraduationCap, ChevronDown, Mail, Send, Pencil, X, ShieldAlert, MessageSquare, Briefcase, UserCheck, Loader2, Check, CheckCheck, Info, UserMinus } from 'lucide-react';
 import Modal from './Modal';
 import SystemHealthPanel from './SystemHealthPanel';
@@ -402,6 +403,56 @@ const AdminDashboard = () => {
       unsubPaymentReq();
     };
   }, [user?.uid, user?.role]);
+
+  // ── MONTHLY RESET CHECK ──
+  useEffect(() => {
+    const checkAndRunMonthlyReset = async () => {
+      if (user?.role?.toLowerCase() !== 'admin') return;
+      if (allUsers.length === 0) return;
+
+      try {
+        const currentDate = new Date();
+        const currentMonthString = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`;
+        
+        const resetDocRef = doc(db, 'settings', 'feesReset');
+        const resetDocSnap = await getDoc(resetDocRef);
+        let lastResetMonth = '';
+        
+        if (resetDocSnap.exists()) {
+          lastResetMonth = resetDocSnap.data().lastResetMonth || '';
+        }
+
+        if (currentMonthString !== lastResetMonth) {
+          console.log(`Starting monthly fee reset for ${currentMonthString}. Last reset was ${lastResetMonth}`);
+          
+          const students = allUsers.filter(u => u.role?.toLowerCase() === 'student');
+          if (students.length > 0) {
+            const batch = writeBatch(db);
+            students.forEach(student => {
+              const studentRef = doc(db, 'users', student.id);
+              batch.update(studentRef, {
+                feeStatus: 'pending',
+                updatedAt: new Date().toISOString()
+              });
+            });
+            await batch.commit();
+          }
+
+          await setDoc(resetDocRef, {
+            lastResetMonth: currentMonthString,
+            updatedAt: new Date().toISOString()
+          }, { merge: true });
+
+          console.log(`Monthly fee reset completed for ${currentMonthString}`);
+          triggerToast(`Monthly fee reset executed successfully for ${currentMonthString}!`, 'success');
+        }
+      } catch (err) {
+        console.error("Error executing monthly fee status reset:", err);
+      }
+    };
+
+    checkAndRunMonthlyReset();
+  }, [allUsers, user?.role]);
 
   // Sync users and staff avatar URLs to local assets if they contain expired external links
   useEffect(() => {
@@ -1746,10 +1797,14 @@ const AdminDashboard = () => {
         triggerToast('Please enter a valid amount', 'danger');
         return;
       }
-      await setDoc(doc(db, 'users', studentId), { feesAmount: amount }, { merge: true });
-      await logAdminAction('fees_amount_update', studentId, { feesAmount: amount });
+      await setDoc(doc(db, 'users', studentId), { 
+        feeTarget: amount,
+        monthlyFee: amount,
+        feesAmount: amount
+      }, { merge: true });
+      await logAdminAction('fee_target_update', studentId, { feeTarget: amount });
       setEditingStudentId(null);
-      triggerToast('Fees amount updated!', 'success');
+      triggerToast('Fee amount updated!', 'success');
     } catch (err) {
       console.error(err);
       triggerToast(err.message || 'Failed to update fees', 'danger');
@@ -1766,68 +1821,32 @@ const AdminDashboard = () => {
       }
       
       const userData = userSnap.data();
-      const oldStatus = userData.feeStatus || 'Pending';
-      const feeRef = doc(db, 'fees', studentId);
-      const feeSnap = await getDoc(feeRef);
-      let remaining = 0;
+      const oldStatus = userData.feeStatus || 'pending';
+      const targetStatus = status.toLowerCase();
 
-      if (feeSnap.exists()) {
-        remaining = feeSnap.data().remainingBalance;
-      } else {
-        remaining = userData.pendingAmount || 0;
+      if (targetStatus !== 'paid' && targetStatus !== 'pending') {
+        throw new Error(`Invalid feeStatus: ${status}`);
       }
 
-      if (status === 'Paid') {
-        if (remaining > 0) {
-          // Auto-generate payment record for full pending amount in the paymentHistory collection
-          await addDoc(collection(db, 'paymentHistory'), {
-            studentId,
-            studentName: userData.displayName || userData.name || 'Student',
-            amount: remaining,
-            date: new Date().toISOString(),
-            mode: 'Cash Override',
-            transactionId: 'AUTO-' + Date.now(),
-            remarks: 'Manually marked as paid by Admin (Cash/Override)',
-            feeName: 'Tuition',
-            status: 'Approved'
-          });
-        }
-      } else if (status === 'Pending') {
-        // Revert overrides: delete Cash Override and Admin Override transactions from paymentHistory collection
-        const paySnap = await getDocs(query(
-          collection(db, 'paymentHistory'),
-          where('studentId', '==', studentId)
-        ));
-        const batch = writeBatch(db);
-        let deletedAny = false;
-        paySnap.forEach(d => {
-          const data = d.data();
-          if (data.mode === 'Cash Override' || data.mode === 'Admin Override') {
-            batch.delete(d.ref);
-            deletedAny = true;
-          }
-        });
-        if (deletedAny) {
-          await batch.commit();
-        } else {
-          triggerToast('Student has paid all normal dues. Add a fee/charge item to increase balance.', 'info');
-        }
-      }
+      const targetAmount = userData.feeTarget !== undefined && userData.feeTarget !== null ? Number(userData.feeTarget) : (Number(userData.monthlyFee) || 500);
 
-      // Resync to recalculate balances and strictly apply status logic
-      await syncStudentFeeAggregates(studentId);
+      await setDoc(userRef, { 
+        feeStatus: targetStatus,
+        pendingAmount: targetStatus === 'paid' ? 0 : targetAmount,
+        paidAmount: targetStatus === 'paid' ? targetAmount : 0
+      }, { merge: true });
 
       // Audit Logging to billingLogs/
       await addDoc(collection(db, 'billingLogs'), {
         studentId,
         oldStatus,
-        newStatus: status,
+        newStatus: targetStatus,
         changedBy: user?.email || user?.uid || 'Admin',
         timestamp: serverTimestamp()
       });
       
-      await logAdminAction('fee_status_update', studentId, { feeStatus: status });
-      triggerToast(`Fee status updated to ${status}!`, 'success');
+      await logAdminAction('fee_status_update', studentId, { feeStatus: targetStatus });
+      triggerToast(`Fee status updated to ${targetStatus}!`, 'success');
     } catch (err) {
       console.error("Error updating fee status:", err);
       triggerToast(err.message || 'Failed to update fee status', 'danger');
@@ -1909,9 +1928,10 @@ const AdminDashboard = () => {
   const handleSendWhatsAppNotification = (student) => {
     const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
     const currentMonth = months[new Date().getMonth()];
+    const amount = student.feeTarget !== undefined && student.feeTarget !== null ? Number(student.feeTarget) : (Number(student.monthlyFee) || 500);
     const text = encodeURIComponent(
       `Hi ${student.displayName},\n\n` +
-      `This is a friendly reminder that your outstanding tuition fee of *₹${student.pendingAmount || student.feesAmount || 0}* for the month of *${currentMonth}* is overdue.\n\n` +
+      `This is a friendly reminder that your outstanding tuition fee of *₹${amount}* for the month of *${currentMonth}* is pending.\n\n` +
       `Please clear the balance at the earliest to prevent any platform restriction.\n\n` +
       `Payment Link: https://compution.vercel.app/dashboard/fees\n` +
       `UPI ID QR: 9674035542@ibl\n\n` +
@@ -2375,12 +2395,16 @@ const AdminDashboard = () => {
   const totalMembers = membersList.length;
   const activeChatRooms = chatRoomsList.length;
 
-  const pendingFeesTotal = activeFees.reduce((acc, f) => {
-    return acc + (Number(f.remainingBalance) || 0);
+  const pendingFeesTotal = studentsList.reduce((acc, s) => {
+    const isPending = (s.feeStatus || 'pending').toLowerCase() === 'pending';
+    if (isPending) {
+      return acc + (s.feeTarget !== undefined && s.feeTarget !== null ? Number(s.feeTarget) : (Number(s.monthlyFee) || 500));
+    }
+    return acc;
   }, 0);
 
-  const totalMonthlyFees = activeFees.reduce((acc, f) => {
-    return acc + (Number(f.monthlyFee) || 0);
+  const totalMonthlyFees = studentsList.reduce((acc, s) => {
+    return acc + (s.feeTarget !== undefined && s.feeTarget !== null ? Number(s.feeTarget) : (Number(s.monthlyFee) || 500));
   }, 0);
 
   const courseDensityData = () => {
@@ -2399,10 +2423,10 @@ const AdminDashboard = () => {
     const rate = totalAtt > 0 ? Math.round((presentAtt / totalAtt) * 100) : 92; // default high attendance representation if logs are empty
 
     // Revenue collections
-    const totalBilled = activeFees.reduce((acc, f) => acc + (Number(f.totalFeeDue) || 0), 0);
-    const totalCollected = activeFees.reduce((acc, f) => acc + (Number(f.totalPaid) || 0), 0);
-    const totalPending = activeFees.reduce((acc, f) => acc + (Number(f.remainingBalance) || 0), 0);
-    const collectionPercent = totalBilled > 0 ? Math.round((totalCollected / totalBilled) * 100) : 80;
+    const totalBilled = totalMonthlyFees;
+    const totalCollected = totalMonthlyFees - pendingFeesTotal;
+    const totalPending = pendingFeesTotal;
+    const collectionPercent = totalBilled > 0 ? Math.round((totalCollected / totalBilled) * 100) : 100;
 
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
@@ -3339,26 +3363,26 @@ const AdminDashboard = () => {
                 
                 <table style={{ width: '100%', minWidth: '700px', borderCollapse: 'collapse', textAlign: 'left' }}>
                   <thead>
-                <tr style={{ borderBottom: '1px solid var(--border)', fontSize: '0.8rem', color: 'var(--text-light)' }}>
-                  <th style={{ padding: '12px' }}>Student Profile</th>
-                  <th style={{ padding: '12px' }}>Course / Program</th>
-                  <th style={{ padding: '12px' }}>Assigned Mentor</th>
-                  <th style={{ padding: '12px' }}>Fees Target</th>
-                  <th style={{ padding: '12px' }}>Fee status</th>
-                  <th style={{ padding: '12px' }}>Action</th>
-                </tr>
-              </thead>
-              <tbody>
+                    <tr style={{ borderBottom: '1px solid var(--border)', fontSize: '0.8rem', color: 'var(--text-light)' }}>
+                      <th style={{ padding: '12px' }}>Student Profile</th>
+                      <th style={{ padding: '12px' }}>Course / Program</th>
+                      <th style={{ padding: '12px' }}>Assigned Mentor</th>
+                      <th style={{ padding: '12px' }}>Fees Target</th>
+                      <th style={{ padding: '12px' }}>Fee status</th>
+                      <th style={{ padding: '12px' }}>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
                 {filteredStudents.map(student => {
-                  const feeStatus = student.feeStatus || 'Pending';
-                  const currentFeesAmount = student.feesAmount !== undefined ? student.feesAmount : 2400;
+                  const feeStatus = (student.feeStatus || 'pending').toLowerCase();
+                  const currentFeesAmount = student.feeTarget !== undefined && student.feeTarget !== null ? Number(student.feeTarget) : (Number(student.monthlyFee) || 500);
                   const colorMap = {
-                    'Paid': 'var(--success)',
-                    'Pending': 'var(--danger)'
+                    'paid': 'var(--success)',
+                    'pending': 'var(--danger)'
                   };
                   const bgMap = {
-                    'Paid': 'rgba(102,187,106,0.15)',
-                    'Pending': 'rgba(239,83,80,0.15)'
+                    'paid': 'rgba(102,187,106,0.15)',
+                    'pending': 'rgba(239,83,80,0.15)'
                   };
 
                   return (
@@ -3426,13 +3450,13 @@ const AdminDashboard = () => {
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                handleUpdateFeeStatus(student.id, 'Paid');
+                                handleUpdateFeeStatus(student.id, 'paid');
                               }}
                               style={{
                                 padding: '4px 10px',
-                                background: feeStatus === 'Paid' ? 'rgba(102,187,106,0.15)' : 'var(--surface)',
+                                background: feeStatus === 'paid' ? 'rgba(102,187,106,0.15)' : 'var(--surface)',
                                 color: 'var(--success)',
-                                border: feeStatus === 'Paid' ? '1px solid var(--success)' : '1px solid var(--border)',
+                                border: feeStatus === 'paid' ? '1px solid var(--success)' : '1px solid var(--border)',
                                 borderRadius: '6px',
                                 fontSize: '0.75rem',
                                 fontWeight: 600,
@@ -3445,13 +3469,13 @@ const AdminDashboard = () => {
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                handleUpdateFeeStatus(student.id, 'Pending');
+                                handleUpdateFeeStatus(student.id, 'pending');
                               }}
                               style={{
                                 padding: '4px 10px',
-                                background: feeStatus === 'Pending' ? 'rgba(245,158,11,0.15)' : 'var(--surface)',
+                                background: feeStatus === 'pending' ? 'rgba(245,158,11,0.15)' : 'var(--surface)',
                                 color: '#F59E0B',
-                                border: feeStatus === 'Pending' ? '1px solid #F59E0B' : '1px solid var(--border)',
+                                border: feeStatus === 'pending' ? '1px solid #F59E0B' : '1px solid var(--border)',
                                 borderRadius: '6px',
                                 fontSize: '0.75rem',
                                 fontWeight: 600,
@@ -3461,7 +3485,7 @@ const AdminDashboard = () => {
                             >
                               Pending
                             </button>
-                            {feeStatus !== 'Paid' && (
+                            {feeStatus !== 'paid' && (
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
@@ -3494,8 +3518,8 @@ const AdminDashboard = () => {
                               borderRadius: '6px',
                               fontSize: '0.75rem',
                               fontWeight: 600
-                            }}>{feeStatus}</span>
-                            {feeStatus !== 'Paid' && (
+                            }}>{feeStatus === 'paid' ? 'Paid' : 'Pending'}</span>
+                            {feeStatus !== 'paid' && (
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
@@ -3658,14 +3682,18 @@ const AdminDashboard = () => {
                     </thead>
                     <tbody>
                       {filteredStudents.map(student => {
-                        const feeStatus = student.feeStatus || 'Pending';
+                        const feeStatus = (student.feeStatus || 'pending').toLowerCase();
+                        const feeTarget = student.feeTarget !== undefined && student.feeTarget !== null ? Number(student.feeTarget) : (Number(student.monthlyFee) || 500);
+                        const paidAmount = feeStatus === 'paid' ? feeTarget : 0;
+                        const pendingAmount = feeStatus === 'pending' ? feeTarget : 0;
+
                         const colorMap = {
-                          'Paid': 'var(--success)',
-                          'Pending': 'var(--danger)'
+                          'paid': 'var(--success)',
+                          'pending': 'var(--danger)'
                         };
                         const bgMap = {
-                          'Paid': 'rgba(102,187,106,0.1)',
-                          'Pending': 'rgba(239,83,80,0.1)'
+                          'paid': 'rgba(102,187,106,0.1)',
+                          'pending': 'rgba(239,83,80,0.1)'
                         };
 
                         return (
@@ -3675,15 +3703,15 @@ const AdminDashboard = () => {
                               <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{student.email}</div>
                             </td>
                             <td style={{ padding: '10px' }}>{student.course}</td>
-                            <td style={{ padding: '10px', fontWeight: 600 }}>₹{(student.feesAmount || 0).toLocaleString()}</td>
-                            <td style={{ padding: '10px', fontWeight: 600, color: 'var(--success)' }}>₹{(student.paidAmount || 0).toLocaleString()}</td>
-                            <td style={{ padding: '10px', fontWeight: 600, color: student.pendingAmount > 0 ? 'var(--danger)' : 'var(--text-muted)' }}>₹{(student.pendingAmount || 0).toLocaleString()}</td>
+                            <td style={{ padding: '10px', fontWeight: 600 }}>₹{feeTarget.toLocaleString()}</td>
+                            <td style={{ padding: '10px', fontWeight: 600, color: 'var(--success)' }}>₹{paidAmount.toLocaleString()}</td>
+                            <td style={{ padding: '10px', fontWeight: 600, color: pendingAmount > 0 ? 'var(--danger)' : 'var(--text-muted)' }}>₹{pendingAmount.toLocaleString()}</td>
                             <td style={{ padding: '10px' }}>
                               <span style={{
                                 padding: '3px 8px', borderRadius: '100px', fontSize: '0.7rem', fontWeight: 800,
                                 color: colorMap[feeStatus] || 'var(--text-muted)',
                                 background: bgMap[feeStatus] || 'var(--surface)'
-                              }}>{feeStatus}</span>
+                              }}>{feeStatus === 'paid' ? 'Paid' : 'Pending'}</span>
                             </td>
                             <td style={{ padding: '10px' }}>
                               <button
@@ -3741,6 +3769,43 @@ const AdminDashboard = () => {
                   {isDebugPanelOpen && (
                     <div style={{ marginTop: '16px' }}>
                       <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '16px' }}>
+                        This panel allows you to monitor and control billing state directly. Recalculated directly from student records roster data (real-time listener).
+                      </p>
+
+                      {/* Debug Report Summary */}
+                      <div style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+                        gap: '12px',
+                        marginBottom: '20px',
+                        background: 'var(--surface-elevated)',
+                        padding: '16px',
+                        borderRadius: '12px',
+                        border: '1px solid var(--border)'
+                      }}>
+                        <div>
+                          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Student Count</div>
+                          <div style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--dark)' }}>{studentsList.length}</div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Total Fee Sum</div>
+                          <div style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--primary)' }}>₹{totalMonthlyFees.toLocaleString()}</div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Pending Fee Sum</div>
+                          <div style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--danger)' }}>₹{pendingFeesTotal.toLocaleString()}</div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Paid Student Count</div>
+                          <div style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--success)' }}>{studentsList.filter(s => (s.feeStatus || 'pending').toLowerCase() === 'paid').length}</div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Pending Student Count</div>
+                          <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#F59E0B' }}>{studentsList.filter(s => (s.feeStatus || 'pending').toLowerCase() === 'pending').length}</div>
+                        </div>
+                      </div>
+
+                      <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '16px' }}>
                         This panel allows you to monitor and control billing state directly. You can inspect fields stored in Firestore, toggle the billing source override, and force recalculations.
                       </p>
 
@@ -3784,17 +3849,19 @@ const AdminDashboard = () => {
                                 s.id?.toLowerCase().includes(debugSearch.toLowerCase())
                               )
                               .map(student => {
-                                const feeStatus = student.feeStatus || 'Pending';
-                                const statusSource = student.statusSource || 'automatic';
+                                const feeStatus = (student.feeStatus || 'pending').toLowerCase();
+                                const feeTarget = student.feeTarget !== undefined && student.feeTarget !== null ? Number(student.feeTarget) : (Number(student.monthlyFee) || 500);
+                                const paidAmount = feeStatus === 'paid' ? feeTarget : 0;
+                                const pendingAmount = feeStatus === 'pending' ? feeTarget : 0;
                                 const lastUpdate = student.updatedAt ? new Date(student.updatedAt).toLocaleString() : 'Never';
 
                                 const colorMap = {
-                                  'Paid': 'var(--success)',
-                                  'Pending': 'var(--danger)'
+                                  'paid': 'var(--success)',
+                                  'pending': 'var(--danger)'
                                 };
                                 const bgMap = {
-                                  'Paid': 'rgba(102,187,106,0.1)',
-                                  'Pending': 'rgba(239,83,80,0.1)'
+                                  'paid': 'rgba(102,187,106,0.1)',
+                                  'pending': 'rgba(239,83,80,0.1)'
                                 };
 
                                 return (
@@ -3811,40 +3878,43 @@ const AdminDashboard = () => {
                                         padding: '3px 8px', borderRadius: '100px', fontSize: '0.7rem', fontWeight: 800,
                                         color: colorMap[feeStatus] || 'var(--text-muted)',
                                         background: bgMap[feeStatus] || 'var(--surface)'
-                                      }}>{feeStatus}</span>
+                                      }}>{feeStatus === 'paid' ? 'Paid' : 'Pending'}</span>
                                     </td>
                                     <td style={{ padding: '10px' }}>
                                       <span style={{
                                         padding: '3px 8px', borderRadius: '100px', fontSize: '0.7rem', fontWeight: 800,
-                                        color: statusSource === 'manual' ? '#F59E0B' : 'var(--success)',
-                                        background: statusSource === 'manual' ? 'rgba(245,158,11,0.1)' : 'rgba(102,187,106,0.1)'
-                                      }}>{statusSource}</span>
+                                        color: 'var(--success)',
+                                        background: 'rgba(102,187,106,0.1)'
+                                      }}>direct</span>
                                     </td>
                                     <td style={{ padding: '10px', fontWeight: 600 }}>
-                                      ₹{(student.pendingAmount || 0).toLocaleString()}
+                                      ₹{pendingAmount.toLocaleString()}
                                     </td>
                                     <td style={{ padding: '10px', fontWeight: 600, color: 'var(--success)' }}>
-                                      ₹{(student.paidAmount || 0).toLocaleString()}
+                                      ₹{paidAmount.toLocaleString()}
                                     </td>
                                     <td style={{ padding: '10px', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
                                       {lastUpdate}
                                     </td>
                                     <td style={{ padding: '10px' }}>
                                       <div style={{ display: 'flex', gap: '8px' }}>
-                                        <button
-                                          onClick={() => handleToggleStatusSource(student.id, statusSource)}
-                                          className="btn btn-secondary"
-                                          style={{ padding: '4px 8px', fontSize: '0.7rem', borderRadius: '4px' }}
-                                        >
-                                          Toggle Source
-                                        </button>
-                                        <button
-                                          onClick={() => handleForceRecalculate(student.id)}
-                                          className="btn btn-primary"
-                                          style={{ padding: '4px 8px', fontSize: '0.7rem', borderRadius: '4px' }}
-                                        >
-                                          Recalculate
-                                        </button>
+                                        {feeStatus === 'pending' ? (
+                                          <button
+                                            onClick={() => handleUpdateFeeStatus(student.id, 'paid')}
+                                            className="btn btn-success"
+                                            style={{ padding: '4px 8px', fontSize: '0.7rem', borderRadius: '4px', background: 'var(--success)', color: 'white', border: 'none' }}
+                                          >
+                                            Mark Paid
+                                          </button>
+                                        ) : (
+                                          <button
+                                            onClick={() => handleUpdateFeeStatus(student.id, 'pending')}
+                                            className="btn btn-warning"
+                                            style={{ padding: '4px 8px', fontSize: '0.7rem', borderRadius: '4px', background: '#F59E0B', color: 'white', border: 'none' }}
+                                          >
+                                            Mark Pending
+                                          </button>
+                                        )}
                                       </div>
                                     </td>
                                   </tr>
@@ -4883,132 +4953,53 @@ const AdminDashboard = () => {
                     )}
 
                     {/* Fees Management Block */}
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px' }}>
-                      <h4 style={{ margin: 0, fontWeight: 800, fontSize: '0.95rem', color: 'var(--dark)' }}>Billed Fee Items</h4>
-                      {user?.role === 'admin' && (
-                        <button
-                          onClick={() => setIsAddFeeOpen(true)}
-                          style={{
-                            display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 12px',
-                            background: 'var(--primary)', color: 'var(--text-on-primary)', border: 'none', borderRadius: '6px',
-                            fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer'
-                          }}
-                        >
-                          <Plus size={14} /> Add Fee Item
-                        </button>
-                      )}
-                    </div>
-
-                    <div style={{ maxHeight: '200px', overflowY: 'auto', border: '1px solid var(--border)', borderRadius: '12px' }}>
-                      <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.8rem' }}>
-                        <thead>
-                          <tr style={{ background: 'var(--surface)', borderBottom: '1px solid var(--border)', color: 'var(--text-muted)' }}>
-                            <th style={{ padding: '8px 12px' }}>Fee Name</th>
-                            <th style={{ padding: '8px 12px' }}>Month</th>
-                            <th style={{ padding: '8px 12px' }}>Billed</th>
-                            <th style={{ padding: '8px 12px' }}>Paid</th>
-                            <th style={{ padding: '8px 12px' }}>Remaining</th>
-                            <th style={{ padding: '8px 12px' }}>Status</th>
-                            {user?.role === 'admin' && <th style={{ padding: '8px 12px', textAlign: 'right' }}>Actions</th>}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {feesToShow.length === 0 ? (
-                            <tr>
-                              <td colSpan={user?.role === 'admin' ? 7 : 6} style={{ padding: '16px', textAlign: 'center', color: 'var(--text-muted)' }}>
-                                No custom fee items.
-                              </td>
-                            </tr>
-                          ) : (
-                            feesToShow.map((fee) => {
-                              const remaining = fee.amount - fee.paidAmount;
-                              const feeStatus = fee.status || 'Pending';
-                              const colorMap = { 'Paid': 'var(--success)', 'Pending': 'var(--danger)' };
-                              const bgMap = { 'Paid': 'rgba(102,187,106,0.1)', 'Pending': 'rgba(239,83,80,0.1)' };
-
-                              return (
-                                <tr key={fee.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                                  <td style={{ padding: '8px 12px', fontWeight: 700 }}>{fee.feeName}</td>
-                                  <td style={{ padding: '8px 12px' }}>{fee.month}</td>
-                                  <td style={{ padding: '8px 12px', fontWeight: 600 }}>₹{fee.amount}</td>
-                                  <td style={{ padding: '8px 12px', fontWeight: 600, color: 'var(--success)' }}>₹{fee.paidAmount}</td>
-                                  <td style={{ padding: '8px 12px', fontWeight: 600, color: remaining > 0 ? 'var(--danger)' : 'var(--text-muted)' }}>₹{remaining}</td>
-                                  <td style={{ padding: '8px 12px' }}>
-                                    <span style={{
-                                      padding: '2px 6px', borderRadius: '4px', fontSize: '0.65rem', fontWeight: 800,
-                                      color: colorMap[feeStatus] || 'var(--text-muted)',
-                                      background: bgMap[feeStatus] || 'var(--surface)'
-                                    }}>{feeStatus}</span>
-                                  </td>
-                                  {user?.role === 'admin' && (
-                                    <td style={{ padding: '8px 12px', textAlign: 'right' }}>
-                                      <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end', alignItems: 'center' }}>
-                                        {remaining > 0 && (
-                                          <button
-                                            onClick={() => {
-                                              setSelectedFeeItem(fee);
-                                              setPaymentForm({ amountPaid: remaining.toString(), paymentMethod: 'Cash', notes: '' });
-                                              setIsCollectPaymentOpen(true);
-                                            }}
-                                            style={{
-                                              padding: '4px 8px', background: 'rgba(76, 175, 80, 0.1)', color: 'var(--success)',
-                                              border: '1px solid rgba(76, 175, 80, 0.2)', borderRadius: '4px', fontSize: '0.7rem',
-                                              fontWeight: 700, cursor: 'pointer'
-                                            }}
-                                          >
-                                            Collect
-                                          </button>
-                                        )}
-                                        <button
-                                          onClick={() => handleDeleteFeeItem(fee)}
-                                          style={{
-                                            padding: '4px', background: 'none', border: 'none',
-                                            color: 'var(--danger)', cursor: 'pointer', display: 'flex', alignItems: 'center'
-                                          }}
-                                          title="Delete fee item"
-                                        >
-                                          <Trash2 size={14} />
-                                        </button>
-                                      </div>
-                                    </td>
-                                  )}
-                                </tr>
-                              );
-                            })
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
-
-                    {/* Fee Breakdown */}
-                    <div style={{ padding: '12px', background: 'var(--surface-elevated)', borderRadius: '8px', marginBottom: '16px', fontSize: '0.85rem' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                        <span style={{ color: 'var(--text-secondary)' }}>Monthly Tuition Fee:</span>
-                        <span style={{ fontWeight: 600 }}>₹{selectedStudentDetails.monthlyFee || 0}/mo</span>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                        <span style={{ color: 'var(--text-secondary)' }}>Registration Fee (One-time):</span>
-                        <span style={{ fontWeight: 600 }}>₹{selectedStudentDetails.registrationFee || 0}</span>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                        <span style={{ color: 'var(--text-secondary)' }}>Admission Fee (One-time):</span>
-                        <span style={{ fontWeight: 600 }}>₹{selectedStudentDetails.admissionFee || 0}</span>
-                      </div>
-                    </div>
-
-                    {/* Overall Aggregates Card */}
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px', background: 'var(--surface)', padding: '12px', borderRadius: '12px', fontSize: '0.8rem', border: '1px solid var(--border)' }}>
-                      <div style={{ textAlign: 'center' }}>
-                        <div style={{ color: 'var(--text-muted)', fontSize: '0.65rem', fontWeight: 700 }}>TOTAL FEES</div>
-                        <div style={{ fontSize: '0.9rem', fontWeight: 800 }}>₹{(selectedStudentDetails.feesAmount || 0).toLocaleString()}</div>
-                      </div>
-                      <div style={{ textAlign: 'center' }}>
-                        <div style={{ color: 'var(--success)', fontSize: '0.65rem', fontWeight: 700 }}>TOTAL PAID</div>
-                        <div style={{ fontSize: '0.9rem', fontWeight: 800, color: 'var(--success)' }}>₹{(selectedStudentDetails.paidAmount || 0).toLocaleString()}</div>
-                      </div>
-                      <div style={{ textAlign: 'center' }}>
-                        <div style={{ color: 'var(--danger)', fontSize: '0.65rem', fontWeight: 700 }}>TOTAL PENDING</div>
-                        <div style={{ fontSize: '0.9rem', fontWeight: 800, color: 'var(--danger)' }}>₹{(selectedStudentDetails.pendingAmount || 0).toLocaleString()}</div>
+                    <div style={{ borderTop: '1px solid var(--border)', paddingTop: '16px', marginTop: '16px' }}>
+                      <h4 style={{ margin: '0 0 12px 0', fontWeight: 800, fontSize: '0.95rem', color: 'var(--dark)' }}>Tuition Fee Settings</h4>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', background: 'var(--surface)', padding: '16px', borderRadius: '12px', border: '1px solid var(--border)' }}>
+                        <div>
+                          <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', fontWeight: 700, marginBottom: '4px' }}>MONTHLY TUITION TARGET</div>
+                          <div style={{ fontSize: '1.2rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span>₹{((selectedStudentDetails.feeTarget !== undefined && selectedStudentDetails.feeTarget !== null) ? Number(selectedStudentDetails.feeTarget) : (Number(selectedStudentDetails.monthlyFee) || 500)).toLocaleString()}</span>
+                          </div>
+                        </div>
+                        <div>
+                          <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', fontWeight: 700, marginBottom: '4px' }}>CURRENT STATUS</div>
+                          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '4px' }}>
+                            <span style={{
+                              padding: '4px 10px',
+                              borderRadius: '6px',
+                              fontSize: '0.75rem',
+                              fontWeight: 800,
+                              textTransform: 'uppercase',
+                              color: (selectedStudentDetails.feeStatus || 'pending').toLowerCase() === 'paid' ? 'var(--success)' : 'var(--danger)',
+                              background: (selectedStudentDetails.feeStatus || 'pending').toLowerCase() === 'paid' ? 'rgba(102,187,106,0.15)' : 'rgba(239,83,80,0.15)',
+                              border: `1px solid ${(selectedStudentDetails.feeStatus || 'pending').toLowerCase() === 'paid' ? 'var(--success)' : 'var(--danger)'}`
+                            }}>{(selectedStudentDetails.feeStatus || 'pending').toUpperCase()}</span>
+                            
+                            {user?.role === 'admin' && (
+                              <div style={{ display: 'flex', gap: '4px' }}>
+                                <button
+                                  onClick={async () => {
+                                    await handleUpdateFeeStatus(selectedStudentDetails.id, 'paid');
+                                    setSelectedStudentDetails(prev => ({ ...prev, feeStatus: 'paid' }));
+                                  }}
+                                  style={{ padding: '4px 8px', background: 'var(--success)', color: 'white', border: 'none', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 700, cursor: 'pointer' }}
+                                >
+                                  Paid
+                                </button>
+                                <button
+                                  onClick={async () => {
+                                    await handleUpdateFeeStatus(selectedStudentDetails.id, 'pending');
+                                    setSelectedStudentDetails(prev => ({ ...prev, feeStatus: 'pending' }));
+                                  }}
+                                  style={{ padding: '4px 8px', background: '#F59E0B', color: 'white', border: 'none', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 700, cursor: 'pointer' }}
+                                >
+                                  Pending
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        </div>
                       </div>
                     </div>
 

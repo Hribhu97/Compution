@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
 import { db, firebaseConfig } from '../firebase';
-import { collection, onSnapshot, query, orderBy, addDoc, serverTimestamp, doc, updateDoc } from 'firebase/firestore';
+import { collection, onSnapshot, query, orderBy, serverTimestamp, doc } from 'firebase/firestore';
+import { addDoc, updateDoc } from '../firebase';;
 import { MessageCircle, X, Send } from 'lucide-react';
 import { format } from 'date-fns';
 

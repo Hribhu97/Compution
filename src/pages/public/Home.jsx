@@ -11,7 +11,8 @@ import Modal from '../../components/Modal';
 import LeadCaptureSystem from '../../components/LeadCaptureSystem';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../theme/useTheme';
-import { collection, onSnapshot, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, onSnapshot, serverTimestamp } from 'firebase/firestore';
+import { addDoc } from '../../firebase';;
 import { db } from '../../firebase';
 
 /* ── FADE IN VARIANTS ─────────────────────────────── */

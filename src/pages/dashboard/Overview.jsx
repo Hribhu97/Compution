@@ -3,7 +3,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
 import { db } from '../../firebase';
-import { collection, query, doc, updateDoc, addDoc, serverTimestamp, where, setDoc, increment } from 'firebase/firestore';
+import { collection, query, doc, serverTimestamp, where, increment } from 'firebase/firestore';
+import { updateDoc, addDoc, setDoc } from '../../firebase';;
 import { useNavigate } from 'react-router-dom';
 import {
   Users, Send, Clock, UserMinus, ChevronDown, Share2,

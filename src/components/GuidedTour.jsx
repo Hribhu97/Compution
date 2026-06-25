@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Compass, ChevronRight, ChevronLeft, X, Check } from 'lucide-react';
 import { db } from '../firebase';
-import { doc, setDoc } from 'firebase/firestore';
+import { doc } from 'firebase/firestore';
+import { setDoc } from '../firebase';;
 
 const GuidedTour = ({ userId, role, onComplete }) => {
   const [currentStep, setCurrentStep] = useState(0);

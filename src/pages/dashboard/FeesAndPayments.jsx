@@ -3,10 +3,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
 import { db, syncStudentFeeAggregates } from '../../firebase';
-import { 
-  collection, doc, onSnapshot, addDoc, updateDoc, 
-  query, where, serverTimestamp, getDoc, getDocs 
-} from 'firebase/firestore';
+import { collection, doc, onSnapshot, query, where, serverTimestamp, getDoc, getDocs } from 'firebase/firestore';
+import { addDoc, updateDoc } from '../../firebase';;
 import { 
   CreditCard, CheckCircle, XCircle, AlertTriangle, 
   Clock, ArrowUpRight, Share2, Phone, FileText, 
@@ -42,38 +40,26 @@ export default function FeesAndPayments() {
   const [adminSearch, setAdminSearch] = useState('');
   const [selectedReceipt, setSelectedReceipt] = useState(null);
 
-  // --- 1. STUDENT REAL-TIME LISTENER ---
+  // --- 1. STUDENT STATE SYNC ---
   useEffect(() => {
     if (isAdmin || !user?.uid) return;
 
     setStudentLoading(true);
-    // Background sync dynamically on load to ensure up-to-date monthly cycle
-    syncStudentFeeAggregates(user.uid);
-
-    const unsub = onSnapshot(doc(db, 'fees', user.uid), (docSnap) => {
-      if (docSnap.exists()) {
-        setFeeDoc(docSnap.data());
-      } else {
-        // Fallback initialization if missing document
-        setFeeDoc({
-          monthlyFee: user.monthlyFee || 500,
-          totalFeeDue: user.feesAmount || 0,
-          totalPaid: user.paidAmount || 0,
-          remainingBalance: user.pendingAmount || 0,
-          status: user.feeStatus || 'Pending',
-          paymentHistory: [],
-          dueDate: '10',
-          lastPaymentDate: null
-        });
-      }
-      setStudentLoading(false);
-    }, (err) => {
-      console.error("Student fees listener error:", err);
-      setStudentLoading(false);
+    const feeTargetVal = user.feeTarget !== undefined && user.feeTarget !== null ? Number(user.feeTarget) : (Number(user.monthlyFee) || 500);
+    const statusVal = (user.feeStatus || 'pending').toLowerCase();
+    
+    setFeeDoc({
+      monthlyFee: feeTargetVal,
+      totalFeeDue: feeTargetVal,
+      totalPaid: statusVal === 'paid' ? feeTargetVal : 0,
+      remainingBalance: statusVal === 'pending' ? feeTargetVal : 0,
+      status: statusVal === 'paid' ? 'Paid' : 'Pending',
+      paymentHistory: [],
+      dueDate: '10',
+      lastPaymentDate: user.updatedAt || null
     });
-
-    return () => unsub();
-  }, [user?.uid, isAdmin]);
+    setStudentLoading(false);
+  }, [user, isAdmin]);
 
   // --- 2. ADMIN REAL-TIME LISTENERS ---
   useEffect(() => {
@@ -179,8 +165,18 @@ export default function FeesAndPayments() {
         verifiedAt: new Date().toISOString()
       });
 
-      // 3. Recalculate billing aggregates
-      await syncStudentFeeAggregates(req.studentId);
+      // 3. Update student profile fee status directly
+      const userRef = doc(db, 'users', req.studentId);
+      const userSnap = await getDoc(userRef);
+      if (userSnap.exists()) {
+        const userData = userSnap.data();
+        const targetAmount = userData.feeTarget !== undefined && userData.feeTarget !== null ? Number(userData.feeTarget) : (Number(userData.monthlyFee) || 500);
+        await updateDoc(userRef, {
+          feeStatus: 'paid',
+          pendingAmount: 0,
+          paidAmount: targetAmount
+        });
+      }
 
       showToast(`Payment of ₹${req.amount} approved for ${req.studentName}!`, 'success');
     } catch (err) {
@@ -231,9 +227,10 @@ export default function FeesAndPayments() {
   const handleSendWhatsAppReminder = (student) => {
     const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
     const currentMonth = months[new Date().getMonth()];
+    const amount = student.feeTarget !== undefined && student.feeTarget !== null ? Number(student.feeTarget) : (Number(student.monthlyFee) || 500);
     const text = encodeURIComponent(
       `Hi ${student.displayName},\n\n` +
-      `This is a friendly reminder that your outstanding tuition fee of *₹${student.pendingAmount}* for the month of *${currentMonth}* is overdue.\n\n` +
+      `This is a friendly reminder that your outstanding tuition fee of *₹${amount}* for the month of *${currentMonth}* is pending.\n\n` +
       `Please clear the balance at the earliest to prevent any platform restriction.\n\n` +
       `Payment Link: https://compution.vercel.app/dashboard/fees\n` +
       `UPI ID QR: 9674035542@ibl\n\n` +
@@ -245,17 +242,50 @@ export default function FeesAndPayments() {
     window.open(`https://wa.me/${num.startsWith('91') ? num : '91' + num}?text=${text}`, '_blank');
   };
 
+  const handleUpdateStudentFeeStatus = async (studentId, newStatus) => {
+    try {
+      const userRef = doc(db, 'users', studentId);
+      const userSnap = await getDoc(userRef);
+      if (!userSnap.exists()) {
+        throw new Error('Student profile not found');
+      }
+      const userData = userSnap.data();
+      const targetStatus = newStatus.toLowerCase();
+      const targetAmount = userData.feeTarget !== undefined && userData.feeTarget !== null ? Number(userData.feeTarget) : (Number(userData.monthlyFee) || 500);
+
+      await updateDoc(userRef, {
+        feeStatus: targetStatus,
+        pendingAmount: targetStatus === 'paid' ? 0 : targetAmount,
+        paidAmount: targetStatus === 'paid' ? targetAmount : 0
+      });
+      showToast(`Fee status updated to ${targetStatus} successfully!`, 'success');
+    } catch (err) {
+      console.error(err);
+      showToast(err.message || 'Failed to update fee status', 'danger');
+    }
+  };
+
   // --- STATS CALCULATIONS FOR ADMIN ---
   const activeStudentList = allUsers.filter(u => u.role === 'student');
   const totalStudents = activeStudentList.length;
 
-  const monthlyCollection = allFees.reduce((acc, f) => acc + (Number(f.totalPaid) || 0), 0);
-  const pendingCollection = allFees.reduce((acc, f) => acc + (Number(f.remainingBalance) || 0), 0);
-  const totalBilled = monthlyCollection + pendingCollection;
-  const collectionPercentage = totalBilled > 0 ? Math.round((monthlyCollection / totalBilled) * 100) : 0;
+  const totalBilled = activeStudentList.reduce((acc, s) => {
+    return acc + (s.feeTarget !== undefined && s.feeTarget !== null ? Number(s.feeTarget) : (Number(s.monthlyFee) || 500));
+  }, 0);
 
-  const paidStudents = allFees.filter(f => f.status === 'Paid').length;
-  const pendingStudents = allFees.filter(f => f.status === 'Pending').length;
+  const pendingCollection = activeStudentList.reduce((acc, s) => {
+    const isPending = (s.feeStatus || 'pending').toLowerCase() === 'pending';
+    if (isPending) {
+      return acc + (s.feeTarget !== undefined && s.feeTarget !== null ? Number(s.feeTarget) : (Number(s.monthlyFee) || 500));
+    }
+    return acc;
+  }, 0);
+
+  const monthlyCollection = totalBilled - pendingCollection;
+  const collectionPercentage = totalBilled > 0 ? Math.round((monthlyCollection / totalBilled) * 100) : 100;
+
+  const paidStudents = activeStudentList.filter(s => (s.feeStatus || 'pending').toLowerCase() === 'paid').length;
+  const pendingStudents = activeStudentList.filter(s => (s.feeStatus || 'pending').toLowerCase() === 'pending').length;
 
   // Filter students for admin search
   const filteredStudents = activeStudentList.filter(s => 
@@ -387,15 +417,11 @@ export default function FeesAndPayments() {
               </thead>
               <tbody>
                 {filteredStudents.map(student => {
-                  const studentFee = allFees.find(f => f.studentId === student.id) || {
-                    totalFeeDue: student.feesAmount || 0,
-                    totalPaid: student.paidAmount || 0,
-                    remainingBalance: student.pendingAmount || 0,
-                    status: student.feeStatus || 'Pending'
-                  };
-
-                  const isStudentPending = studentFee.status === 'Pending';
-                  const isOverdueStudent = isOverdue && isStudentPending;
+                  const feeStatus = (student.feeStatus || 'pending').toLowerCase();
+                  const feeTarget = student.feeTarget !== undefined && student.feeTarget !== null ? Number(student.feeTarget) : (Number(student.monthlyFee) || 500);
+                  const paidAmount = feeStatus === 'paid' ? feeTarget : 0;
+                  const pendingAmount = feeStatus === 'pending' ? feeTarget : 0;
+                  const isStudentPending = feeStatus === 'pending';
 
                   return (
                     <tr key={student.id} style={{ borderBottom: '1px solid var(--border)' }}>
@@ -404,47 +430,51 @@ export default function FeesAndPayments() {
                         <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px' }}>{student.studentId} • {student.email}</div>
                       </td>
                       <td style={{ padding: '16px', fontWeight: 500 }}>{student.course}</td>
-                      <td style={{ padding: '16px', fontWeight: 600 }}>₹{studentFee.totalFeeDue.toLocaleString()}</td>
-                      <td style={{ padding: '16px', fontWeight: 600, color: 'var(--success)' }}>₹{studentFee.totalPaid.toLocaleString()}</td>
-                      <td style={{ padding: '16px', fontWeight: 600, color: studentFee.remainingBalance > 0 ? 'var(--danger)' : 'var(--text-muted)' }}>₹{studentFee.remainingBalance.toLocaleString()}</td>
+                      <td style={{ padding: '16px', fontWeight: 600 }}>₹{feeTarget.toLocaleString()}</td>
+                      <td style={{ padding: '16px', fontWeight: 600, color: 'var(--success)' }}>₹{paidAmount.toLocaleString()}</td>
+                      <td style={{ padding: '16px', fontWeight: 600, color: pendingAmount > 0 ? 'var(--danger)' : 'var(--text-muted)' }}>₹{pendingAmount.toLocaleString()}</td>
                       <td style={{ padding: '16px' }}>
                         <span style={{
                           padding: '4px 10px', borderRadius: '100px', fontSize: '0.72rem', fontWeight: 800,
-                          color: studentFee.status === 'Paid' ? 'var(--success)' : 'var(--danger)',
-                          background: studentFee.status === 'Paid' ? 'rgba(67, 164, 108, 0.12)' : 'rgba(224, 86, 86, 0.12)'
+                          color: feeStatus === 'paid' ? 'var(--success)' : 'var(--danger)',
+                          background: feeStatus === 'paid' ? 'rgba(67, 164, 108, 0.12)' : 'rgba(224, 86, 86, 0.12)'
                         }}>
-                          {studentFee.status}
+                          {feeStatus === 'paid' ? 'Paid' : 'Pending'}
                         </span>
                       </td>
                       <td style={{ padding: '16px', textAlign: 'right' }}>
-                        <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-                          {isStudentPending && (
+                        <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', alignItems: 'center' }}>
+                          {isStudentPending ? (
+                            <>
+                              <button
+                                onClick={() => handleUpdateStudentFeeStatus(student.id, 'paid')}
+                                className="btn btn-success"
+                                style={{ padding: '6px 12px', fontSize: '0.75rem', borderRadius: '6px', background: 'var(--success)', color: 'white', border: 'none', cursor: 'pointer' }}
+                              >
+                                Paid
+                              </button>
+                              <button
+                                onClick={() => handleSendWhatsAppReminder(student)}
+                                className="btn btn-ghost"
+                                style={{
+                                  padding: '6px 12px', fontSize: '0.75rem', borderRadius: '6px',
+                                  display: 'inline-flex', alignItems: 'center', gap: '4px',
+                                  border: '1px solid var(--border)', background: 'none'
+                                }}
+                              >
+                                <Phone size={12} />
+                                Send Reminder
+                              </button>
+                            </>
+                          ) : (
                             <button
-                              onClick={() => handleSendWhatsAppReminder(student)}
-                              className="btn btn-ghost"
-                              style={{
-                                padding: '6px 12px', fontSize: '0.75rem', borderRadius: '6px',
-                                display: 'inline-flex', alignItems: 'center', gap: '4px',
-                                border: isOverdueStudent ? '1px solid var(--danger)' : '1px solid var(--border)',
-                                color: isOverdueStudent ? 'var(--danger)' : 'inherit',
-                                background: isOverdueStudent ? 'rgba(224, 86, 86, 0.05)' : 'none'
-                              }}
+                              onClick={() => handleUpdateStudentFeeStatus(student.id, 'pending')}
+                              className="btn btn-warning"
+                              style={{ padding: '6px 12px', fontSize: '0.75rem', borderRadius: '6px', background: '#F59E0B', color: 'white', border: 'none', cursor: 'pointer' }}
                             >
-                              <Phone size={12} />
-                              {isOverdueStudent ? 'Send Overdue Alert' : 'Send Reminder'}
+                              Pending
                             </button>
                           )}
-                          <button
-                            onClick={async () => {
-                              await syncStudentFeeAggregates(student.id);
-                              showToast(`Billing aggregates resynced for ${student.displayName}`, 'success');
-                            }}
-                            className="btn btn-ghost"
-                            style={{ padding: '6px', borderRadius: '6px' }}
-                            title="Resync Billing Aggregates"
-                          >
-                            <RefreshCw size={12} />
-                          </button>
                         </div>
                       </td>
                     </tr>
@@ -527,10 +557,8 @@ export default function FeesAndPayments() {
             {/* Ledger Totals Row */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px' }}>
               {[
-                { label: 'Monthly Tuition', value: `₹${feeDoc.monthlyFee}`, color: 'var(--text-primary)' },
-                { label: 'Total Fee Billed', value: `₹${feeDoc.totalFeeDue}`, color: 'var(--primary)' },
-                { label: 'Total Paid To Date', value: `₹${feeDoc.totalPaid}`, color: 'var(--success)' },
-                { label: 'Remaining Balance', value: `₹${feeDoc.remainingBalance}`, color: feeDoc.remainingBalance > 0 ? 'var(--danger)' : 'var(--text-muted)' }
+                { label: 'Monthly Tuition Target', value: `₹${feeDoc.monthlyFee}`, color: 'var(--text-primary)' },
+                { label: 'Current Status', value: feeDoc.status, color: feeDoc.status === 'Paid' ? 'var(--success)' : 'var(--danger)' }
               ].map((card, idx) => (
                 <div key={idx} style={{ padding: '16px', background: 'var(--surface)', borderRadius: '12px', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                   <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>{card.label}</span>
@@ -542,46 +570,17 @@ export default function FeesAndPayments() {
             {/* Current Fee Status and Due Date Info */}
             <div style={{ padding: '20px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
               <div>
-                <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', display: 'block', fontWeight: 600 }}>Current Billing Status</span>
-                <span style={{
-                  display: 'inline-block', padding: '4px 12px', borderRadius: '100px', fontSize: '0.78rem', fontWeight: 800, marginTop: '6px',
-                  color: feeDoc.status === 'Paid' ? 'var(--success)' : 'var(--danger)',
-                  background: feeDoc.status === 'Paid' ? 'rgba(67, 164, 108, 0.12)' : 'rgba(224, 86, 86, 0.12)'
-                }}>
-                  {feeDoc.status}
+                <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', display: 'block', fontWeight: 600 }}>Billing Model</span>
+                <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', display: 'block', marginTop: '6px' }}>
+                  Simple monthly tuition system. Dues reset to pending on the 1st of every month.
                 </span>
               </div>
               <div style={{ textAlign: 'right' }}>
-                <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', display: 'block', fontWeight: 600 }}>Invoice Due Date</span>
+                <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', display: 'block', fontWeight: 600 }}>Dues Date</span>
                 <span style={{ fontSize: '0.92rem', fontWeight: 700, color: 'var(--text-primary)', display: 'block', marginTop: '6px' }}>
-                  10th of every month
+                  10th of the month
                 </span>
               </div>
-            </div>
-
-            {/* Payment History Ledger List */}
-            <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '16px', padding: '24px' }}>
-              <h3 style={{ fontSize: '1rem', fontWeight: 800, marginBottom: '16px' }}>Approved Receipt Transactions</h3>
-              {feeDoc.paymentHistory.length === 0 ? (
-                <div style={{ padding: '20px', textTransform: 'none', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem', fontStyle: 'italic' }}>
-                  No transaction history recorded yet.
-                </div>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                  {feeDoc.paymentHistory.map((item, idx) => (
-                    <div key={idx} style={{ padding: '12px 16px', background: 'var(--surface-elevated)', border: '1px solid var(--border)', borderRadius: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div>
-                        <div style={{ fontWeight: 800, fontSize: '0.85rem' }}>{item.feeName} Payment</div>
-                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '2px' }}>Mode: {item.mode} • UTR: {item.transactionId}</div>
-                      </div>
-                      <div style={{ textAlign: 'right' }}>
-                        <div style={{ fontWeight: 800, fontSize: '0.92rem', color: 'var(--success)' }}>+₹{item.amount}</div>
-                        <div style={{ fontSize: '0.65rem', color: 'var(--text-light)' }}>{item.date}</div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
             </div>
 
           </div>

@@ -1,4 +1,5 @@
-import { collection, query, where, documentId, doc, addDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, query, where, documentId, doc, serverTimestamp } from 'firebase/firestore';
+import { addDoc, deleteDoc } from '../firebase';;
 import { db } from '../firebase';
 import { queryManager } from '../utils/FirestoreQueryManager';
 

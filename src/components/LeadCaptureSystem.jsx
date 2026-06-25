@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Phone, User, GraduationCap, CheckCircle, HelpCircle } from 'lucide-react';
 import { db } from '../firebase';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, serverTimestamp } from 'firebase/firestore';
+import { addDoc } from '../firebase';;
 
 const LeadCaptureSystem = () => {
   const [activeModal, setActiveModal] = useState(null); // 'exit_intent' | 'idle_user' | 'parent_enquiry'

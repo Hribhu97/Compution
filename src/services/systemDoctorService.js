@@ -1,4 +1,5 @@
-import { collection, doc, getDoc, getDocs, updateDoc, deleteDoc, setDoc, query, where, collectionGroup } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, query, where, collectionGroup } from 'firebase/firestore';
+import { updateDoc, deleteDoc, setDoc } from '../firebase';;
 import { db } from '../firebase';
 
 export const systemDoctorService = {

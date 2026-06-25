@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { db } from '../firebase';
-import { collection, onSnapshot, query, where, addDoc, serverTimestamp, getDocs, doc, updateDoc, setDoc } from 'firebase/firestore';
+import { collection, onSnapshot, query, where, serverTimestamp, getDocs, doc } from 'firebase/firestore';
+import { addDoc, updateDoc, setDoc } from '../firebase';;
 import { CheckCircle2, XCircle, Search, Mail, Phone, BookOpen } from 'lucide-react';
 import Modal from './Modal';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';

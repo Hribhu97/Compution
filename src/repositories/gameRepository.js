@@ -1,4 +1,5 @@
-import { collection, doc, addDoc, query, where, orderBy, limit, getDocs, setDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, doc, query, where, orderBy, limit, getDocs, serverTimestamp } from 'firebase/firestore';
+import { addDoc, setDoc } from '../firebase';;
 import { db } from '../firebase';
 import { queryManager } from '../utils/FirestoreQueryManager';
 

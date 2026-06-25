@@ -4,7 +4,8 @@ import GuidedTour from '../../components/GuidedTour';
 import { motion, AnimatePresence } from 'framer-motion';
 import { signOut } from 'firebase/auth';
 import { auth, db } from '../../firebase';
-import { collection, onSnapshot, query, orderBy, limit, doc, updateDoc, setDoc } from 'firebase/firestore';
+import { collection, onSnapshot, query, orderBy, limit, doc } from 'firebase/firestore';
+import { updateDoc, setDoc } from '../../firebase';;
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../theme/useTheme';
 import {
@@ -520,8 +521,7 @@ const DashboardLayout = () => {
           </div>
 
           <div className="dash-header-actions" style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '16px' }}>
-            
-            {user?.role === 'student' && user?.feeStatus !== 'Paid' && user?.pendingAmount > 0 && (
+            {user?.role === 'student' && (user?.feeStatus || 'pending').toLowerCase() !== 'paid' && (
               <button 
                 onClick={() => navigate('/dashboard/fees')}
                 style={{ 
@@ -533,7 +533,7 @@ const DashboardLayout = () => {
                 onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.05)'}
                 onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
               >
-                Pay Due: ₹{user.pendingAmount}
+                Pay Due: ₹{Number(user.feeTarget !== undefined && user.feeTarget !== null ? user.feeTarget : (user.monthlyFee || 500))}
               </button>
             )}
 

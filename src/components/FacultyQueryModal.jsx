@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Send, MessageSquare, AlertCircle, CheckCircle } from 'lucide-react';
 import { db } from '../firebase';
-import { collection, addDoc, doc, getDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, doc, getDoc, serverTimestamp } from 'firebase/firestore';
+import { addDoc } from '../firebase';;
 
 const FacultyQueryModal = ({ isOpen, onClose, student, faculty, triggerToast }) => {
   const [formData, setFormData] = useState({ subject: '', question: '', priority: 'Medium', attachmentUrl: '' });

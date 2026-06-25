@@ -88,8 +88,9 @@ service cloud.firestore {
           )
         ) &&
         (
+          isAdmin() ||
           (request.resource.data.keys().hasAll(['role']) && request.resource.data.role == 'student') ||
-          !request.resource.data.keys().hasAny(['studentId', 'studentGroup', 'feeStatus', 'feesAmount', 'paidAmount', 'pendingAmount', 'assignedStudentIds'])
+          !request.resource.data.keys().hasAny(['studentId', 'studentGroup', 'feeStatus', 'feesAmount', 'paidAmount', 'pendingAmount', 'assignedStudentIds', 'feeTarget'])
         );
 
       allow delete:
@@ -439,6 +440,14 @@ service cloud.firestore {
 
       allow read, update, delete:
         if isAdmin() || isMember();
+    }
+
+    match /settings/{settingId} {
+      allow read:
+        if signedIn();
+
+      allow write:
+        if isAdmin();
     }
   }
 }

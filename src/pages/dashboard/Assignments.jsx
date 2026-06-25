@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../../contexts/AuthContext';
 import { db } from '../../firebase';
-import { collection, onSnapshot, addDoc, deleteDoc, doc, serverTimestamp, updateDoc } from 'firebase/firestore';
+import { collection, onSnapshot, doc, serverTimestamp } from 'firebase/firestore';
+import { addDoc, deleteDoc, updateDoc } from '../../firebase';;
 import { FileText, CheckCircle2, Clock, ChevronRight, Plus, FileEdit, Trash2, Filter, Award } from 'lucide-react';
 import Modal from '../../components/Modal';
 
