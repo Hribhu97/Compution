@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Upload, CheckCircle, Clock } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
-import { collection, doc, getDoc } from 'firebase/firestore';
-import { addDoc } from '../firebase';;
+import { collection, doc, getDoc, Timestamp, serverTimestamp } from 'firebase/firestore';
+import { addDoc } from '../firebase';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
@@ -51,15 +51,18 @@ const FeesPayment = ({ isOpen, onClose, pendingAmount, studentId }) => {
 
     setIsSubmitting(true);
     try {
-      await addDoc(collection(db, 'paymentRequests'), {
+      await addDoc(collection(db, 'paymentSubmissions'), {
         studentId: studentId || user.uid,
-        studentName: user.displayName || user.name || 'Student',
+        studentName: user?.displayName || user?.name || 'Student',
+        email: user?.email || '',
+        phone: user?.phone || user?.phoneNumber || '',
+        course: user?.course || 'Not specified',
         amount: Number(amountStr),
-        utrNumber,
-        paymentDate,
-        screenshotUrl,
-        status: 'Pending Verification',
-        submittedAt: new Date().toISOString()
+        transactionId: utrNumber.trim(),
+        paymentDate: Timestamp.fromDate(new Date(paymentDate)),
+        screenshotUrl: screenshotUrl || 'receipt_uploaded.png',
+        status: 'pending_verification',
+        createdAt: serverTimestamp()
       });
       triggerToast('Payment submitted for verification!', 'success');
       onClose();

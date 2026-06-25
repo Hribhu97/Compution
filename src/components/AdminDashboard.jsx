@@ -49,6 +49,26 @@ const Toast = ({ message, type = 'success', onClose }) => {
   );
 };
 
+const calculateMonthlyFee = (student) => {
+  const category = String(student.classCategory || student.grade || '').trim().toLowerCase();
+  if (category.includes('2') || category.includes('3') || category.includes('4') || category.includes('5') || category === 'class_2_5') return 500;
+  if (category.includes('6') || category.includes('7') || category.includes('8') || category === 'class_6_8') return 600;
+  if (category.includes('9') || category.includes('10') || category === 'class_9_10') return 700;
+  if (category.includes('11') || category.includes('12') || category.includes('11th') || category.includes('12th') || category.includes('science') || category.includes('application')) return 1000;
+  const numCat = parseInt(student.classCategory);
+  if (numCat >= 2 && numCat <= 5) return 500;
+  if (numCat >= 6 && numCat <= 8) return 600;
+  if (numCat >= 9 && numCat <= 10) return 700;
+  if (numCat >= 11 && numCat <= 12) return 1000;
+  return 700;
+};
+
+const getStudentMonthlyFee = (student) => {
+  if (student.monthlyFee && Number(student.monthlyFee) > 0) return Number(student.monthlyFee);
+  if (student.feeTarget && Number(student.feeTarget) > 0) return Number(student.feeTarget);
+  return calculateMonthlyFee(student);
+};
+
 const AdminDashboard = () => {
   const { user } = useAuth();
   const { showToast } = useToast();
@@ -295,23 +315,31 @@ const AdminDashboard = () => {
     // 8. Payment history real-time listener (sorted client-side)
     try {
       if (user?.role === 'admin') {
-        unsubPaymentHist = onSnapshot(collection(db, 'paymentHistory'), (snap) => {
+        unsubPaymentHist = onSnapshot(collection(db, 'payments'), (snap) => {
           const list = [];
           snap.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
-          list.sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''));
+          list.sort((a, b) => {
+            const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
+            const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
+            return dateB - dateA;
+          });
           setPaymentHistoryList(list);
         }, (err) => {
-          console.error("Error subscribing to paymentHistory:", err);
+          console.error("Error subscribing to payments:", err);
         });
 
         // Payment Requests
-        unsubPaymentReq = onSnapshot(collection(db, 'paymentRequests'), (snap) => {
+        unsubPaymentReq = onSnapshot(collection(db, 'paymentSubmissions'), (snap) => {
           const list = [];
           snap.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
-          list.sort((a, b) => (b.submittedAt || '').localeCompare(a.submittedAt || ''));
+          list.sort((a, b) => {
+            const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
+            const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
+            return dateB - dateA;
+          });
           setPaymentRequestsList(list);
         }, (err) => {
-          console.error("Error subscribing to paymentRequests:", err);
+          console.error("Error subscribing to paymentSubmissions:", err);
         });
       }
     } catch (err) {
@@ -1886,26 +1914,30 @@ const AdminDashboard = () => {
 
   const handleApprovePaymentRequest = async (req) => {
     try {
-      // 1. Create Payment History
-      await addDoc(collection(db, 'paymentHistory'), {
+      // 1. Create Payment record in payments collection
+      await addDoc(collection(db, 'payments'), {
         studentId: req.studentId,
         studentName: req.studentName,
-        amount: req.amount,
-        date: new Date().toISOString(),
-        mode: 'UPI',
-        transactionId: req.utrNumber,
-        remarks: 'Approved via Verification',
-        status: 'Approved'
+        email: req.email || '',
+        phone: req.phone || '',
+        amount: Number(req.amount),
+        transactionId: req.transactionId || req.utrNumber,
+        paymentDate: req.paymentDate || serverTimestamp(),
+        status: 'paid',
+        createdAt: serverTimestamp(),
+        course: req.course || 'Not specified'
       });
-      // 2. Resync Billing Engine
-      await syncStudentFeeAggregates(req.studentId);
+      // 2. Set student profile status to paid
+      await updateDoc(doc(db, 'users', req.studentId), {
+        feeStatus: 'paid'
+      });
       // 3. Mark request as Approved
-      await updateDoc(doc(db, 'paymentRequests', req.id), {
-        status: 'Approved',
-        verifiedAt: new Date().toISOString(),
+      await updateDoc(doc(db, 'paymentSubmissions', req.id), {
+        status: 'approved',
+        verifiedAt: serverTimestamp(),
         verifiedBy: user.displayName || 'Admin'
       });
-      await logAdminAction('payment_verified', req.studentId, { utr: req.utrNumber, amount: req.amount });
+      await logAdminAction('payment_verified', req.studentId, { utr: req.transactionId || req.utrNumber, amount: req.amount });
       triggerToast('Payment approved & synced successfully!', 'success');
     } catch (e) {
       console.error(e);
@@ -1915,10 +1947,11 @@ const AdminDashboard = () => {
 
   const handleRejectPaymentRequest = async (reqId) => {
     try {
-      await updateDoc(doc(db, 'paymentRequests', reqId), {
-        status: 'Rejected',
-        rejectedAt: new Date().toISOString(),
-        rejectedBy: user.displayName || 'Admin'
+      await updateDoc(doc(db, 'paymentSubmissions', reqId), {
+        status: 'rejected',
+        rejectedAt: serverTimestamp(),
+        rejectedBy: user.displayName || 'Admin',
+        rejectionReason: 'Rejected by admin'
       });
       triggerToast('Payment request rejected', 'danger');
     } catch (e) {
@@ -2161,10 +2194,10 @@ const AdminDashboard = () => {
           deletePromises.push(deleteDoc(doc(db, 'chatRooms', d.id)));
         }
 
-        // 6. Cascade paymentHistory (where studentId == userId)
-        const paySnap = await getDocs(query(collection(db, 'paymentHistory'), where('studentId', '==', userId)));
+        // 6. Cascade payments (where studentId == userId)
+        const paySnap = await getDocs(query(collection(db, 'payments'), where('studentId', '==', userId)));
         paySnap.forEach(d => {
-          deletePromises.push(deleteDoc(doc(db, 'paymentHistory', d.id)));
+          deletePromises.push(deleteDoc(doc(db, 'payments', d.id)));
         });
 
         // 7. Write Audit Log
@@ -2218,18 +2251,20 @@ const AdminDashboard = () => {
     setIsRecordingPayment(true);
 
     try {
-      // 1. Add to paymentHistory collection
-      await addDoc(collection(db, 'paymentHistory'), {
+      // 1. Add to payments collection
+      await addDoc(collection(db, 'payments'), {
         studentId: selectedStudentDetails.id,
         studentName: selectedStudentDetails.displayName,
+        email: selectedStudentDetails.email || '',
+        phone: selectedStudentDetails.phone || selectedStudentDetails.phoneNumber || '',
         amount: paymentVal,
-        date: new Date().toISOString(),
-        mode: paymentForm.paymentMethod,
         transactionId: 'CASH-' + Date.now(),
+        paymentDate: serverTimestamp(),
+        status: 'paid',
+        createdAt: serverTimestamp(),
+        course: selectedStudentDetails.course || 'Not specified',
         remarks: paymentForm.notes || 'Recorded manually by Admin',
-        feeName: selectedFeeItem?.feeName || 'Tuition',
-        status: 'Approved',
-        timestamp: new Date().toISOString()
+        feeName: selectedFeeItem?.feeName || 'Tuition'
       });
 
       // 2. Recalculate aggregates
@@ -2298,7 +2333,7 @@ const AdminDashboard = () => {
       try {
         // Find document in paymentHistory collection with this transactionId/id
         const paySnap = await getDocs(query(
-          collection(db, 'paymentHistory'),
+          collection(db, 'payments'),
           where('studentId', '==', selectedStudentDetails.id),
           where('transactionId', '==', feeItem.id)
         ));
@@ -2401,13 +2436,13 @@ const AdminDashboard = () => {
   const pendingFeesTotal = studentsList.reduce((acc, s) => {
     const isPending = (s.feeStatus || 'pending').toLowerCase() === 'pending';
     if (isPending) {
-      return acc + (s.feeTarget !== undefined && s.feeTarget !== null ? Number(s.feeTarget) : (Number(s.monthlyFee) || 500));
+      return acc + getStudentMonthlyFee(s);
     }
     return acc;
   }, 0);
 
   const totalMonthlyFees = studentsList.reduce((acc, s) => {
-    return acc + (s.feeTarget !== undefined && s.feeTarget !== null ? Number(s.feeTarget) : (Number(s.monthlyFee) || 500));
+    return acc + getStudentMonthlyFee(s);
   }, 0);
 
   const courseDensityData = () => {
@@ -3644,18 +3679,18 @@ const AdminDashboard = () => {
               {/* Payment Verification Queue */}
               <div style={{ marginTop: '24px' }}>
                 <h3 style={{ fontSize: '1rem', fontWeight: 800, marginBottom: '12px', color: 'var(--dark)' }}>Pending Verifications</h3>
-                {paymentRequestsList.filter(r => r.status === 'Pending Verification').length === 0 ? (
+                {paymentRequestsList.filter(r => (r.status || '').toLowerCase() === 'pending_verification' || r.status === 'Pending Verification').length === 0 ? (
                   <div style={{ padding: '20px', background: 'var(--surface)', borderRadius: '12px', textAlign: 'center', color: 'var(--text-muted)' }}>
                     No pending payment verifications.
                   </div>
                 ) : (
                   <div style={{ display: 'grid', gap: '12px' }}>
-                    {paymentRequestsList.filter(r => r.status === 'Pending Verification').map(req => (
+                    {paymentRequestsList.filter(r => (r.status || '').toLowerCase() === 'pending_verification' || r.status === 'Pending Verification').map(req => (
                       <div key={req.id} style={{ padding: '16px', background: 'var(--white)', border: '1px solid var(--border)', borderRadius: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <div>
-                          <div style={{ fontWeight: 700 }}>{req.studentName} <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem', fontWeight: 500 }}>({req.paymentDate})</span></div>
+                          <div style={{ fontWeight: 700 }}>{req.studentName} <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem', fontWeight: 500 }}>({req.paymentDate?.toDate ? req.paymentDate.toDate().toLocaleDateString() : req.paymentDate})</span></div>
                           <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
-                            <span style={{ fontWeight: 600 }}>Amount:</span> ₹{req.amount} | <span style={{ fontWeight: 600 }}>UTR:</span> {req.utrNumber}
+                            <span style={{ fontWeight: 600 }}>Amount:</span> ₹{req.amount} | <span style={{ fontWeight: 600 }}>UTR:</span> {req.transactionId || req.utrNumber}
                           </div>
                         </div>
                         <div style={{ display: 'flex', gap: '8px' }}>
