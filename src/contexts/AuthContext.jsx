@@ -15,12 +15,12 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  const registerMobileUser = async (name, email, mobileNumber) => {
+  const completeUserProfile = async (profileData) => {
     if (!auth.currentUser) throw new Error("No authenticated user found");
     const uid = auth.currentUser.uid;
     const userRef = doc(db, 'users', uid);
     
-    const emailLower = email.trim().toLowerCase();
+    const emailLower = profileData.email.trim().toLowerCase();
     let targetRole = 'student';
     let permissions = [];
 
@@ -35,29 +35,42 @@ export const AuthProvider = ({ children }) => {
       permissions = ['limited dashboard access', 'student support tools'];
     }
 
-    const providers = auth.currentUser?.providerData.map(p => p.providerId) || ['phone'];
-    let newProfile = {
+    const providers = auth.currentUser?.providerData.map(p => p.providerId) || [];
+    
+    let baseProfile = {
       uid: uid,
-      name: nameVal,
-      displayName: nameVal,
-      fullName: nameVal,
+      name: profileData.name.trim(),
+      displayName: profileData.name.trim(),
+      fullName: profileData.name.trim(),
       email: emailLower,
-      photoURL: '',
-      phone: mobileNumber,
-      mobileNumber: mobileNumber,
-      phoneNumber: mobileNumber,
+      photoURL: profileData.photoURL || '',
+      phone: profileData.phone || '',
+      mobileNumber: profileData.phone || '',
+      phoneNumber: profileData.phone || '',
+      dob: profileData.dob || '',
+      gender: profileData.gender || '',
+      address: profileData.address || '',
+      district: profileData.district || '',
+      state: profileData.state || '',
+      pin: profileData.pin || '',
+      emergencyContact: profileData.emergencyContact || '',
+      school: profileData.school || '',
+      class: profileData.class || '',
+      course: profileData.course || 'Not specified',
+      guardianName: profileData.guardianName || '',
+      guardianPhone: profileData.guardianPhone || '',
+      aadhaarNumber: profileData.aadhaarNumber || '',
+      aadhaarStatus: profileData.aadhaarNumber ? (profileData.aadhaarStatus || 'pending') : '',
       emailVerified: auth.currentUser?.emailVerified || false,
-      phoneVerified: true,
+      phoneVerified: providers.includes('phone') || profileData.phoneVerified || false,
       authProviders: providers,
       role: targetRole,
       permissions: permissions,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-      lastLogin: serverTimestamp(),
-      isActive: true,
-      assignedCourses: []
+      profileCompleted: true,
+      updatedAt: serverTimestamp()
     };
 
+    const userSnap = await getDoc(userRef);
     if (targetRole === 'student') {
       let regFee = 300;
       let admFee = 0;
@@ -71,30 +84,60 @@ export const AuthProvider = ({ children }) => {
           baseMonthly = Number(fs.class2to5) || 500;
         }
       } catch (e) {
-        console.error("Error fetching fee structure in AuthContext registration:", e);
+        console.error("Error fetching fee structure in completeUserProfile:", e);
       }
 
-      newProfile = {
-        ...newProfile,
-        studentId: `COMP-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
-        course: 'Not specified',
-        assignedFacultyIds: [],
-        studentGroup: null,
-        classCategory: '',
-        stream: '',
-        autoGroup: '',
-        customGroupException: '',
-        feeStatus: 'pending',
-        feeTarget: baseMonthly,
-        monthlyFee: baseMonthly,
-        registrationFee: regFee,
-        admissionFee: admFee,
-        feesAmount: (baseMonthly * 12) + regFee + admFee,
-        joiningDate: new Date().toISOString()
+      const existingData = userSnap.exists() ? userSnap.data() : {};
+
+      baseProfile = {
+        ...baseProfile,
+        studentId: existingData.studentId || `COMP-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
+        assignedFacultyIds: existingData.assignedFacultyIds || [],
+        studentGroup: existingData.studentGroup || null,
+        classCategory: existingData.classCategory || '',
+        stream: existingData.stream || '',
+        autoGroup: existingData.autoGroup || '',
+        customGroupException: existingData.customGroupException || '',
+        feeStatus: existingData.feeStatus || 'pending',
+        feeTarget: existingData.feeTarget !== undefined ? existingData.feeTarget : baseMonthly,
+        monthlyFee: existingData.monthlyFee || baseMonthly,
+        registrationFee: existingData.registrationFee || regFee,
+        admissionFee: existingData.admissionFee || admFee,
+        feesAmount: existingData.feesAmount || ((baseMonthly * 12) + regFee + admFee),
+        joiningDate: existingData.joiningDate || new Date().toISOString()
       };
     }
 
-    await setDoc(userRef, newProfile);
+    if (!userSnap.exists()) {
+      baseProfile.createdAt = serverTimestamp();
+      baseProfile.lastLogin = serverTimestamp();
+      baseProfile.isActive = true;
+      baseProfile.assignedCourses = [];
+    }
+
+    await setDoc(userRef, baseProfile, { merge: true });
+  };
+
+  const registerMobileUser = async (name, email, mobileNumber) => {
+    return completeUserProfile({
+      name,
+      email,
+      phone: mobileNumber,
+      dob: '',
+      gender: '',
+      address: '',
+      district: '',
+      state: '',
+      pin: '',
+      emergencyContact: '',
+      school: '',
+      class: '',
+      course: 'Not specified',
+      guardianName: '',
+      guardianPhone: '',
+      aadhaarNumber: '',
+      phoneVerified: true
+    });
   };
 
   useEffect(() => {
@@ -270,7 +313,7 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, loading, registerMobileUser }}>
+    <AuthContext.Provider value={{ user, loading, registerMobileUser, completeUserProfile }}>
       {children}
     </AuthContext.Provider>
   );

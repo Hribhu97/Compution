@@ -19,6 +19,7 @@ import Schedule from './pages/dashboard/Schedule';
 import Community from './pages/dashboard/Community';
 import Profile from './pages/dashboard/Profile';
 import FeesAndPayments from './pages/dashboard/FeesAndPayments';
+import ClassTracker from './pages/dashboard/ClassTracker';
 import { 
   NotFoundPage, StudentNotFoundPage, PaymentFailedPage, 
   UnauthorizedPage, MaintenancePage, NetworkOfflinePage, ServerErrorPage 
@@ -74,6 +75,7 @@ function App() {
               <Route path="community" element={<Community />} />
               <Route path="profile" element={<Profile />} />
               <Route path="fees" element={<FeesAndPayments />} />
+              <Route path="tracker" element={<ClassTracker />} />
             </Route>
             <Route path="/error/unauthorized" element={<UnauthorizedPage />} />
             <Route path="/error/student-not-found" element={<StudentNotFoundPage />} />

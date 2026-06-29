@@ -7,13 +7,15 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
 import { collection, collectionGroup, doc, getDoc, getDocs, serverTimestamp, onSnapshot, query, where, orderBy, writeBatch, deleteField, arrayUnion, arrayRemove } from 'firebase/firestore';
 import { updateDoc, deleteDoc, addDoc, setDoc, runTransaction } from '../firebase';
-import { Search, Download, Plus, MoreHorizontal, Eye, ArrowUpRight, Sparkles, ShieldCheck, Trash2, RefreshCw, CheckCircle, XCircle, AlertTriangle, Users, Bell, AlertCircle, Calendar, GraduationCap, ChevronDown, Mail, Send, Pencil, X, ShieldAlert, MessageSquare, Briefcase, UserCheck, Loader2, Check, CheckCheck, Info, UserMinus } from 'lucide-react';
+import { Search, Settings, Download, Plus, MoreHorizontal, Eye, ArrowUpRight, Sparkles, ShieldCheck, Trash2, RefreshCw, CheckCircle, XCircle, AlertTriangle, Users, Bell, AlertCircle, Calendar, GraduationCap, ChevronDown, Mail, Send, Pencil, X, ShieldAlert, MessageSquare, Briefcase, UserCheck, Loader2, Check, CheckCheck, Info, UserMinus } from 'lucide-react';
 import Modal from './Modal';
 import SystemHealthPanel from './SystemHealthPanel';
 import ThemeInspector from '../theme/ThemeInspector';
 import { systemDoctorService } from '../services/systemDoctorService';
+import { reportService } from '../services/reportService';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, PieChart, Pie } from 'recharts';
 import { clientMigrationService } from '../services/clientMigrationService';
+import { calculateFeeMetrics, getStudentMonthlyFee } from '../utils/feeCalculator';
 
 const stagger = { show: { transition: { staggerChildren: 0.05 } } };
 const item = { hidden: { opacity: 0, y: 10 }, show: { opacity: 1, y: 0, transition: { duration: 0.3 } } };
@@ -49,24 +51,20 @@ const Toast = ({ message, type = 'success', onClose }) => {
   );
 };
 
-const calculateMonthlyFee = (student) => {
-  const category = String(student.classCategory || student.grade || '').trim().toLowerCase();
-  if (category.includes('2') || category.includes('3') || category.includes('4') || category.includes('5') || category === 'class_2_5') return 500;
-  if (category.includes('6') || category.includes('7') || category.includes('8') || category === 'class_6_8') return 600;
-  if (category.includes('9') || category.includes('10') || category === 'class_9_10') return 700;
-  if (category.includes('11') || category.includes('12') || category.includes('11th') || category.includes('12th') || category.includes('science') || category.includes('application')) return 1000;
-  const numCat = parseInt(student.classCategory);
-  if (numCat >= 2 && numCat <= 5) return 500;
-  if (numCat >= 6 && numCat <= 8) return 600;
-  if (numCat >= 9 && numCat <= 10) return 700;
-  if (numCat >= 11 && numCat <= 12) return 1000;
-  return 700;
-};
 
-const getStudentMonthlyFee = (student) => {
-  if (student.monthlyFee && Number(student.monthlyFee) > 0) return Number(student.monthlyFee);
-  if (student.feeTarget && Number(student.feeTarget) > 0) return Number(student.feeTarget);
-  return calculateMonthlyFee(student);
+
+const computeEndTime = (startTimeStr) => {
+  if (!startTimeStr) return '';
+  const [hours, minutes] = startTimeStr.split(':').map(Number);
+  let endHours = hours + 1;
+  let endMinutes = minutes + 30;
+  if (endMinutes >= 60) {
+    endHours += 1;
+    endMinutes -= 60;
+  }
+  const endHoursStr = String(endHours % 24).padStart(2, '0');
+  const endMinutesStr = String(endMinutes).padStart(2, '0');
+  return `${endHoursStr}:${endMinutesStr}`;
 };
 
 const AdminDashboard = () => {
@@ -74,6 +72,21 @@ const AdminDashboard = () => {
   const { showToast } = useToast();
   // Navigation Tabs
   const [activePanelTab, setActivePanelTab] = useState('students'); 
+  const [settingsSubTab, setSettingsSubTab] = useState('aadhaar');
+  const [slotRequestsList, setSlotRequestsList] = useState([]);
+  const [isAddScheduleOpen, setIsAddScheduleOpen] = useState(false);
+  const [editingSchedule, setEditingSchedule] = useState(null);
+  
+  // Class Schedule form states
+  const [eventTitle, setEventTitle] = useState('');
+  const [eventDesc, setEventDesc] = useState('');
+  const [startDate, setStartDate] = useState('Monday'); // represents Day of week
+  const [startTime, setStartTime] = useState('17:30');
+  const [assignedFacultyId, setAssignedFacultyId] = useState('');
+  const [venue, setVenue] = useState('Room 4B');
+  const [selectedGroups, setSelectedGroups] = useState([]);
+  const [selectedStudents, setSelectedStudents] = useState([]);
+  const [meetLink, setMeetLink] = useState('');
   // Account Migration States
   const [migrationAudit, setMigrationAudit] = useState(null);
   const [migrationRunning, setMigrationRunning] = useState(false);
@@ -83,6 +96,7 @@ const AdminDashboard = () => {
   const [rollbackRunning, setRollbackRunning] = useState(false);
 
   const [pendingRoleChanges, setPendingRoleChanges] = useState({});
+  const [processingRequestIds, setProcessingRequestIds] = useState({});
   const [auditLogs, setAuditLogs] = useState([]);
   const [doctorRunning, setDoctorRunning] = useState(false);
   const [doctorResults, setDoctorResults] = useState(null);
@@ -127,6 +141,14 @@ const AdminDashboard = () => {
   const [editPracticalScore, setEditPracticalScore] = useState('0');
   const [editRemarks, setEditRemarks] = useState('');
 
+  // Drawer fee target editing states
+  const [isEditingDrawerFees, setIsEditingDrawerFees] = useState(false);
+  const [drawerFeeTarget, setDrawerFeeTarget] = useState(0);
+  const [drawerTotalFee, setDrawerTotalFee] = useState(0);
+  const [drawerAmountPaid, setDrawerAmountPaid] = useState(0);
+  const [drawerFeeError, setDrawerFeeError] = useState('');
+  const [isSavingDrawerFees, setIsSavingDrawerFees] = useState(false);
+
   // Google Meet scheduler state variables
   const [isMeetModalOpen, setIsMeetModalOpen] = useState(false);
   const [meetTitle, setMeetTitle] = useState('');
@@ -154,15 +176,28 @@ const AdminDashboard = () => {
   const [editingStudentId, setEditingStudentId] = useState(null);
   const [editingAmount, setEditingAmount] = useState('');
 
+  // Table sorting, pagination, and multi-select states
+  const [sortField, setSortField] = useState('displayName');
+  const [sortDirection, setSortDirection] = useState('asc');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [selectedStudentIds, setSelectedStudentIds] = useState([]);
+
   // Premium Click-to-Reply messaging drawer states
   const [drawerMessages, setDrawerMessages] = useState([]);
   const [drawerNewMessage, setDrawerNewMessage] = useState('');
   const [drawerAttachment, setDrawerAttachment] = useState(null);
   const [drawerUploadingAttachment, setDrawerUploadingAttachment] = useState(false);
-  const [drawerActiveTab, setDrawerActiveTab] = useState('profile'); // 'profile' | 'chat'
+  const [drawerActiveTab, setDrawerActiveTab] = useState('profile'); // 'profile' | 'chat' | 'academics' | 'timeline'
+  const [drawerAssignments, setDrawerAssignments] = useState([]);
+  const [drawerAttempts, setDrawerAttempts] = useState([]);
+  const [drawerAssignmentsLoading, setDrawerAssignmentsLoading] = useState(false);
+  const [drawerAttemptsLoading, setDrawerAttemptsLoading] = useState(false);
 
   // Master Fee Structure Config
   const [feeStructure, setFeeStructure] = useState(null);
+  const [aadhaarStatusFilter, setAadhaarStatusFilter] = useState('all');
+
 
   // 1. DATA LISTENERS
   useEffect(() => {
@@ -258,7 +293,7 @@ const AdminDashboard = () => {
 
     // 4. Schedules
     try {
-      unsubSched = onSnapshot(collection(db, 'studentSchedules'), (snap) => {
+      unsubSched = onSnapshot(collection(db, 'classSchedules'), (snap) => {
         const list = [];
         snap.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
         setSchedulesList(list);
@@ -267,6 +302,20 @@ const AdminDashboard = () => {
       });
     } catch (err) {
       console.error("AdminDashboard: schedules listener creation failed", err);
+    }
+
+    // 4b. Slot Requests
+    let unsubSlotReq = () => {};
+    try {
+      unsubSlotReq = onSnapshot(collection(db, 'slotRequests'), (snap) => {
+        const list = [];
+        snap.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
+        setSlotRequestsList(list);
+      }, (err) => {
+        console.error("AdminDashboard: slotRequests listener error:", err);
+      });
+    } catch (err) {
+      console.error("AdminDashboard: slotRequests listener creation failed", err);
     }
 
     // 5. Chats
@@ -295,13 +344,19 @@ const AdminDashboard = () => {
       console.error("AdminDashboard: notifications listener creation failed", err);
     }
 
-    // 7. Fees collection real-time listener
+    // 7. Fees collection real-time listener (Collection Group 'monthly')
     try {
       if (user?.role === 'admin' || user?.role === 'faculty' || user?.role === 'member') {
-        unsubFees = onSnapshot(collection(db, 'fees'), (snap) => {
+        unsubFees = onSnapshot(collectionGroup(db, 'monthly'), (snap) => {
           const list = [];
-          snap.forEach(doc => {
-            list.push({ id: doc.id, studentId: doc.id, ...doc.data() });
+          snap.forEach(d => {
+            const studentId = d.ref.parent.parent.id;
+            list.push({
+              id: d.id,
+              studentId,
+              month: d.id,
+              ...d.data()
+            });
           });
           setAllFees(list);
         }, (err) => {
@@ -422,6 +477,7 @@ const AdminDashboard = () => {
       unsubLeads();
       unsubAtt();
       unsubSched();
+      unsubSlotReq();
       unsubChats();
       unsubNotif();
       unsubFees();
@@ -570,22 +626,22 @@ const AdminDashboard = () => {
     let unsubProgressReport = () => {};
 
     try {
-      unsubStudentFees = onSnapshot(doc(db, 'fees', selectedStudentDetails.id), (docSnap) => {
-        if (docSnap.exists()) {
-          const data = docSnap.data();
-          const history = data.paymentHistory || [];
-          setSelectedStudentFees(history.map((tx, idx) => ({
-            id: tx.transactionId || String(idx),
-            feeName: tx.feeName || 'Tuition',
-            month: new Date(tx.date).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' }),
-            amount: tx.amount,
-            paidAmount: tx.amount,
-            status: 'Paid',
-            ...tx
-          })));
-        } else {
-          setSelectedStudentFees([]);
-        }
+      unsubStudentFees = onSnapshot(collection(db, 'fees', selectedStudentDetails.id, 'monthly'), (snap) => {
+        const list = [];
+        snap.forEach(d => {
+          list.push({
+            id: d.id,
+            feeName: 'Tuition',
+            month: d.id, // e.g. "2026-05"
+            amount: d.data().amountDue,
+            paidAmount: d.data().amountPaid,
+            status: d.data().status === 'paid' ? 'Paid' : 'Pending',
+            ...d.data()
+          });
+        });
+        // Sort by month descending
+        list.sort((a, b) => b.month.localeCompare(a.month));
+        setSelectedStudentFees(list);
       }, (err) => {
         console.error("AdminDashboard: student fees listener error:", err);
       });
@@ -643,6 +699,116 @@ const AdminDashboard = () => {
       setEditRemarks('');
     }
   }, [selectedStudentProgressReport, selectedStudentDetails]);
+
+  // Prefill drawer fee edit fields when selected student changes
+  useEffect(() => {
+    if (selectedStudentDetails) {
+      setDrawerFeeTarget(selectedStudentDetails.feeTarget || selectedStudentDetails.monthlyFee || 700);
+      setDrawerTotalFee(selectedStudentDetails.feesAmount || selectedStudentDetails.feeTarget || 700);
+      setDrawerAmountPaid(selectedStudentDetails.paidAmount || 0);
+      setDrawerFeeError('');
+      setIsEditingDrawerFees(false);
+    }
+  }, [selectedStudentDetails]);
+
+  // Real-time listeners for selected student's assignments and test attempts
+  useEffect(() => {
+    if (!selectedStudentDetails?.id) {
+      setDrawerAssignments([]);
+      setDrawerAttempts([]);
+      return;
+    }
+
+    setDrawerAssignmentsLoading(true);
+    setDrawerAttemptsLoading(true);
+
+    const unsubAss = onSnapshot(collection(db, `users/${selectedStudentDetails.id}/assignments`), (snap) => {
+      const list = [];
+      snap.forEach(docSnap => list.push({ id: docSnap.id, ...docSnap.data() }));
+      setDrawerAssignments(list);
+      setDrawerAssignmentsLoading(false);
+    }, (err) => {
+      console.error("Error loading drawer assignments:", err);
+      setDrawerAssignmentsLoading(false);
+    });
+
+    const qAttempts = query(
+      collection(db, 'testAttempts'),
+      where('studentId', '==', selectedStudentDetails.id)
+    );
+    const unsubAttempts = onSnapshot(qAttempts, (snap) => {
+      const list = [];
+      snap.forEach(docSnap => list.push({ id: docSnap.id, ...docSnap.data() }));
+      list.sort((a, b) => {
+        const dateA = a.submittedAt?.toDate ? a.submittedAt.toDate() : new Date(a.submittedAt);
+        const dateB = b.submittedAt?.toDate ? b.submittedAt.toDate() : new Date(b.submittedAt);
+        return dateB - dateA;
+      });
+      setDrawerAttempts(list);
+      setDrawerAttemptsLoading(false);
+    }, (err) => {
+      console.error("Error loading drawer attempts:", err);
+      setDrawerAttemptsLoading(false);
+    });
+
+    return () => {
+      unsubAss();
+      unsubAttempts();
+    };
+  }, [selectedStudentDetails?.id]);
+
+  // Global event listeners for Quick Actions and Command Palette shortcuts
+  useEffect(() => {
+    const handleAddStudent = () => {
+      setNewStudent({ displayName: '', email: '', phone: '', course: '' });
+      setIsAddStudentOpen(true);
+    };
+    const handleAddFaculty = () => setIsAddFacultyOpen(true);
+    const handleAddMember = () => setIsAddMemberOpen(true);
+    const handleScheduleClass = () => {
+      setEditingSchedule(null);
+      setEventTitle('');
+      setEventDesc('');
+      setStartDate('Monday');
+      setStartTime('17:30');
+      setAssignedFacultyId(user?.uid || '');
+      setVenue('Room 4B');
+      setSelectedGroups([]);
+      setSelectedStudents([]);
+      setMeetLink('');
+      setIsAddScheduleOpen(true);
+    };
+    const handleAddMeet = () => {
+      setMeetTitle('');
+      setMeetDate(new Date().toISOString().split('T')[0]);
+      setMeetTime('18:00');
+      setMeetParticipants('All Students');
+      setIsMeetModalOpen(true);
+    };
+    const handleOpenStudent = (e) => {
+      const student = e.detail;
+      if (student) {
+        setSelectedStudentDetails({ ...student, joined: 'Jan 2026', roll: 'Roll #COMP' });
+        setDrawerActiveTab('profile');
+      }
+    };
+
+    window.addEventListener('open-add-student', handleAddStudent);
+    window.addEventListener('open-add-faculty', handleAddFaculty);
+    window.addEventListener('open-add-member', handleAddMember);
+    window.addEventListener('open-schedule-class', handleScheduleClass);
+    window.addEventListener('open-create-meeting', handleAddMeet);
+    window.addEventListener('open-student-details', handleOpenStudent);
+
+    return () => {
+      window.removeEventListener('open-add-student', handleAddStudent);
+      window.removeEventListener('open-add-faculty', handleAddFaculty);
+      window.removeEventListener('open-add-member', handleAddMember);
+      window.removeEventListener('open-schedule-class', handleScheduleClass);
+      window.removeEventListener('open-create-meeting', handleAddMeet);
+      window.removeEventListener('open-student-details', handleOpenStudent);
+    };
+  }, [user?.uid]);
 
   // Real-time listener for student doubts stream in Drawer
   useEffect(() => {
@@ -1203,6 +1369,10 @@ const AdminDashboard = () => {
   // Handle creating a new Google Meet Session
   const handleCreateMeetSession = async (e) => {
     e.preventDefault();
+    if (user?.role !== 'admin' && user?.role !== 'faculty') {
+      triggerToast('Error: Only Admin and Faculty can create meeting sessions.', 'danger');
+      return;
+    }
     if (!meetTitle || !meetDate || !meetTime) {
       triggerToast('Please fill in all meeting fields', 'danger');
       return;
@@ -1263,6 +1433,53 @@ const AdminDashboard = () => {
     } catch (err) {
       console.error("Error creating meet session:", err);
       triggerToast('Failed to schedule Meet session', 'danger');
+    }
+  };
+
+  const handleSaveSchedule = async (e) => {
+    e.preventDefault();
+    if (!eventTitle.trim()) {
+      triggerToast('Please enter a subject / title', 'danger');
+      return;
+    }
+    const endTimeComputed = computeEndTime(startTime);
+    const facultyNameSelected = allUsers.find(u => u.id === assignedFacultyId)?.displayName || user.displayName || 'Faculty Mentor';
+    
+    const payload = {
+      subject: eventTitle.trim(),
+      description: eventDesc.trim(),
+      day: startDate,
+      startTime,
+      endTime: endTimeComputed,
+      duration: '1 Hour 30 Minutes',
+      facultyId: assignedFacultyId || user.uid,
+      facultyName: facultyNameSelected,
+      room: venue.trim() || 'Room 4B',
+      batch: selectedGroups[0] || 'class_2_5',
+      studentIds: selectedStudents,
+      meetLink: meetLink.trim(),
+      status: 'upcoming',
+      updatedAt: serverTimestamp()
+    };
+
+    try {
+      if (editingSchedule) {
+        await updateDoc(doc(db, 'classSchedules', editingSchedule.id), payload);
+        triggerToast('Class schedule updated successfully!', 'success');
+      } else {
+        payload.createdAt = serverTimestamp();
+        await addDoc(collection(db, 'classSchedules'), payload);
+        triggerToast('Class schedule created successfully!', 'success');
+      }
+      setIsAddScheduleOpen(false);
+      setEventTitle('');
+      setEventDesc('');
+      setMeetLink('');
+      setSelectedGroups([]);
+      setSelectedStudents([]);
+    } catch (err) {
+      console.error(err);
+      triggerToast('Failed to save schedule slot', 'danger');
     }
   };
 
@@ -1820,7 +2037,6 @@ const AdminDashboard = () => {
     }
   };
 
-  // ── FEES INLINE UPDATE ──
   const handleSaveFeesAmount = async (studentId) => {
     try {
       const amount = Number(editingAmount);
@@ -1828,12 +2044,48 @@ const AdminDashboard = () => {
         triggerToast('Please enter a valid amount', 'danger');
         return;
       }
-      await setDoc(doc(db, 'users', studentId), { 
+      
+      const currentMonthStr = new Date().toISOString().slice(0, 7);
+      const userRef = doc(db, 'users', studentId);
+      const monthlyFeeRef = doc(db, 'fees', studentId, 'monthly', currentMonthStr);
+      
+      // Get previous values for audit logging
+      const userSnap = await getDoc(userRef);
+      const prevFeeTarget = userSnap.exists() ? (userSnap.data().feeTarget || userSnap.data().monthlyFee || 700) : 700;
+      const prevOutstanding = userSnap.exists() ? (userSnap.data().pendingAmount || 0) : 0;
+      const prevTotalFee = userSnap.exists() ? (userSnap.data().feesAmount || prevFeeTarget) : prevFeeTarget;
+      const prevPaidAmount = userSnap.exists() ? (userSnap.data().paidAmount || 0) : 0;
+      
+      // Update users doc
+      await setDoc(userRef, { 
         feeTarget: amount,
         monthlyFee: amount,
-        feesAmount: amount
+        feesAmount: amount,
+        pendingAmount: Math.max(0, amount - prevPaidAmount),
+        feeStatus: Math.max(0, amount - prevPaidAmount) <= 0 ? 'paid' : 'pending'
       }, { merge: true });
-      await logAdminAction('fee_target_update', studentId, { feeTarget: amount });
+      
+      // Update monthly fee doc
+      await setDoc(monthlyFeeRef, {
+        amountDue: amount,
+        status: Math.max(0, amount - prevPaidAmount) <= 0 ? 'paid' : 'pending'
+      }, { merge: true });
+      
+      // Canonical sync
+      await syncStudentFeeAggregates(studentId);
+      
+      // Audit log
+      await logAdminAction('fee_target_update', studentId, {
+        prevFeeTarget,
+        newFeeTarget: amount,
+        prevOutstanding,
+        newOutstanding: Math.max(0, amount - prevPaidAmount),
+        prevTotalFee,
+        newTotalFee: amount,
+        prevPaidAmount,
+        newPaidAmount: prevPaidAmount
+      });
+      
       setEditingStudentId(null);
       triggerToast('Fee amount updated!', 'success');
     } catch (err) {
@@ -1842,46 +2094,239 @@ const AdminDashboard = () => {
     }
   };
 
-  // ── UPDATE FEE STATUS ──
-  const handleUpdateFeeStatus = async (studentId, status) => {
+  const handleSaveDrawerFees = async (studentId) => {
+    setDrawerFeeError('');
+    setIsSavingDrawerFees(true);
     try {
+      const newTarget = Number(drawerFeeTarget);
+      const newTotal = Number(drawerTotalFee);
+      const newPaid = Number(drawerAmountPaid);
+      
+      // Validations
+      if (isNaN(newTarget) || newTarget < 0) {
+        throw new Error('Tuition target must be a valid non-negative number.');
+      }
+      if (isNaN(newTotal) || newTotal < 0) {
+        throw new Error('Total fee must be a valid non-negative number.');
+      }
+      if (isNaN(newPaid) || newPaid < 0) {
+        throw new Error('Amount paid must be a valid non-negative number.');
+      }
+      if (newPaid > newTotal) {
+        throw new Error('Amount paid cannot exceed the total fee.');
+      }
+      
+      const currentMonthStr = new Date().toISOString().slice(0, 7);
       const userRef = doc(db, 'users', studentId);
+      const monthlyFeeRef = doc(db, 'fees', studentId, 'monthly', currentMonthStr);
+      
+      // Get previous values for audit logging
       const userSnap = await getDoc(userRef);
       if (!userSnap.exists()) {
-        throw new Error('Student profile not found');
+        throw new Error('Student profile not found.');
       }
-      
       const userData = userSnap.data();
-      const oldStatus = userData.feeStatus || 'pending';
-      const targetStatus = status.toLowerCase();
-
-      if (targetStatus !== 'paid' && targetStatus !== 'pending') {
-        throw new Error(`Invalid feeStatus: ${status}`);
-      }
-
-      const targetAmount = userData.feeTarget !== undefined && userData.feeTarget !== null ? Number(userData.feeTarget) : (Number(userData.monthlyFee) || 500);
-
-      await setDoc(userRef, { 
-        feeStatus: targetStatus,
-        pendingAmount: targetStatus === 'paid' ? 0 : targetAmount,
-        paidAmount: targetStatus === 'paid' ? targetAmount : 0
+      const prevFeeTarget = userData.feeTarget || userData.monthlyFee || 700;
+      const prevOutstanding = userData.pendingAmount || 0;
+      
+      const newOutstanding = Math.max(0, newTotal - newPaid);
+      const nextStatus = newOutstanding <= 0 ? 'paid' : 'pending';
+      
+      // Batch updates
+      await setDoc(userRef, {
+        feeTarget: newTarget,
+        monthlyFee: newTarget,
+        feesAmount: newTotal,
+        paidAmount: newPaid,
+        pendingAmount: newOutstanding,
+        feeStatus: nextStatus
       }, { merge: true });
-
-      // Audit Logging to billingLogs/
-      await addDoc(collection(db, 'billingLogs'), {
-        studentId,
-        oldStatus,
-        newStatus: targetStatus,
-        changedBy: user?.email || user?.uid || 'Admin',
-        timestamp: serverTimestamp()
+      
+      await setDoc(monthlyFeeRef, {
+        amountDue: newTarget,
+        amountPaid: newPaid,
+        status: nextStatus
+      }, { merge: true });
+      
+      // Run canonical sync
+      await syncStudentFeeAggregates(studentId);
+      
+      // Write audit log
+      await logAdminAction('fee_target_update', studentId, {
+        prevFeeTarget,
+        newFeeTarget: newTarget,
+        prevOutstanding,
+        newOutstanding,
+        prevTotalFee: userData.feesAmount || prevFeeTarget,
+        newTotalFee: newTotal,
+        prevPaidAmount: userData.paidAmount || 0,
+        newPaidAmount: newPaid
       });
       
-      await logAdminAction('fee_status_update', studentId, { feeStatus: targetStatus });
+      // Update selectedStudentDetails state dynamically
+      setSelectedStudentDetails(prev => ({
+        ...prev,
+        feeTarget: newTarget,
+        monthlyFee: newTarget,
+        feesAmount: newTotal,
+        paidAmount: newPaid,
+        pendingAmount: newOutstanding,
+        feeStatus: nextStatus
+      }));
+      
+      setIsEditingDrawerFees(false);
+      triggerToast('Tuition fee target updated successfully!', 'success');
+    } catch (err) {
+      console.error(err);
+      setDrawerFeeError(err.message || 'Failed to update tuition fee settings.');
+      triggerToast(err.message || 'Failed to update tuition fee settings.', 'danger');
+    } finally {
+      setIsSavingDrawerFees(false);
+    }
+  };
+
+  // ── UPDATE FEE STATUS ──
+  const handleUpdateFeeStatus = async (studentId, targetStatus) => {
+    try {
+      const currentMonthStr = new Date().toISOString().slice(0, 7);
+      const studentRef = doc(db, 'users', studentId);
+      const feeDocRef = doc(db, 'fees', studentId, 'monthly', currentMonthStr);
+
+      await runTransaction(db, async (transaction) => {
+        const studentSnap = await transaction.get(studentRef);
+        if (!studentSnap.exists()) {
+          throw new Error('Student profile not found');
+        }
+        const studentData = studentSnap.data();
+        const oldStatus = studentData.feeStatus || 'pending';
+        const amountDue = getStudentMonthlyFee(studentData);
+
+        const newAmountPaid = targetStatus === 'paid' ? amountDue : 0;
+        const newStatus = targetStatus;
+
+        transaction.set(feeDocRef, {
+          amountDue,
+          amountPaid: newAmountPaid,
+          status: newStatus,
+          paymentDate: targetStatus === 'paid' ? serverTimestamp() : null,
+          transactionId: targetStatus === 'paid' ? 'ADMIN_MANUAL' : null,
+          paymentMethod: targetStatus === 'paid' ? 'Cash' : null,
+          verifiedBy: user.displayName || 'Admin',
+          updatedAt: serverTimestamp()
+        }, { merge: true });
+
+        // Update student profile status for compatibility
+        transaction.update(studentRef, {
+          feeStatus: newStatus
+        });
+
+        // Audit Logging to auditLogs
+        const newAuditRef = doc(collection(db, 'auditLogs'));
+        transaction.set(newAuditRef, {
+          action: 'fee_status_update',
+          studentId,
+          studentName: studentData.displayName || 'Student',
+          oldStatus,
+          newStatus,
+          amount: newAmountPaid,
+          admin: user.displayName || 'Admin',
+          timestamp: serverTimestamp()
+        });
+      });
+
       triggerToast(`Fee status updated to ${targetStatus}!`, 'success');
     } catch (err) {
       console.error("Error updating fee status:", err);
       triggerToast(err.message || 'Failed to update fee status', 'danger');
     }
+  };
+
+  const handleBulkMarkPaid = async () => {
+    if (selectedStudentIds.length === 0) return;
+    const confirm = window.confirm(`Are you sure you want to mark ${selectedStudentIds.length} students as Paid?`);
+    if (!confirm) return;
+    try {
+      for (const sid of selectedStudentIds) {
+        const currentMonthStr = new Date().toISOString().slice(0, 7);
+        const studentRef = doc(db, 'users', sid);
+        const feeDocRef = doc(db, 'fees', sid, 'monthly', currentMonthStr);
+        await runTransaction(db, async (transaction) => {
+          const studentSnap = await transaction.get(studentRef);
+          if (!studentSnap.exists()) return;
+          const studentData = studentSnap.data();
+          const amountDue = getStudentMonthlyFee(studentData);
+          transaction.set(feeDocRef, {
+            amountDue,
+            amountPaid: amountDue,
+            status: 'paid',
+            paymentDate: serverTimestamp(),
+            transactionId: 'ADMIN_BULK_MANUAL',
+            paymentMethod: 'Cash',
+            verifiedBy: user.displayName || 'Admin',
+            updatedAt: serverTimestamp()
+          }, { merge: true });
+          transaction.update(studentRef, { feeStatus: 'paid' });
+        });
+      }
+      setSelectedStudentIds([]);
+      triggerToast(`Successfully marked ${selectedStudentIds.length} students as Paid!`, 'success');
+    } catch (err) {
+      console.error("Bulk paid error:", err);
+      triggerToast("Failed to perform bulk updates: " + err.message, 'danger');
+    }
+  };
+
+  const handleBulkMarkPending = async () => {
+    if (selectedStudentIds.length === 0) return;
+    const confirm = window.confirm(`Are you sure you want to mark ${selectedStudentIds.length} students as Pending?`);
+    if (!confirm) return;
+    try {
+      for (const sid of selectedStudentIds) {
+        const currentMonthStr = new Date().toISOString().slice(0, 7);
+        const studentRef = doc(db, 'users', sid);
+        const feeDocRef = doc(db, 'fees', sid, 'monthly', currentMonthStr);
+        await runTransaction(db, async (transaction) => {
+          const studentSnap = await transaction.get(studentRef);
+          if (!studentSnap.exists()) return;
+          const studentData = studentSnap.data();
+          transaction.set(feeDocRef, {
+            amountPaid: 0,
+            status: 'pending',
+            paymentDate: null,
+            transactionId: null,
+            paymentMethod: null,
+            verifiedBy: user.displayName || 'Admin',
+            updatedAt: serverTimestamp()
+          }, { merge: true });
+          transaction.update(studentRef, { feeStatus: 'pending' });
+        });
+      }
+      setSelectedStudentIds([]);
+      triggerToast(`Successfully marked ${selectedStudentIds.length} students as Pending!`, 'success');
+    } catch (err) {
+      console.error("Bulk pending error:", err);
+      triggerToast("Failed to perform bulk updates: " + err.message, 'danger');
+    }
+  };
+
+  const handleBulkExportCSV = () => {
+    if (selectedStudentIds.length === 0) return;
+    const selectedStudents = studentsList.filter(s => selectedStudentIds.includes(s.id));
+    let csvContent = "data:text/csv;charset=utf-8,";
+    csvContent += "Roll ID,Student Name,Email,Phone,Course,Monthly Fee,Payment Status\n";
+    selectedStudents.forEach(s => {
+      const feeRecord = currentMonthFeesList.find(f => f.studentId === s.id);
+      const fee = feeRecord ? feeRecord.amountDue : (s.feeTarget || s.monthlyFee || 500);
+      const status = feeRecord ? feeRecord.status : 'pending';
+      csvContent += `"${s.studentId || ''}","${s.displayName || ''}","${s.email || ''}","${s.phone || ''}","${s.course || ''}",${fee},"${status.toUpperCase()}"\n`;
+    });
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `compution_students_export_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   const handleToggleStatusSource = async (studentId, currentSource) => {
@@ -1913,50 +2358,161 @@ const AdminDashboard = () => {
   };
 
   const handleApprovePaymentRequest = async (req) => {
+    if (processingRequestIds[req.id]) return;
+    if (!req.studentId || !req.amount || Number(req.amount) <= 0) {
+      triggerToast('Validation Error: Invalid student ID or amount', 'danger');
+      return;
+    }
+
+    setProcessingRequestIds(prev => ({ ...prev, [req.id]: true }));
+
+    const currentMonthStr = new Date().toISOString().slice(0, 7);
+    const txId = req.transactionId || req.utrNumber || '';
+
+    if (!txId) {
+      triggerToast('Validation Error: Transaction UTR ID is missing', 'danger');
+      return;
+    }
+
     try {
-      // 1. Create Payment record in payments collection
-      await addDoc(collection(db, 'payments'), {
-        studentId: req.studentId,
-        studentName: req.studentName,
-        email: req.email || '',
-        phone: req.phone || '',
-        amount: Number(req.amount),
-        transactionId: req.transactionId || req.utrNumber,
-        paymentDate: req.paymentDate || serverTimestamp(),
-        status: 'paid',
-        createdAt: serverTimestamp(),
-        course: req.course || 'Not specified'
+      // 1. Check for duplicate transaction UTR
+      const dupQuery = query(collection(db, 'payments'), where('transactionId', '==', txId));
+      const dupSnap = await getDocs(dupQuery);
+      if (!dupSnap.empty) {
+        triggerToast('Validation Error: Duplicate Transaction UTR ID detected!', 'danger');
+        return;
+      }
+
+      // 2. Perform runTransaction
+      const feeDocRef = doc(db, 'fees', req.studentId, 'monthly', currentMonthStr);
+      const studentRef = doc(db, 'users', req.studentId);
+      const submissionRef = doc(db, 'paymentSubmissions', req.id);
+
+      await runTransaction(db, async (transaction) => {
+        const feeDocSnap = await transaction.get(feeDocRef);
+        const amountPaidNum = Number(req.amount);
+        
+        let oldStatus = 'pending';
+        let amountDue = getStudentMonthlyFee(req);
+
+        if (feeDocSnap.exists()) {
+          const feeData = feeDocSnap.data();
+          oldStatus = feeData.status || 'pending';
+          amountDue = feeData.amountDue;
+          
+          if (feeData.status === 'paid') {
+            throw new Error('Double Payment Error: This month is already marked as fully paid.');
+          }
+          if (feeData.amountPaid + amountPaidNum > amountDue) {
+            throw new Error(`Overpayment Error: Paid amount exceeds amount due of ₹${amountDue}.`);
+          }
+        }
+
+        const newAmountPaid = (feeDocSnap.exists() ? feeDocSnap.data().amountPaid : 0) + amountPaidNum;
+        const newStatus = newAmountPaid >= amountDue ? 'paid' : 'pending';
+
+        // Write monthly fee doc
+        transaction.set(feeDocRef, {
+          amountDue,
+          amountPaid: newAmountPaid,
+          status: newStatus,
+          paymentDate: serverTimestamp(),
+          transactionId: txId,
+          paymentMethod: req.paymentMethod || 'UPI',
+          verifiedBy: user.displayName || 'Admin',
+          updatedAt: serverTimestamp()
+        }, { merge: true });
+
+        // Update student profile status for compatibility
+        transaction.update(studentRef, {
+          feeStatus: newStatus
+        });
+
+        // Mark submission request as Approved
+        transaction.update(submissionRef, {
+          status: 'approved',
+          verifiedAt: serverTimestamp(),
+          verifiedBy: user.displayName || 'Admin'
+        });
+
+        // Create Payment record in payments collection
+        const newPaymentRef = doc(collection(db, 'payments'));
+        transaction.set(newPaymentRef, {
+          studentId: req.studentId,
+          studentName: req.studentName,
+          email: req.email || '',
+          phone: req.phone || '',
+          amount: amountPaidNum,
+          transactionId: txId,
+          paymentDate: serverTimestamp(),
+          status: 'paid',
+          createdAt: serverTimestamp(),
+          course: req.course || 'Not specified'
+        });
+
+        // Create auditLogs record
+        const newAuditRef = doc(collection(db, 'auditLogs'));
+        transaction.set(newAuditRef, {
+          action: 'payment_verify',
+          studentId: req.studentId,
+          studentName: req.studentName,
+          oldStatus,
+          newStatus,
+          amount: amountPaidNum,
+          admin: user.displayName || 'Admin',
+          timestamp: serverTimestamp()
+        });
       });
-      // 2. Set student profile status to paid
-      await updateDoc(doc(db, 'users', req.studentId), {
-        feeStatus: 'paid'
-      });
-      // 3. Mark request as Approved
-      await updateDoc(doc(db, 'paymentSubmissions', req.id), {
-        status: 'approved',
-        verifiedAt: serverTimestamp(),
-        verifiedBy: user.displayName || 'Admin'
-      });
-      await logAdminAction('payment_verified', req.studentId, { utr: req.transactionId || req.utrNumber, amount: req.amount });
+
       triggerToast('Payment approved & synced successfully!', 'success');
     } catch (e) {
       console.error(e);
       triggerToast(e.message || 'Failed to approve payment', 'danger');
+    } finally {
+      setProcessingRequestIds(prev => {
+        const next = { ...prev };
+        delete next[req.id];
+        return next;
+      });
     }
   };
 
-  const handleRejectPaymentRequest = async (reqId) => {
+  const handleRejectPaymentRequest = async (req) => {
+    if (!req || !req.id) return;
+    if (processingRequestIds[req.id]) return;
+    setProcessingRequestIds(prev => ({ ...prev, [req.id]: true }));
     try {
-      await updateDoc(doc(db, 'paymentSubmissions', reqId), {
-        status: 'rejected',
-        rejectedAt: serverTimestamp(),
-        rejectedBy: user.displayName || 'Admin',
-        rejectionReason: 'Rejected by admin'
+      const submissionRef = doc(db, 'paymentSubmissions', req.id);
+      await runTransaction(db, async (transaction) => {
+        transaction.update(submissionRef, {
+          status: 'rejected',
+          rejectedAt: serverTimestamp(),
+          rejectedBy: user.displayName || 'Admin',
+          rejectionReason: 'Rejected by admin'
+        });
+
+        const newAuditRef = doc(collection(db, 'auditLogs'));
+        transaction.set(newAuditRef, {
+          action: 'payment_reject',
+          studentId: req.studentId || 'unknown',
+          studentName: req.studentName || 'Unknown Student',
+          oldStatus: 'pending',
+          newStatus: 'rejected',
+          amount: Number(req.amount || 0),
+          admin: user.displayName || 'Admin',
+          timestamp: serverTimestamp()
+        });
       });
       triggerToast('Payment request rejected', 'danger');
     } catch (e) {
       console.error(e);
       triggerToast(e.message || 'Failed to reject payment', 'danger');
+    } finally {
+      setProcessingRequestIds(prev => {
+        const next = { ...prev };
+        delete next[req.id];
+        return next;
+      });
     }
   };
 
@@ -2410,7 +2966,13 @@ const AdminDashboard = () => {
   };
 
   // Statistics summaries
-  const studentsList = allUsers.filter(u => u.role?.toLowerCase() === 'student').filter(s => {
+  const studentsList = allUsers.filter(u => 
+    u.role?.toLowerCase() === 'student' &&
+    u.status !== 'inactive' &&
+    u.status !== 'deleted' &&
+    u.archived !== true &&
+    u.deleted !== true
+  ).filter(s => {
     if (user?.role?.toLowerCase() === 'faculty') {
       return s.assignedFaculty?.includes(user.uid) || s.assignedFaculty?.includes(user.email) || assignedStudentIds.includes(s.id);
     }
@@ -2419,31 +2981,67 @@ const AdminDashboard = () => {
   const facultyList = allUsers.filter(u => u.role?.toLowerCase() === 'faculty');
   const membersList = allUsers.filter(u => u.role?.toLowerCase() === 'member');
   
-  const activeStudentIds = new Set(allUsers.filter(u => u.role?.toLowerCase() === 'student').map(u => u.id));
+  // Analytics helper calculations
+  const currentMonthStr = new Date().toISOString().slice(0, 7);
+  const currentMonthFeesList = allFees.filter(f => f.month === currentMonthStr);
+
+  const activeStudentIds = new Set(studentsList.map(u => u.id));
   const activeFees = allFees.filter(f => activeStudentIds.has(f.studentId));
+  const currentMonthActiveFees = activeFees.filter(f => f.month === currentMonthStr);
 
   // Search filter matching
   const filteredStudents = studentsList.filter(s => s.displayName?.toLowerCase().includes(search.toLowerCase()) || s.email?.toLowerCase().includes(search.toLowerCase()) || s.course?.toLowerCase().includes(search.toLowerCase()));
+
+  const sortedStudents = [...filteredStudents].sort((a, b) => {
+    let valA = '';
+    let valB = '';
+    if (sortField === 'displayName') {
+      valA = a.displayName || '';
+      valB = b.displayName || '';
+    } else if (sortField === 'course') {
+      valA = a.course || '';
+      valB = b.course || '';
+    } else if (sortField === 'feeTarget') {
+      valA = a.feeTarget || a.monthlyFee || 0;
+      valB = b.feeTarget || b.monthlyFee || 0;
+    } else if (sortField === 'feeStatus') {
+      const recA = currentMonthFeesList.find(f => f.studentId === a.id);
+      const recB = currentMonthFeesList.find(f => f.studentId === b.id);
+      valA = recA ? recA.status : 'pending';
+      valB = recB ? recB.status : 'pending';
+    } else {
+      valA = a[sortField] || '';
+      valB = b[sortField] || '';
+    }
+
+    if (typeof valA === 'string') {
+      return sortDirection === 'asc' 
+        ? valA.localeCompare(valB) 
+        : valB.localeCompare(valA);
+    } else {
+      return sortDirection === 'asc' 
+        ? valA - valB 
+        : valB - valA;
+    }
+  });
+
+  const totalStudentPages = Math.ceil(sortedStudents.length / pageSize) || 1;
+  const startIndex = (currentPage - 1) * pageSize;
+  const paginatedStudents = sortedStudents.slice(startIndex, startIndex + pageSize);
   const filteredFaculty = facultyList.filter(f => f.displayName?.toLowerCase().includes(search.toLowerCase()) || f.email?.toLowerCase().includes(search.toLowerCase()) || (f.subjects && f.subjects.some(sub=>sub.toLowerCase().includes(search.toLowerCase()))));
   const filteredMembers = membersList.filter(m => m.displayName?.toLowerCase().includes(search.toLowerCase()) || m.email?.toLowerCase().includes(search.toLowerCase()) || m.department?.toLowerCase().includes(search.toLowerCase()));
 
-  // Analytics helper calculations
+  const metrics = calculateFeeMetrics(studentsList, allFees);
+  const totalMonthlyFees = metrics.totalMonthlyFees;
+  const pendingFeesTotal = metrics.pendingTuition;
+  const studentsPaidCount = metrics.studentsPaid;
+  const studentsPendingCount = metrics.studentsPending;
+  
   const totalStudents = studentsList.length;
   const totalFaculty = facultyList.length;
   const totalMembers = membersList.length;
   const activeChatRooms = chatRoomsList.length;
 
-  const pendingFeesTotal = studentsList.reduce((acc, s) => {
-    const isPending = (s.feeStatus || 'pending').toLowerCase() === 'pending';
-    if (isPending) {
-      return acc + getStudentMonthlyFee(s);
-    }
-    return acc;
-  }, 0);
-
-  const totalMonthlyFees = studentsList.reduce((acc, s) => {
-    return acc + getStudentMonthlyFee(s);
-  }, 0);
 
   const courseDensityData = () => {
     const densities = {};
@@ -2493,6 +3091,37 @@ const AdminDashboard = () => {
           <p style={{ margin: 0, opacity: 0.9, fontSize: '0.9rem', maxWidth: '600px' }}>
             Monitor institutional performance, manage faculty workload, analyze student demographic batches, and track billing collections.
           </p>
+        </div>
+
+        {/* Client-Side AI Insights Dashboard banner */}
+        <div style={{
+          background: 'rgba(99, 102, 241, 0.05)',
+          border: '1px dashed rgba(99, 102, 241, 0.3)',
+          borderRadius: '16px',
+          padding: '20px 24px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '12px'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--primary)', fontWeight: 800, fontSize: '0.85rem' }}>
+            <Sparkles size={16} /> CLIENT AI INSIGHTS ENGINE
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+            {totalPending > 0 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ color: 'var(--danger)', fontWeight: 800 }}>•</span>
+                <span><strong>Outstanding Dues:</strong> ₹{totalPending.toLocaleString()} tuition fees are pending collection from {studentsPendingCount} students. Click to open the Students tab and send WhatsApp reminders.</span>
+              </div>
+            )}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ color: rate >= 90 ? 'var(--success)' : 'var(--warning)', fontWeight: 800 }}>•</span>
+              <span><strong>Engagement Metrics:</strong> Institutional average attendance rate is at <strong>{rate}%</strong>. Student roster activity is healthy and within optimal bounds.</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ color: 'var(--primary)', fontWeight: 800 }}>•</span>
+              <span><strong>Resource Utilization:</strong> Roster workload is balanced at an average of <strong>{Math.round(totalStudents / (facultyList.length || 1))} students</strong> per faculty mentor.</span>
+            </div>
+          </div>
         </div>
 
         {/* Dynamic Analytics Grid */}
@@ -3234,13 +3863,21 @@ const AdminDashboard = () => {
     ? allUsers.find(u => u.id === selectedStudentDetails.id) || selectedStudentDetails
     : null;
 
+  const currentMonthStrVal = new Date().toISOString().slice(0, 7);
+  const currentMonthRecordVal = currentStudentDetails
+    ? allFees.find(f => f.studentId === currentStudentDetails.id && f.month === currentMonthStrVal)
+    : null;
+  const currentPendingAmountVal = currentMonthRecordVal 
+    ? (currentMonthRecordVal.amountDue - currentMonthRecordVal.amountPaid) 
+    : (currentStudentDetails ? getStudentMonthlyFee(currentStudentDetails) : 0);
+
   const feesToShow = [...selectedStudentFees];
-  if (currentStudentDetails && currentStudentDetails.pendingAmount > 0) {
+  if (currentStudentDetails && currentPendingAmountVal > 0) {
     feesToShow.unshift({
       id: 'pending_tuition_balance',
       feeName: 'Pending Tuition Balance',
       month: new Date().toLocaleDateString('en-IN', { month: 'long', year: 'numeric' }),
-      amount: currentStudentDetails.pendingAmount,
+      amount: currentPendingAmountVal,
       paidAmount: 0,
       status: 'Pending'
     });
@@ -3272,20 +3909,18 @@ const AdminDashboard = () => {
         {[
           { key: 'overview', label: user?.role === 'admin' ? 'Admin Overview' : user?.role === 'faculty' ? 'Faculty Overview' : 'Member Overview', roles: ['admin', 'faculty', 'member'] },
           { key: 'students', label: 'Students Roster', roles: ['admin', 'faculty', 'member'] },
-          { key: 'billing', label: 'Payments & Billing', roles: ['admin'] },
           { key: 'faculty', label: 'Faculty Staff', roles: ['admin'] },
-          { key: 'members', label: 'Management Members', roles: ['admin'] },
-          { key: 'attendance', label: 'Attendance logs', roles: ['admin'] },
           { key: 'schedules', label: 'Class Schedules', roles: ['admin', 'faculty'] },
-          { key: 'chats', label: 'Doubt Chats', roles: ['admin', 'faculty', 'member'] },
-          { key: 'notifications', label: 'Alert logs', roles: ['admin', 'member'] },
-          { key: 'roles', label: 'Roles Panel', roles: ['admin'] },
-          { key: 'fee_config', label: 'Fee Config', roles: ['admin'] },
+          { key: 'attendance', label: 'Attendance Logs', roles: ['admin', 'faculty'] },
+          { key: 'billing', label: 'Payments', roles: ['admin'] },
+          { key: 'fee_config', label: 'Fees Config', roles: ['admin'] },
+          { key: 'meetings', label: 'Meetings', roles: ['admin', 'faculty', 'member'] },
+          { key: 'chats', label: 'Doubt Queue', roles: ['admin', 'faculty', 'member'] },
+          { key: 'notifications', label: 'Notifications', roles: ['admin', 'member'] },
           { key: 'analytics', label: 'Analytics', roles: ['admin'] },
-          { key: 'audit_logs', label: 'System Audits', roles: ['admin'] },
-          { key: 'system_health', label: 'System Health', roles: ['admin'] },
-          { key: 'theme_inspector', label: 'Theme Inspector', roles: ['admin'] },
-          { key: 'account_migration', label: 'Account Migration', roles: ['admin'] }
+          { key: 'roles', label: 'User Roles', roles: ['admin'] },
+          { key: 'settings', label: 'Settings', roles: ['admin'] },
+          { key: 'audit_logs', label: 'Audit Logs', roles: ['admin'] }
         ].filter(tab => tab.roles.includes(user?.role || 'student')).map(tab => (
           <button
             key={tab.key}
@@ -3338,12 +3973,12 @@ const AdminDashboard = () => {
                   <button onClick={() => handleBulkDelete('faculty')} className="btn btn-ghost" style={{ padding: '8px 16px', fontSize: '0.82rem', color: 'var(--danger)', borderRadius: '8px' }}><Trash2 size={14} /> Bulk Delete</button>
                 </>
               )}
-              {activePanelTab === 'members' && (
-                <>
-                  <button onClick={() => setIsAddMemberOpen(true)} className="btn btn-primary" style={{ padding: '8px 16px', fontSize: '0.82rem', borderRadius: '8px' }}><Plus size={14} /> Add Member</button>
-                  <button onClick={() => handleBulkDelete('member')} className="btn btn-ghost" style={{ padding: '8px 16px', fontSize: '0.82rem', color: 'var(--danger)', borderRadius: '8px' }}><Trash2 size={14} /> Bulk Delete</button>
-                </>
-              )}
+              {(activePanelTab === 'members' || (activePanelTab === 'settings' && settingsSubTab === 'members')) && (
+                 <>
+                   <button onClick={() => setIsAddMemberOpen(true)} className="btn btn-primary" style={{ padding: '8px 16px', fontSize: '0.82rem', borderRadius: '8px' }}><Plus size={14} /> Add Member</button>
+                   <button onClick={() => handleBulkDelete('member')} className="btn btn-ghost" style={{ padding: '8px 16px', fontSize: '0.82rem', color: 'var(--danger)', borderRadius: '8px' }}><Trash2 size={14} /> Bulk Delete</button>
+                 </>
+               )}
               {activePanelTab === 'billing' && user?.role === 'admin' && (
                 <button
                   onClick={handleRepairFinancialRecords}
@@ -3400,21 +4035,105 @@ const AdminDashboard = () => {
                   </div>
                 )}
                 
+                {/* Bulk Actions Toolbar */}
+                {selectedStudentIds.length > 0 && (
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '12px 16px',
+                    background: 'var(--primary-light)',
+                    borderRadius: '8px',
+                    border: '1px solid rgba(83,109,254,0.2)',
+                    marginBottom: '10px'
+                  }}>
+                    <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--primary)' }}>
+                      {selectedStudentIds.length} students selected
+                    </span>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button onClick={handleBulkMarkPaid} className="btn btn-primary" style={{ padding: '6px 12px', fontSize: '0.78rem', background: 'var(--success)' }}>
+                        Mark Paid
+                      </button>
+                      <button onClick={handleBulkMarkPending} className="btn btn-secondary" style={{ padding: '6px 12px', fontSize: '0.78rem', background: 'var(--warning)', color: 'white', border: 'none' }}>
+                        Mark Pending
+                      </button>
+                      <button onClick={handleBulkExportCSV} className="btn btn-ghost" style={{ padding: '6px 12px', fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <Download size={13} /> Export CSV
+                      </button>
+                      <button onClick={() => setSelectedStudentIds([])} className="btn btn-ghost" style={{ padding: '6px 12px', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                        Deselect
+                      </button>
+                    </div>
+                  </div>
+                )}
+                
                 <table style={{ width: '100%', minWidth: '700px', borderCollapse: 'collapse', textAlign: 'left' }}>
                   <thead>
-                    <tr style={{ borderBottom: '1px solid var(--border)', fontSize: '0.8rem', color: 'var(--text-light)' }}>
-                      <th style={{ padding: '12px' }}>Student Profile</th>
-                      <th style={{ padding: '12px' }}>Course / Program</th>
+                    <tr style={{ borderBottom: '1px solid var(--border)', fontSize: '0.8rem', color: 'var(--text-light)', position: 'sticky', top: 0, zIndex: 5, background: 'var(--white)' }}>
+                      <th style={{ padding: '12px', width: '40px' }}>
+                        <input 
+                          type="checkbox" 
+                          checked={paginatedStudents.length > 0 && paginatedStudents.every(s => selectedStudentIds.includes(s.id))}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              const pageIds = paginatedStudents.map(s => s.id);
+                              setSelectedStudentIds(prev => Array.from(new Set([...prev, ...pageIds])));
+                            } else {
+                              const pageIds = paginatedStudents.map(s => s.id);
+                              setSelectedStudentIds(prev => prev.filter(id => !pageIds.includes(id)));
+                            }
+                          }}
+                        />
+                      </th>
+                      <th style={{ padding: '12px', cursor: 'pointer' }} onClick={() => {
+                        if (sortField === 'displayName') {
+                          setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+                        } else {
+                          setSortField('displayName');
+                          setSortDirection('asc');
+                        }
+                      }}>
+                        Student Profile {sortField === 'displayName' && (sortDirection === 'asc' ? ' ▲' : ' ▼')}
+                      </th>
+                      <th style={{ padding: '12px', cursor: 'pointer' }} onClick={() => {
+                        if (sortField === 'course') {
+                          setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+                        } else {
+                          setSortField('course');
+                          setSortDirection('asc');
+                        }
+                      }}>
+                        Course / Program {sortField === 'course' && (sortDirection === 'asc' ? ' ▲' : ' ▼')}
+                      </th>
                       <th style={{ padding: '12px' }}>Assigned Mentor</th>
-                      <th style={{ padding: '12px' }}>Fees Target</th>
-                      <th style={{ padding: '12px' }}>Fee status</th>
+                      <th style={{ padding: '12px', cursor: 'pointer' }} onClick={() => {
+                        if (sortField === 'feeTarget') {
+                          setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+                        } else {
+                          setSortField('feeTarget');
+                          setSortDirection('asc');
+                        }
+                      }}>
+                        Fees Target {sortField === 'feeTarget' && (sortDirection === 'asc' ? ' ▲' : ' ▼')}
+                      </th>
+                      <th style={{ padding: '12px', cursor: 'pointer' }} onClick={() => {
+                        if (sortField === 'feeStatus') {
+                          setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+                        } else {
+                          setSortField('feeStatus');
+                          setSortDirection('asc');
+                        }
+                      }}>
+                        Fee status {sortField === 'feeStatus' && (sortDirection === 'asc' ? ' ▲' : ' ▼')}
+                      </th>
                       <th style={{ padding: '12px' }}>Action</th>
                     </tr>
                   </thead>
                   <tbody>
-                {filteredStudents.map(student => {
-                  const feeStatus = (student.feeStatus || 'pending').toLowerCase();
-                  const currentFeesAmount = student.feeTarget !== undefined && student.feeTarget !== null ? Number(student.feeTarget) : (Number(student.monthlyFee) || 500);
+                {paginatedStudents.map(student => {
+                  const feeRecord = currentMonthFeesList.find(f => f.studentId === student.id);
+                  const currentFeesAmount = feeRecord ? feeRecord.amountDue : getStudentMonthlyFee(student);
+                  const feeStatus = (feeRecord ? feeRecord.status : 'pending').toLowerCase();
                   const colorMap = {
                     'paid': 'var(--success)',
                     'pending': 'var(--danger)'
@@ -3426,6 +4145,19 @@ const AdminDashboard = () => {
 
                   return (
                     <tr key={student.id} style={{ borderBottom: '1px solid var(--border)', fontSize: '0.88rem' }}>
+                      <td style={{ padding: '12px', width: '40px' }}>
+                        <input 
+                          type="checkbox" 
+                          checked={selectedStudentIds.includes(student.id)} 
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedStudentIds(prev => [...prev, student.id]);
+                            } else {
+                              setSelectedStudentIds(prev => prev.filter(id => id !== student.id));
+                            }
+                          }} 
+                        />
+                      </td>
                       <td style={{ padding: '12px' }}>
                         <div style={{ fontWeight: 700, color: 'var(--dark)' }}>{student.displayName}</div>
                         <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{student.email}</div>
@@ -3587,6 +4319,29 @@ const AdminDashboard = () => {
                       <td style={{ padding: '12px' }}>
                         <div style={{ display: 'flex', gap: '6px' }}>
                           <button onClick={() => setSelectedStudentDetails({ ...student, joined: 'Jan 2026', roll: 'Roll #COMP' })} className="btn btn-secondary" style={{ padding: '6px', borderRadius: '6px' }} title="View Detail"><Eye size={14} /></button>
+                          <button
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              const btn = e.currentTarget;
+                              btn.disabled = true;
+                              const origHtml = btn.innerHTML;
+                              btn.innerHTML = `<span class="spinner" style="display:inline-block;width:10px;height:10px;border:1.5px solid var(--primary);border-top-color:transparent;border-radius:50%;animation:spin 1s linear infinite;"></span>`;
+                              try {
+                                const currentMonthStr = new Date().toISOString().slice(0, 7);
+                                await reportService.exportMonthlyReport(student.id, currentMonthStr, showToast);
+                              } catch (err) {
+                                console.error(err);
+                              } finally {
+                                btn.disabled = false;
+                                btn.innerHTML = origHtml;
+                              }
+                            }}
+                            className="btn btn-secondary"
+                            style={{ padding: '6px', borderRadius: '6px' }}
+                            title="Export Monthly Report"
+                          >
+                            <Download size={14} />
+                          </button>
                           {user?.role === 'admin' && (
                             <button onClick={() => handleDeleteUser(student.id, student.displayName)} className="btn btn-ghost" style={{ padding: '6px', color: 'var(--danger)', borderRadius: '6px' }} title="Delete Roster"><Trash2 size={14} /></button>
                           )}
@@ -3612,8 +4367,62 @@ const AdminDashboard = () => {
                 })}
               </tbody>
             </table>
+
+            {/* Pagination Controls */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '12px 24px',
+              borderTop: '1px solid var(--border)',
+              marginTop: '10px',
+              flexWrap: 'wrap',
+              gap: '12px'
+            }}>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                Showing {startIndex + 1} - {Math.min(startIndex + pageSize, filteredStudents.length)} of {filteredStudents.length} students
               </div>
-          )}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Rows per page:</span>
+                  <select
+                    value={pageSize}
+                    onChange={(e) => {
+                      setPageSize(Number(e.target.value));
+                      setCurrentPage(1);
+                    }}
+                    style={{ padding: '4px 8px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.8rem', background: 'white' }}
+                  >
+                    {[10, 25, 50].map(size => (
+                      <option key={size} value={size}>{size}</option>
+                    ))}
+                  </select>
+                </div>
+                <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                  <button
+                    onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                    disabled={currentPage === 1}
+                    className="btn btn-secondary"
+                    style={{ padding: '6px 12px', fontSize: '0.78rem', cursor: currentPage === 1 ? 'not-allowed' : 'pointer' }}
+                  >
+                    Previous
+                  </button>
+                  <span style={{ fontSize: '0.82rem', alignSelf: 'center', fontWeight: 700 }}>
+                    Page {currentPage} of {totalStudentPages}
+                  </span>
+                  <button
+                    onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalStudentPages))}
+                    disabled={currentPage === totalStudentPages}
+                    className="btn btn-secondary"
+                    style={{ padding: '6px 12px', fontSize: '0.78rem', cursor: currentPage === totalStudentPages ? 'not-allowed' : 'pointer' }}
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
           {/* ==================== Payments & Billing Tab ==================== */}
           {activePanelTab === 'billing' && (
@@ -3622,10 +4431,10 @@ const AdminDashboard = () => {
               {/* Widgets Row */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
                 {[
-                  { label: 'Total Collected', value: `₹${activeFees.reduce((acc, f) => acc + (Number(f.totalPaid) || 0), 0).toLocaleString('en-IN')}`, color: 'var(--success)' },
-                  { label: 'Total Pending', value: `₹${activeFees.reduce((acc, f) => acc + (Number(f.remainingBalance) || 0), 0).toLocaleString('en-IN')}`, color: 'var(--danger)' },
-                  { label: 'Pending Students', value: activeFees.filter(f => f.status === 'Pending').length, color: '#F59E0B' },
-                  { label: 'Total Billed', value: `₹${activeFees.reduce((acc, f) => acc + (Number(f.totalFeeDue) || 0), 0).toLocaleString('en-IN')}`, color: 'var(--primary)' }
+                  { label: 'Total Collected', value: `₹${activeFees.reduce((acc, f) => acc + (Number(f.amountPaid) || 0), 0).toLocaleString('en-IN')}`, color: 'var(--success)' },
+                  { label: 'Total Pending', value: `₹${activeFees.reduce((acc, f) => acc + (Math.max(0, (Number(f.amountDue) || 0) - (Number(f.amountPaid) || 0))), 0).toLocaleString('en-IN')}`, color: 'var(--danger)' },
+                  { label: 'Pending Students', value: activeFees.filter(f => f.status === 'pending').length, color: '#F59E0B' },
+                  { label: 'Total Billed', value: `₹${activeFees.reduce((acc, f) => acc + (Number(f.amountDue) || 0), 0).toLocaleString('en-IN')}`, color: 'var(--primary)' }
                 ].map((widget, i) => (
                   <div key={i} style={{ padding: '16px', background: 'var(--surface)', borderRadius: '12px', border: '1px solid var(--border)' }}>
                     <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 600, marginBottom: '6px' }}>{widget.label}</div>
@@ -3694,8 +4503,22 @@ const AdminDashboard = () => {
                           </div>
                         </div>
                         <div style={{ display: 'flex', gap: '8px' }}>
-                          <button onClick={() => handleApprovePaymentRequest(req)} className="btn btn-primary" style={{ padding: '6px 12px', fontSize: '0.8rem', borderRadius: '6px' }}>Approve</button>
-                          <button onClick={() => handleRejectPaymentRequest(req.id)} className="btn" style={{ padding: '6px 12px', fontSize: '0.8rem', borderRadius: '6px', background: 'var(--surface)', color: 'var(--danger)', border: '1px solid var(--danger)' }}>Reject</button>
+                          <button 
+                            onClick={() => handleApprovePaymentRequest(req)} 
+                            disabled={processingRequestIds[req.id]} 
+                            className="btn btn-primary" 
+                            style={{ padding: '6px 12px', fontSize: '0.8rem', borderRadius: '6px', opacity: processingRequestIds[req.id] ? 0.6 : 1, cursor: processingRequestIds[req.id] ? 'not-allowed' : 'pointer' }}
+                          >
+                            {processingRequestIds[req.id] ? 'Processing...' : 'Approve'}
+                          </button>
+                          <button 
+                            onClick={() => handleRejectPaymentRequest(req)} 
+                            disabled={processingRequestIds[req.id]} 
+                            className="btn" 
+                            style={{ padding: '6px 12px', fontSize: '0.8rem', borderRadius: '6px', background: 'var(--surface)', color: 'var(--danger)', border: '1px solid var(--danger)', opacity: processingRequestIds[req.id] ? 0.6 : 1, cursor: processingRequestIds[req.id] ? 'not-allowed' : 'pointer' }}
+                          >
+                            Reject
+                          </button>
                         </div>
                       </div>
                     ))}
@@ -3721,10 +4544,11 @@ const AdminDashboard = () => {
                     </thead>
                     <tbody>
                       {filteredStudents.map(student => {
-                        const feeStatus = (student.feeStatus || 'pending').toLowerCase();
-                        const feeTarget = student.feeTarget !== undefined && student.feeTarget !== null ? Number(student.feeTarget) : (Number(student.monthlyFee) || 500);
-                        const paidAmount = feeStatus === 'paid' ? feeTarget : 0;
-                        const pendingAmount = feeStatus === 'pending' ? feeTarget : 0;
+                        const feeRecord = currentMonthActiveFees.find(f => f.studentId === student.id);
+                        const amountDue = feeRecord ? feeRecord.amountDue : getStudentMonthlyFee(student);
+                        const paidAmount = feeRecord ? feeRecord.amountPaid : 0;
+                        const pendingAmount = amountDue - paidAmount;
+                        const feeStatus = (feeRecord ? feeRecord.status : 'pending').toLowerCase();
 
                         const colorMap = {
                           'paid': 'var(--success)',
@@ -3742,7 +4566,7 @@ const AdminDashboard = () => {
                               <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{student.email}</div>
                             </td>
                             <td style={{ padding: '10px' }}>{student.course}</td>
-                            <td style={{ padding: '10px', fontWeight: 600 }}>₹{feeTarget.toLocaleString()}</td>
+                            <td style={{ padding: '10px', fontWeight: 600 }}>₹{amountDue.toLocaleString()}</td>
                             <td style={{ padding: '10px', fontWeight: 600, color: 'var(--success)' }}>₹{paidAmount.toLocaleString()}</td>
                             <td style={{ padding: '10px', fontWeight: 600, color: pendingAmount > 0 ? 'var(--danger)' : 'var(--text-muted)' }}>₹{pendingAmount.toLocaleString()}</td>
                             <td style={{ padding: '10px' }}>
@@ -3835,13 +4659,13 @@ const AdminDashboard = () => {
                           <div style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--danger)' }}>₹{pendingFeesTotal.toLocaleString()}</div>
                         </div>
                         <div>
-                          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Paid Student Count</div>
-                          <div style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--success)' }}>{studentsList.filter(s => (s.feeStatus || 'pending').toLowerCase() === 'paid').length}</div>
-                        </div>
-                        <div>
-                          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Pending Student Count</div>
-                          <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#F59E0B' }}>{studentsList.filter(s => (s.feeStatus || 'pending').toLowerCase() === 'pending').length}</div>
-                        </div>
+                           <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Paid Student Count</div>
+                           <div style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--success)' }}>{studentsPaidCount}</div>
+                         </div>
+                         <div>
+                           <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Pending Student Count</div>
+                           <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#F59E0B' }}>{studentsPendingCount}</div>
+                         </div>
                       </div>
 
                       <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '16px' }}>
@@ -3888,11 +4712,12 @@ const AdminDashboard = () => {
                                 s.id?.toLowerCase().includes(debugSearch.toLowerCase())
                               )
                               .map(student => {
-                                const feeStatus = (student.feeStatus || 'pending').toLowerCase();
-                                const feeTarget = student.feeTarget !== undefined && student.feeTarget !== null ? Number(student.feeTarget) : (Number(student.monthlyFee) || 500);
-                                const paidAmount = feeStatus === 'paid' ? feeTarget : 0;
-                                const pendingAmount = feeStatus === 'pending' ? feeTarget : 0;
-                                const lastUpdate = student.updatedAt ? new Date(student.updatedAt).toLocaleString() : 'Never';
+                                const feeRecord = currentMonthFeesList.find(f => f.studentId === student.id);
+                                const amountDue = feeRecord ? feeRecord.amountDue : getStudentMonthlyFee(student);
+                                const paidAmount = feeRecord ? feeRecord.amountPaid : 0;
+                                const pendingAmount = amountDue - paidAmount;
+                                const feeStatus = (feeRecord ? feeRecord.status : 'pending').toLowerCase();
+                                const lastUpdate = feeRecord?.updatedAt?.toDate ? feeRecord.updatedAt.toDate().toLocaleString() : 'Never';
 
                                 const colorMap = {
                                   'paid': 'var(--success)',
@@ -4027,7 +4852,7 @@ const AdminDashboard = () => {
           )}
 
           {/* ==================== 3. TABS: MEMBERS STAFF ==================== */}
-          {activePanelTab === 'members' && (
+          {(activePanelTab === 'members' || (activePanelTab === 'settings' && settingsSubTab === 'members')) && (
             <table style={{ width: '100%', minWidth: '700px', borderCollapse: 'collapse', textAlign: 'left' }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--border)', fontSize: '0.8rem', color: 'var(--text-light)' }}>
@@ -4095,41 +4920,344 @@ const AdminDashboard = () => {
 
           {/* ==================== 5. TABS: CLASS SCHEDULES ==================== */}
           {activePanelTab === 'schedules' && (
-            <table style={{ width: '100%', minWidth: '700px', borderCollapse: 'collapse', textAlign: 'left' }}>
-              <thead>
-                <tr style={{ borderBottom: '1px solid var(--border)', fontSize: '0.8rem', color: 'var(--text-light)' }}>
-                  <th style={{ padding: '12px' }}>Scheduled Student</th>
-                  <th style={{ padding: '12px' }}>Class timing & Mode</th>
-                  <th style={{ padding: '12px' }}>Subject Target</th>
-                  <th style={{ padding: '12px' }}>Lesson notes</th>
-                  <th style={{ padding: '12px' }}>Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {schedulesList.filter(sch => {
-                  const matchesSearch = sch.studentName?.toLowerCase().includes(search.toLowerCase()) || sch.subject?.toLowerCase().includes(search.toLowerCase());
-                  if (!matchesSearch) return false;
-                  if (user?.role === 'faculty') {
-                    const isAssigned = studentsList.some(s => s.id === sch.studentId);
-                    return sch.facultyId === user.uid || isAssigned;
-                  }
-                  return true;
-                }).map(sch => (
-                  <tr key={sch.id} style={{ borderBottom: '1px solid var(--border)', fontSize: '0.88rem' }}>
-                    <td style={{ padding: '12px', fontWeight: 700 }}>{sch.studentName}</td>
-                    <td style={{ padding: '12px' }}>
-                      <div>{sch.date} @ {sch.time}</div>
-                      <div style={{ fontSize: '0.75rem', color: 'var(--primary)', fontWeight: 700, textTransform: 'uppercase' }}>{sch.mode}</div>
-                    </td>
-                    <td style={{ padding: '12px' }}>{sch.subject}</td>
-                    <td style={{ padding: '12px', fontSize: '0.8rem', fontStyle: 'italic', maxWidth: '180px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={sch.notes}>{sch.notes || 'N/A'}</td>
-                    <td style={{ padding: '12px' }}>
-                      <button onClick={async () => { if (window.confirm("Cancel class slot?")) await deleteDoc(doc(db, 'studentSchedules', sch.id)); }} style={{ color: 'var(--danger)', background: 'none', border: 'none', cursor: 'pointer' }}><Trash2 size={15} /></button>
-                    </td>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800 }}>Smart Class Schedules</h3>
+                  <p style={{ margin: '4px 0 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>Manage weekly student classes, timing allocations, and faculty rosters.</p>
+                </div>
+                {(user?.role === 'admin' || user?.role === 'faculty') && (
+                  <button
+                    onClick={() => {
+                      setEditingSchedule(null);
+                      setEventTitle('');
+                      setEventDesc('');
+                      setStartDate('Monday'); // 'day' field represents day of week
+                      setStartTime('17:30');
+                      setAssignedFacultyId(user.uid);
+                      setVenue('Room 4B');
+                      setSelectedGroups([]);
+                      setSelectedStudents([]);
+                      setMeetLink('');
+                      setIsAddScheduleOpen(true);
+                    }}
+                    className="btn btn-primary"
+                    style={{ padding: '8px 16px', fontSize: '0.82rem', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}
+                  >
+                    <Plus size={14} /> Schedule Class Slot
+                  </button>
+                )}
+              </div>
+
+              {/* Schedules Table */}
+              <table style={{ width: '100%', minWidth: '700px', borderCollapse: 'collapse', textAlign: 'left' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid var(--border)', fontSize: '0.8rem', color: 'var(--text-light)' }}>
+                    <th style={{ padding: '12px' }}>Day & Time</th>
+                    <th style={{ padding: '12px' }}>Subject & Batch</th>
+                    <th style={{ padding: '12px' }}>Faculty Mentor</th>
+                    <th style={{ padding: '12px' }}>Location/Room</th>
+                    <th style={{ padding: '12px' }}>Students Assigned</th>
+                    <th style={{ padding: '12px' }}>Status</th>
+                    <th style={{ padding: '12px' }}>Actions</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {schedulesList.filter(sch => {
+                    const searchLower = search.toLowerCase();
+                    const matchesSearch = sch.subject?.toLowerCase().includes(searchLower) || 
+                      sch.facultyName?.toLowerCase().includes(searchLower) || 
+                      sch.day?.toLowerCase().includes(searchLower);
+                    if (!matchesSearch) return false;
+                    
+                    if (user?.role === 'faculty') {
+                      return sch.facultyId === user.uid;
+                    }
+                    return true;
+                  }).map(sch => {
+                    const studentNames = (sch.studentIds || []).map(sid => allUsers.find(u => u.id === sid)?.displayName || 'Unknown Student').join(', ');
+                    
+                    // Determine status dynamically
+                    let statusLabel = sch.status || 'upcoming';
+                    
+                    return (
+                      <tr key={sch.id} style={{ borderBottom: '1px solid var(--border)', fontSize: '0.88rem' }}>
+                        <td style={{ padding: '12px' }}>
+                          <div style={{ fontWeight: 700 }}>{sch.day}</div>
+                          <div style={{ fontSize: '0.78rem', color: 'var(--primary)', fontWeight: 600 }}>{sch.startTime} - {sch.endTime || computeEndTime(sch.startTime)}</div>
+                        </td>
+                        <td style={{ padding: '12px' }}>
+                          <div style={{ fontWeight: 700 }}>{sch.subject}</div>
+                          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{sch.batch || 'No Group'}</div>
+                        </td>
+                        <td style={{ padding: '12px' }}>{sch.facultyName || 'Mentor'}</td>
+                        <td style={{ padding: '12px' }}>
+                          <div>{sch.room || 'Compution Campus'}</div>
+                          {sch.meetLink && (
+                            <a href={sch.meetLink} target="_blank" rel="noopener noreferrer" style={{ fontSize: '0.72rem', color: 'var(--primary)', textDecoration: 'underline' }}>
+                              Join Meet Link
+                            </a>
+                          )}
+                        </td>
+                        <td style={{ padding: '12px', fontSize: '0.8rem' }} title={studentNames}>
+                          <div style={{ fontWeight: 700, color: 'var(--primary)' }}>{(sch.studentIds || []).length} Students</div>
+                          <div style={{ color: 'var(--text-muted)', maxWidth: '180px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{studentNames || 'None'}</div>
+                        </td>
+                        <td style={{ padding: '12px' }}>
+                          <span style={{
+                            padding: '3px 8px', borderRadius: '100px', fontSize: '0.72rem', fontWeight: 800, textTransform: 'uppercase',
+                            background: statusLabel === 'live' ? 'rgba(102,187,106,0.1)' : statusLabel === 'completed' ? 'rgba(158,158,158,0.15)' : 'rgba(83,109,254,0.1)',
+                            color: statusLabel === 'live' ? 'var(--success)' : statusLabel === 'completed' ? 'var(--text-muted)' : 'var(--primary)'
+                          }}>{statusLabel}</span>
+                        </td>
+                        <td style={{ padding: '12px' }}>
+                          <div style={{ display: 'flex', gap: '8px' }}>
+                            <button
+                              onClick={() => {
+                                setEditingSchedule(sch);
+                                setEventTitle(sch.subject || '');
+                                setEventDesc(sch.description || '');
+                                setStartDate(sch.day || 'Monday');
+                                setStartTime(sch.startTime || '17:30');
+                                setAssignedFacultyId(sch.facultyId || user.uid);
+                                setVenue(sch.room || 'Room 4B');
+                                setSelectedGroups(sch.batch ? [sch.batch] : []);
+                                setSelectedStudents(sch.studentIds || []);
+                                setMeetLink(sch.meetLink || '');
+                                setIsAddScheduleOpen(true);
+                              }}
+                              className="btn btn-secondary"
+                              style={{ padding: '6px', borderRadius: '6px' }}
+                              title="Edit Class Schedule"
+                            >
+                              <Edit2 size={14} />
+                            </button>
+                            <button
+                              onClick={async () => {
+                                if (window.confirm(`Are you sure you want to cancel the class: ${sch.subject} on ${sch.day}?`)) {
+                                  try {
+                                    await deleteDoc(doc(db, 'classSchedules', sch.id));
+                                    triggerToast('Class schedule deleted successfully', 'success');
+                                  } catch (err) {
+                                    console.error(err);
+                                    triggerToast('Failed to delete class schedule', 'danger');
+                                  }
+                                }
+                              }}
+                              className="btn btn-ghost"
+                              style={{ padding: '6px', color: 'var(--danger)', borderRadius: '6px' }}
+                              title="Cancel Class"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {schedulesList.length === 0 && (
+                    <tr>
+                      <td colSpan="7" style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                        No class schedules found.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+
+              {/* Slot Reschedule Requests sub-panel */}
+              <div style={{ marginTop: '24px', borderTop: '1px solid var(--border)', paddingTop: '24px' }}>
+                <h3 style={{ margin: '0 0 12px 0', fontSize: '1rem', fontWeight: 800 }}>Student Reschedule Slot Requests</h3>
+                <table style={{ width: '100%', minWidth: '700px', borderCollapse: 'collapse', textAlign: 'left' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid var(--border)', fontSize: '0.8rem', color: 'var(--text-light)' }}>
+                      <th style={{ padding: '12px' }}>Student</th>
+                      <th style={{ padding: '12px' }}>Requested Timing</th>
+                      <th style={{ padding: '12px' }}>Subject</th>
+                      <th style={{ padding: '12px' }}>Status</th>
+                      <th style={{ padding: '12px' }}>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {slotRequestsList.map(req => (
+                      <tr key={req.id} style={{ borderBottom: '1px solid var(--border)', fontSize: '0.88rem' }}>
+                        <td style={{ padding: '12px', fontWeight: 700 }}>{req.studentName}</td>
+                        <td style={{ padding: '12px' }}>{req.requestedDate} @ {req.requestedTime}</td>
+                        <td style={{ padding: '12px' }}>{req.subject}</td>
+                        <td style={{ padding: '12px' }}>
+                          <span style={{
+                            padding: '3px 8px', borderRadius: '100px', fontSize: '0.72rem', fontWeight: 800, textTransform: 'uppercase',
+                            background: req.status === 'approved' ? 'rgba(102,187,106,0.1)' : req.status === 'rejected' ? 'rgba(239,83,80,0.1)' : 'rgba(255,167,38,0.1)',
+                            color: req.status === 'approved' ? 'var(--success)' : req.status === 'rejected' ? 'var(--danger)' : '#E65100'
+                          }}>{req.status}</span>
+                        </td>
+                        <td style={{ padding: '12px' }}>
+                          {req.status === 'pending' && (
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                              <button
+                                onClick={async () => {
+                                  try {
+                                    const reqDateObj = new Date(req.requestedDate);
+                                    const daysOfWeek = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+                                    const reqDay = daysOfWeek[reqDateObj.getDay()];
+                                    
+                                    const matchingSlot = schedulesList.find(s => s.day === reqDay && s.startTime === req.requestedTime);
+                                    if (matchingSlot) {
+                                      const updatedStudents = [...(matchingSlot.studentIds || [])];
+                                      if (!updatedStudents.includes(req.studentId)) {
+                                        updatedStudents.push(req.studentId);
+                                      }
+                                      await updateDoc(doc(db, 'classSchedules', matchingSlot.id), { studentIds: updatedStudents });
+                                    } else {
+                                      await addDoc(collection(db, 'classSchedules'), {
+                                        day: reqDay,
+                                        startTime: req.requestedTime,
+                                        endTime: computeEndTime(req.requestedTime),
+                                        duration: '1 Hour 30 Minutes',
+                                        facultyId: user.uid,
+                                        facultyName: user.displayName || 'Faculty Mentor',
+                                        room: 'Room 4B / Online',
+                                        subject: req.subject || 'Coaching Class',
+                                        batch: 'class_2_5',
+                                        studentIds: [req.studentId],
+                                        status: 'upcoming',
+                                        createdAt: serverTimestamp()
+                                      });
+                                    }
+                                    
+                                    await updateDoc(doc(db, 'slotRequests', req.id), { status: 'approved' });
+                                    triggerToast('Slot request approved and scheduled!', 'success');
+                                  } catch (err) {
+                                    console.error(err);
+                                    triggerToast('Failed to approve slot request', 'danger');
+                                  }
+                                }}
+                                className="btn btn-success"
+                                style={{ padding: '4px 8px', fontSize: '0.72rem', borderRadius: '4px', background: 'var(--success)', color: 'white', border: 'none' }}
+                              >
+                                Approve
+                              </button>
+                              <button
+                                onClick={async () => {
+                                  try {
+                                    await updateDoc(doc(db, 'slotRequests', req.id), { status: 'rejected' });
+                                    triggerToast('Slot request rejected', 'success');
+                                  } catch (err) {
+                                    console.error(err);
+                                    triggerToast('Failed to reject slot request', 'danger');
+                                  }
+                                }}
+                                className="btn btn-ghost"
+                                style={{ padding: '4px 8px', fontSize: '0.72rem', color: 'var(--danger)', borderRadius: '4px', border: 'none' }}
+                              >
+                                Reject
+                              </button>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                    {slotRequestsList.filter(req => req.status === 'pending').length === 0 && (
+                      <tr>
+                        <td colSpan="5" style={{ padding: '16px', textAlign: 'center', color: 'var(--text-muted)', fontStyle: 'italic', fontSize: '0.8rem' }}>
+                          No pending slot requests.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* ==================== 5b. TABS: MEETINGS ==================== */}
+          {activePanelTab === 'meetings' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800 }}>Scheduled Google Meet Sessions</h3>
+                  <p style={{ margin: '4px 0 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>Create and manage virtual meeting classes and links.</p>
+                </div>
+                {(user?.role === 'admin' || user?.role === 'faculty') && (
+                  <button
+                    onClick={() => {
+                      setMeetTitle('Faculty Doubt Clearing Session');
+                      setMeetDate(new Date().toISOString().split('T')[0]);
+                      setMeetTime(new Date().toTimeString().slice(0, 5));
+                      setIsMeetModalOpen(true);
+                    }}
+                    className="btn btn-primary"
+                    style={{ padding: '8px 16px', fontSize: '0.82rem', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}
+                  >
+                    <Plus size={14} /> Schedule Google Meet
+                  </button>
+                )}
+              </div>
+
+              <table style={{ width: '100%', minWidth: '700px', borderCollapse: 'collapse', textAlign: 'left' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid var(--border)', fontSize: '0.8rem', color: 'var(--text-light)' }}>
+                    <th style={{ padding: '12px' }}>Meeting Session</th>
+                    <th style={{ padding: '12px' }}>Timing</th>
+                    <th style={{ padding: '12px' }}>Host Faculty</th>
+                    <th style={{ padding: '12px' }}>Invitees</th>
+                    <th style={{ padding: '12px' }}>Link</th>
+                    <th style={{ padding: '12px' }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {meetSessionsList.filter(meet => {
+                    const matchesSearch = meet.meetTitle?.toLowerCase().includes(search.toLowerCase()) || meet.faculty?.toLowerCase().includes(search.toLowerCase());
+                    return matchesSearch;
+                  }).map(meet => {
+                    const participantName = meet.meetParticipants === 'All Students' ? 'All Students' : (allUsers.find(u => u.id === meet.meetParticipants)?.displayName || meet.meetParticipants || 'Student');
+                    return (
+                      <tr key={meet.id} style={{ borderBottom: '1px solid var(--border)', fontSize: '0.88rem' }}>
+                        <td style={{ padding: '12px', fontWeight: 700 }}>{meet.meetTitle}</td>
+                        <td style={{ padding: '12px' }}>{meet.meetDate} @ {meet.meetTime}</td>
+                        <td style={{ padding: '12px' }}>{meet.faculty || 'Mentor'}</td>
+                        <td style={{ padding: '12px' }}>{participantName}</td>
+                        <td style={{ padding: '12px' }}>
+                          {meet.meetingLink ? (
+                            <a href={meet.meetingLink} target="_blank" rel="noopener noreferrer" className="btn btn-secondary" style={{ padding: '4px 8px', fontSize: '0.72rem', borderRadius: '6px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                              Join Meet
+                            </a>
+                          ) : '-'}
+                        </td>
+                        <td style={{ padding: '12px' }}>
+                          {(user?.role === 'admin' || meet.createdBy === user?.uid) && (
+                            <button
+                              onClick={async () => {
+                                if (window.confirm(`Delete meet session "${meet.meetTitle}"?`)) {
+                                  try {
+                                    await deleteDoc(doc(db, 'meetSessions', meet.id));
+                                    triggerToast('Meet session cancelled', 'success');
+                                  } catch (err) {
+                                    console.error(err);
+                                    triggerToast('Failed to delete session', 'danger');
+                                  }
+                                }
+                              }}
+                              style={{ color: 'var(--danger)', background: 'none', border: 'none', cursor: 'pointer' }}
+                              title="Delete Session"
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {meetSessionsList.length === 0 && (
+                    <tr>
+                      <td colSpan="6" style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                        No Google Meet sessions scheduled.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
           )}
 
           {/* ==================== 6. TABS: DOUBT CHATS ==================== */}
@@ -4197,7 +5325,7 @@ const AdminDashboard = () => {
           )}
 
           {/* ==================== 8. TABS: ROLES PANEL ==================== */}
-          {activePanelTab === 'roles' && (
+          {(activePanelTab === 'roles' || (activePanelTab === 'settings' && settingsSubTab === 'roles')) && (
             <table style={{ width: '100%', minWidth: '700px', borderCollapse: 'collapse', textAlign: 'left' }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--border)', fontSize: '0.8rem', color: 'var(--text-light)' }}>
@@ -4302,6 +5430,82 @@ const AdminDashboard = () => {
                 </div>
               </div>
 
+              {/* Export Reports Section (Grid Span 1 / -1) */}
+              <div style={{ gridColumn: '1 / -1', background: 'var(--surface)', padding: '24px', borderRadius: '16px', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: '16px', color: 'var(--dark)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(79, 70, 229, 0.1)', color: '#4F46E5', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <Download size={18} />
+                  </div>
+                  <div>
+                    <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 800 }}>Monthly Performance Report Export Center</h3>
+                    <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-muted)' }}>Generate and download Excel-compatible spreadsheets (.xls) containing detailed student profiles, attendance, learning milestones, and invoices.</p>
+                  </div>
+                </div>
+                
+                <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', alignItems: 'flex-end', background: 'var(--white)', padding: '16px', borderRadius: '12px', border: '1px solid var(--border)' }}>
+                  <div style={{ flex: 1, minWidth: '200px' }}>
+                    <label className="form-label" style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '6px', display: 'block' }}>Select Student</label>
+                    <select
+                      id="analytics-export-student"
+                      className="form-input"
+                      style={{ width: '100%', padding: '10px 12px', fontSize: '0.85rem', borderRadius: '8px', border: '1px solid var(--border)' }}
+                    >
+                      <option value="">-- Choose a Student --</option>
+                      {allUsers.filter(u => u.role?.toLowerCase() === 'student' && (user?.role?.toLowerCase() === 'admin' || assignedStudentIds.includes(u.id))).map(u => (
+                        <option key={u.id} value={u.id}>{u.displayName} ({u.studentId || 'No ID'})</option>
+                      ))}
+                    </select>
+                  </div>
+                  
+                  <div style={{ width: '160px' }}>
+                    <label className="form-label" style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '6px', display: 'block' }}>Select Month</label>
+                    <select
+                      id="analytics-export-month"
+                      className="form-input"
+                      style={{ width: '100%', padding: '10px 12px', fontSize: '0.85rem', borderRadius: '8px', border: '1px solid var(--border)' }}
+                    >
+                      {Array.from({ length: 6 }).map((_, i) => {
+                        const d = new Date();
+                        d.setMonth(d.getMonth() - i);
+                        const val = d.toISOString().slice(0, 7);
+                        const label = d.toLocaleString('en-US', { month: 'long', year: 'numeric' });
+                        return <option key={val} value={val}>{label}</option>;
+                      })}
+                    </select>
+                  </div>
+
+                  <button
+                    onClick={async (e) => {
+                      const studentSelect = document.getElementById('analytics-export-student');
+                      const monthSelect = document.getElementById('analytics-export-month');
+                      const sId = studentSelect?.value;
+                      const mStr = monthSelect?.value;
+                      if (!sId) {
+                        showToast('Please select a student to export.', 'warning');
+                        return;
+                      }
+                      
+                      const btn = e.currentTarget;
+                      btn.disabled = true;
+                      const origText = btn.innerHTML;
+                      btn.innerHTML = `<span class="spinner" style="display:inline-block;width:12px;height:12px;border:2px solid white;border-top-color:transparent;border-radius:50%;animation:spin 1s linear infinite;margin-right:6px;"></span> Exporting...`;
+                      try {
+                        await reportService.exportMonthlyReport(sId, mStr, showToast);
+                      } catch (err) {
+                        console.error(err);
+                      } finally {
+                        btn.disabled = false;
+                        btn.innerHTML = origText;
+                      }
+                    }}
+                    className="btn btn-primary"
+                    style={{ padding: '10px 24px', fontSize: '0.85rem', borderRadius: '8px', display: 'inline-flex', alignItems: 'center', gap: '8px', height: '40px' }}
+                  >
+                    <Download size={14} /> Export XLS
+                  </button>
+                </div>
+              </div>
+
             </div>
           )}
 
@@ -4373,7 +5577,7 @@ const AdminDashboard = () => {
           )}
 
           {/* ==================== 11. TABS: SYSTEM HEALTH ==================== */}
-          {activePanelTab === 'system_health' && (
+          {(activePanelTab === 'system_health' || (activePanelTab === 'settings' && settingsSubTab === 'system_health')) && (
             <SystemHealthPanel
               doctorRunning={doctorRunning}
               doctorResults={doctorResults}
@@ -4386,7 +5590,7 @@ const AdminDashboard = () => {
           )}
 
           {/* ==================== 11b. TABS: THEME INSPECTOR ==================== */}
-          {activePanelTab === 'theme_inspector' && (
+          {(activePanelTab === 'theme_inspector' || (activePanelTab === 'settings' && settingsSubTab === 'theme_inspector')) && (
             <ThemeInspector />
           )}
 
@@ -4487,7 +5691,7 @@ const AdminDashboard = () => {
           )}
 
           {/* ==================== 13. TABS: ACCOUNT MIGRATION ==================== */}
-          {activePanelTab === 'account_migration' && user?.role === 'admin' && (
+          {(activePanelTab === 'account_migration' || (activePanelTab === 'settings' && settingsSubTab === 'account_migration')) && user?.role === 'admin' && (
             <div className="card" style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '24px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
                 <div style={{ background: 'rgba(239, 83, 80, 0.1)', padding: '10px', borderRadius: '12px', color: 'var(--danger)' }}>
@@ -4761,6 +5965,223 @@ const AdminDashboard = () => {
                   )}
                 </div>
               )}
+            </div>
+          )}
+
+          {/* ==================== 14. TABS: AADHAAR APPROVALS ==================== */}
+          {(activePanelTab === 'aadhaar' || (activePanelTab === 'settings' && settingsSubTab === 'aadhaar')) && user?.role === 'admin' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
+                <div style={{ background: 'rgba(76, 175, 80, 0.1)', padding: '10px', borderRadius: '12px', color: 'var(--success)' }}>
+                  <ShieldCheck size={24} />
+                </div>
+                <div>
+                  <h2 style={{ fontSize: '1.25rem', fontWeight: 800, margin: 0, color: 'var(--text-primary)' }}>Aadhaar Verification Approvals</h2>
+                  <p style={{ margin: '4px 0 0 0', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                    Review, approve, or reject student Aadhaar profile verification requests in real-time.
+                  </p>
+                </div>
+              </div>
+
+              {/* Filter controls */}
+              <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '8px', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-muted)' }}>Filter Status:</span>
+                {['all', 'pending', 'verified', 'rejected'].map(status => {
+                  const matchCount = allUsers.filter(u => u.role?.toLowerCase() === 'student' && u.aadhaarNumber && (status === 'all' || (u.aadhaarStatus || 'pending') === status)).length;
+                  return (
+                    <button
+                      key={status}
+                      onClick={() => setAadhaarStatusFilter(status)}
+                      style={{
+                        padding: '6px 14px',
+                        borderRadius: '8px',
+                        fontSize: '0.8rem',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        border: '1.5px solid var(--border)',
+                        textTransform: 'capitalize',
+                        transition: 'all 0.2s',
+                        background: aadhaarStatusFilter === status ? 'var(--primary)' : 'white',
+                        color: aadhaarStatusFilter === status ? 'white' : 'var(--text-muted)',
+                        borderColor: aadhaarStatusFilter === status ? 'var(--primary)' : 'var(--border)'
+                      }}
+                    >
+                      {status} ({matchCount})
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Table wrapper */}
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', minWidth: '700px', borderCollapse: 'collapse', textAlign: 'left' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid var(--border)', fontSize: '0.8rem', color: 'var(--text-light)' }}>
+                      <th style={{ padding: '12px' }}>Student Profile</th>
+                      <th style={{ padding: '12px' }}>Aadhaar Number</th>
+                      <th style={{ padding: '12px' }}>Status</th>
+                      <th style={{ padding: '12px' }}>Remarks</th>
+                      <th style={{ padding: '12px' }}>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {allUsers.filter(u => u.role?.toLowerCase() === 'student' && u.aadhaarNumber).filter(s => {
+                      const searchLower = search.toLowerCase();
+                      const nameMatch = s.displayName?.toLowerCase().includes(searchLower) || s.name?.toLowerCase().includes(searchLower);
+                      const idMatch = s.studentId?.toLowerCase().includes(searchLower);
+                      const aadhaarMatch = s.aadhaarNumber?.includes(search);
+                      const matchesSearch = !search || nameMatch || idMatch || aadhaarMatch;
+
+                      const statusMatch = aadhaarStatusFilter === 'all' || (s.aadhaarStatus || 'pending') === aadhaarStatusFilter;
+
+                      return matchesSearch && statusMatch;
+                    }).map(student => {
+                      const status = student.aadhaarStatus || 'pending';
+                      const colorMap = {
+                        'verified': 'var(--success)',
+                        'pending': 'var(--warning)',
+                        'rejected': 'var(--danger)'
+                      };
+                      const bgMap = {
+                        'verified': 'rgba(102,187,106,0.15)',
+                        'pending': 'rgba(255,167,38,0.15)',
+                        'rejected': 'rgba(239,83,80,0.15)'
+                      };
+
+                      return (
+                        <tr key={student.id} style={{ borderBottom: '1px solid var(--border)', fontSize: '0.88rem' }}>
+                          <td style={{ padding: '12px' }}>
+                            <div style={{ fontWeight: 700, color: 'var(--dark)' }}>{student.displayName}</div>
+                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>ID: {student.studentId || 'COMP-TEMP'} | {student.email}</div>
+                          </td>
+                          <td style={{ padding: '12px', fontWeight: 600, fontFamily: 'monospace' }}>
+                            {student.aadhaarNumber}
+                          </td>
+                          <td style={{ padding: '12px' }}>
+                            <span style={{
+                              padding: '4px 10px',
+                              borderRadius: '6px',
+                              fontSize: '0.75rem',
+                              fontWeight: 800,
+                              textTransform: 'uppercase',
+                              color: colorMap[status] || 'var(--text-muted)',
+                              background: bgMap[status] || 'rgba(158,158,158,0.15)',
+                              border: `1px solid ${colorMap[status] || 'var(--border)'}`
+                            }}>{status.toUpperCase()}</span>
+                          </td>
+                          <td style={{ padding: '12px', fontSize: '0.8rem', color: 'var(--text-muted)', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={student.aadhaarRemarks}>
+                            {student.aadhaarRemarks || '-'}
+                          </td>
+                          <td style={{ padding: '12px' }}>
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                              <button
+                                onClick={() => setSelectedStudentDetails({ ...student, joined: 'Jan 2026', roll: 'Roll #COMP' })}
+                                className="btn btn-secondary"
+                                style={{ padding: '6px 12px', fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: '4px', borderRadius: '6px' }}
+                                title="View Detail"
+                              >
+                                <Eye size={12} /> View
+                              </button>
+                              <button
+                                onClick={async () => {
+                                  try {
+                                    const userRef = doc(db, 'users', student.id);
+                                    await updateDoc(userRef, { aadhaarStatus: 'verified', aadhaarRemarks: deleteField ? deleteField() : '' });
+                                    triggerToast(`Aadhaar approved for ${student.displayName}`, 'success');
+                                  } catch (err) {
+                                    console.error("Error approving Aadhaar:", err);
+                                    triggerToast('Failed to approve Aadhaar: ' + err.message, 'danger');
+                                  }
+                                }}
+                                className="btn btn-primary"
+                                style={{ padding: '6px 12px', fontSize: '0.78rem', background: 'var(--success)', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer' }}
+                              >
+                                Approve
+                              </button>
+                              <button
+                                onClick={async () => {
+                                  const remarks = window.prompt(`Enter remarks for rejecting ${student.displayName}'s Aadhaar:`);
+                                  if (remarks === null) return;
+                                  try {
+                                    const userRef = doc(db, 'users', student.id);
+                                    await updateDoc(userRef, { aadhaarStatus: 'rejected', aadhaarRemarks: remarks });
+                                    triggerToast(`Aadhaar rejected for ${student.displayName}`, 'success');
+                                  } catch (err) {
+                                    console.error("Error rejecting Aadhaar:", err);
+                                    triggerToast('Failed to reject Aadhaar: ' + err.message, 'danger');
+                                  }
+                                }}
+                                className="btn btn-secondary"
+                                style={{ padding: '6px 12px', fontSize: '0.78rem', background: 'var(--danger)', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer' }}
+                              >
+                                Reject
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {allUsers.filter(u => u.role?.toLowerCase() === 'student' && u.aadhaarNumber).filter(s => {
+                      const searchLower = search.toLowerCase();
+                      const nameMatch = s.displayName?.toLowerCase().includes(searchLower) || s.name?.toLowerCase().includes(searchLower);
+                      const idMatch = s.studentId?.toLowerCase().includes(searchLower);
+                      const aadhaarMatch = s.aadhaarNumber?.includes(search);
+                      const matchesSearch = !search || nameMatch || idMatch || aadhaarMatch;
+
+                      const statusMatch = aadhaarStatusFilter === 'all' || (s.aadhaarStatus || 'pending') === aadhaarStatusFilter;
+
+                      return matchesSearch && statusMatch;
+                    }).length === 0 && (
+                      <tr>
+                        <td colSpan="5" style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                          No student Aadhaar submissions match this selection.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* ==================== 15. TABS: SETTINGS & DEV PANEL ==================== */}
+          {activePanelTab === 'settings' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
+                <div style={{ background: 'rgba(83,109,254,0.1)', padding: '10px', borderRadius: '12px', color: 'var(--primary)' }}>
+                  <Settings size={24} />
+                </div>
+                <div>
+                  <h2 style={{ fontSize: '1.25rem', fontWeight: 800, margin: 0, color: 'var(--text-primary)' }}>Developer Settings & Panel</h2>
+                  <p style={{ margin: '4px 0 0 0', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                    Access developer settings, manage roles, Aadhaar approvals, system audits, and check system health.
+                  </p>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: '8px', borderBottom: '1px solid var(--border)', paddingBottom: '12px', flexWrap: 'wrap' }}>
+                {[
+                  { key: 'aadhaar', label: 'Aadhaar Approvals' },
+                  { key: 'members', label: 'Management Members' },
+                  { key: 'roles', label: 'Roles Panel' },
+                  { key: 'system_health', label: 'System Health' },
+                  { key: 'theme_inspector', label: 'Theme Inspector' },
+                  { key: 'account_migration', label: 'Account Migration' }
+                ].map(sub => (
+                  <button
+                    key={sub.key}
+                    type="button"
+                    onClick={() => setSettingsSubTab(sub.key)}
+                    style={{
+                      padding: '8px 16px', borderRadius: '8px', fontWeight: 700, fontSize: '0.8rem', cursor: 'pointer', border: 'none',
+                      background: settingsSubTab === sub.key ? 'var(--primary)' : 'var(--surface)',
+                      color: settingsSubTab === sub.key ? 'white' : 'var(--text-muted)'
+                    }}
+                  >
+                    {sub.label}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
 
@@ -5156,31 +6577,61 @@ const AdminDashboard = () => {
                 padding: '4px',
                 margin: '12px 24px',
                 borderRadius: '12px',
-                flexShrink: 0
+                flexShrink: 0,
+                overflowX: 'auto',
+                gap: '4px'
               }}>
                 <button
                   type="button"
                   onClick={() => setDrawerActiveTab('profile')}
                   style={{
-                    flex: 1, padding: '10px', borderRadius: '8px', fontSize: '0.85rem', fontWeight: 700,
+                    flex: 1, padding: '10px 14px', borderRadius: '8px', fontSize: '0.82rem', fontWeight: 700,
                     background: drawerActiveTab === 'profile' ? 'white' : 'transparent',
                     color: drawerActiveTab === 'profile' ? 'var(--dark)' : 'var(--text-muted)',
-                    border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px'
+                    border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+                    whiteSpace: 'nowrap'
                   }}
                 >
-                  <Users size={16} /> Profile & Academics
+                  <Users size={15} /> Info
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDrawerActiveTab('academics')}
+                  style={{
+                    flex: 1, padding: '10px 14px', borderRadius: '8px', fontSize: '0.82rem', fontWeight: 700,
+                    background: drawerActiveTab === 'academics' ? 'white' : 'transparent',
+                    color: drawerActiveTab === 'academics' ? 'var(--dark)' : 'var(--text-muted)',
+                    border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+                    whiteSpace: 'nowrap'
+                  }}
+                >
+                  <GraduationCap size={15} /> Academics
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDrawerActiveTab('timeline')}
+                  style={{
+                    flex: 1, padding: '10px 14px', borderRadius: '8px', fontSize: '0.82rem', fontWeight: 700,
+                    background: drawerActiveTab === 'timeline' ? 'white' : 'transparent',
+                    color: drawerActiveTab === 'timeline' ? 'var(--dark)' : 'var(--text-muted)',
+                    border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+                    whiteSpace: 'nowrap'
+                  }}
+                >
+                  <Calendar size={15} /> Timeline
                 </button>
                 <button
                   type="button"
                   onClick={() => setDrawerActiveTab('chat')}
                   style={{
-                    flex: 1, padding: '10px', borderRadius: '8px', fontSize: '0.85rem', fontWeight: 700,
+                    flex: 1, padding: '10px 14px', borderRadius: '8px', fontSize: '0.82rem', fontWeight: 700,
                     background: drawerActiveTab === 'chat' ? 'white' : 'transparent',
                     color: drawerActiveTab === 'chat' ? 'var(--dark)' : 'var(--text-muted)',
-                    border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px'
+                    border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+                    whiteSpace: 'nowrap'
                   }}
                 >
-                  <MessageSquare size={16} /> Doubt Clearing Chat
+                  <MessageSquare size={15} /> Chat
                 </button>
               </div>
 
@@ -5198,6 +6649,50 @@ const AdminDashboard = () => {
                         <div><strong>Email Address:</strong> {selectedStudentDetails.email || 'N/A'}</div>
                         <div><strong>Phone Number:</strong> {selectedStudentDetails.phone || 'N/A'}</div>
                         <div style={{ gridColumn: 'span 2' }}><strong>Active Course:</strong> {selectedStudentDetails.course || 'N/A'}</div>
+                      </div>
+                    </div>
+
+                    {/* EXPORT MONTHLY REPORT CARD */}
+                    <div style={{ background: 'var(--surface)', padding: '16px', borderRadius: '16px', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      <h4 style={{ margin: 0, fontSize: '0.9rem', fontWeight: 800, color: 'var(--dark)' }}>Performance Reports</h4>
+                      <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-muted)' }}>Generate and download a Microsoft Excel-compatible performance report (.xls) for this student.</p>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <select
+                          id="export-report-month"
+                          defaultValue={new Date().toISOString().slice(0, 7)}
+                          className="form-input"
+                          style={{ padding: '8px 12px', fontSize: '0.82rem', flex: 1, background: 'var(--white)', borderRadius: '8px', border: '1px solid var(--border)' }}
+                        >
+                          {Array.from({ length: 6 }).map((_, i) => {
+                            const d = new Date();
+                            d.setMonth(d.getMonth() - i);
+                            const val = d.toISOString().slice(0, 7);
+                            const label = d.toLocaleString('en-US', { month: 'long', year: 'numeric' });
+                            return <option key={val} value={val}>{label}</option>;
+                          })}
+                        </select>
+                        <button
+                          onClick={async (e) => {
+                            const btn = e.currentTarget;
+                            const selectEl = document.getElementById('export-report-month');
+                            const mStr = selectEl?.value || new Date().toISOString().slice(0, 7);
+                            btn.disabled = true;
+                            const origText = btn.innerHTML;
+                            btn.innerHTML = `<span class="spinner" style="display:inline-block;width:12px;height:12px;border:2px solid white;border-top-color:transparent;border-radius:50%;animation:spin 1s linear infinite;margin-right:6px;"></span> Exporting...`;
+                            try {
+                              await reportService.exportMonthlyReport(selectedStudentDetails.id, mStr, showToast);
+                            } catch (err) {
+                              console.error(err);
+                            } finally {
+                              btn.disabled = false;
+                              btn.innerHTML = origText;
+                            }
+                          }}
+                          className="btn btn-primary"
+                          style={{ padding: '8px 16px', fontSize: '0.82rem', borderRadius: '8px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                        >
+                          <Download size={14} /> Export Report
+                        </button>
                       </div>
                     </div>
 
@@ -5270,55 +6765,161 @@ const AdminDashboard = () => {
                     )}
 
                     {/* Fees Management Block */}
-                    <div style={{ borderTop: '1px solid var(--border)', paddingTop: '16px', marginTop: '16px' }}>
-                      <h4 style={{ margin: '0 0 12px 0', fontWeight: 800, fontSize: '0.95rem', color: 'var(--dark)' }}>Tuition Fee Settings</h4>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', background: 'var(--surface)', padding: '16px', borderRadius: '12px', border: '1px solid var(--border)' }}>
-                        <div>
-                          <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', fontWeight: 700, marginBottom: '4px' }}>MONTHLY TUITION TARGET</div>
-                          <div style={{ fontSize: '1.2rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <span>₹{((selectedStudentDetails.feeTarget !== undefined && selectedStudentDetails.feeTarget !== null) ? Number(selectedStudentDetails.feeTarget) : (Number(selectedStudentDetails.monthlyFee) || 500)).toLocaleString()}</span>
-                          </div>
-                        </div>
-                        <div>
-                          <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', fontWeight: 700, marginBottom: '4px' }}>CURRENT STATUS</div>
-                          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '4px' }}>
-                            <span style={{
-                              padding: '4px 10px',
-                              borderRadius: '6px',
-                              fontSize: '0.75rem',
-                              fontWeight: 800,
-                              textTransform: 'uppercase',
-                              color: (selectedStudentDetails.feeStatus || 'pending').toLowerCase() === 'paid' ? 'var(--success)' : 'var(--danger)',
-                              background: (selectedStudentDetails.feeStatus || 'pending').toLowerCase() === 'paid' ? 'rgba(102,187,106,0.15)' : 'rgba(239,83,80,0.15)',
-                              border: `1px solid ${(selectedStudentDetails.feeStatus || 'pending').toLowerCase() === 'paid' ? 'var(--success)' : 'var(--danger)'}`
-                            }}>{(selectedStudentDetails.feeStatus || 'pending').toUpperCase()}</span>
-                            
-                            {user?.role === 'admin' && (
-                              <div style={{ display: 'flex', gap: '4px' }}>
-                                <button
-                                  onClick={async () => {
-                                    await handleUpdateFeeStatus(selectedStudentDetails.id, 'paid');
-                                    setSelectedStudentDetails(prev => ({ ...prev, feeStatus: 'paid' }));
-                                  }}
-                                  style={{ padding: '4px 8px', background: 'var(--success)', color: 'white', border: 'none', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 700, cursor: 'pointer' }}
-                                >
-                                  Paid
-                                </button>
-                                <button
-                                  onClick={async () => {
-                                    await handleUpdateFeeStatus(selectedStudentDetails.id, 'pending');
-                                    setSelectedStudentDetails(prev => ({ ...prev, feeStatus: 'pending' }));
-                                  }}
-                                  style={{ padding: '4px 8px', background: '#F59E0B', color: 'white', border: 'none', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 700, cursor: 'pointer' }}
-                                >
-                                  Pending
-                                </button>
-                              </div>
+                    {(() => {
+                      const currentMonthStr = new Date().toISOString().slice(0, 7);
+                      const studentFeeRecord = allFees.find(f => f.studentId === selectedStudentDetails.id && f.month === currentMonthStr);
+                      const currentMonthDue = studentFeeRecord ? studentFeeRecord.amountDue : getStudentMonthlyFee(selectedStudentDetails);
+                      const currentMonthStatus = studentFeeRecord ? studentFeeRecord.status : 'pending';
+
+                      return (
+                        <div style={{ borderTop: '1px solid var(--border)', paddingTop: '16px', marginTop: '16px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                            <h4 style={{ margin: 0, fontWeight: 800, fontSize: '0.95rem', color: 'var(--dark)' }}>Tuition Fee Settings</h4>
+                            {!isEditingDrawerFees && user?.role === 'admin' && (
+                              <button
+                                onClick={() => {
+                                  setDrawerFeeTarget(currentMonthDue);
+                                  setDrawerTotalFee(selectedStudentDetails.feesAmount || currentMonthDue);
+                                  setDrawerAmountPaid(selectedStudentDetails.paidAmount || 0);
+                                  setDrawerFeeError('');
+                                  setIsEditingDrawerFees(true);
+                                }}
+                                className="btn-edit"
+                                style={{ fontSize: '0.78rem', padding: '4px 10px', background: 'rgba(83,109,254,0.08)', border: '1px solid rgba(83,109,254,0.2)', borderRadius: '6px', color: 'var(--primary)', cursor: 'pointer' }}
+                              >
+                                Edit Target
+                              </button>
                             )}
                           </div>
+
+                          {isEditingDrawerFees ? (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', background: 'var(--surface)', padding: '16px', borderRadius: '12px', border: '1px solid var(--border)' }}>
+                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                                <div>
+                                  <label className="form-label" style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Monthly Target (₹)</label>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    className="form-input"
+                                    value={drawerFeeTarget}
+                                    onChange={e => setDrawerFeeTarget(e.target.value)}
+                                    style={{ padding: '6px 10px', fontSize: '0.8rem', width: '100%', background: 'var(--white)' }}
+                                  />
+                                </div>
+                                <div>
+                                  <label className="form-label" style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Total Billed (₹)</label>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    className="form-input"
+                                    value={drawerTotalFee}
+                                    onChange={e => setDrawerTotalFee(e.target.value)}
+                                    style={{ padding: '6px 10px', fontSize: '0.8rem', width: '100%', background: 'var(--white)' }}
+                                  />
+                                </div>
+                              </div>
+
+                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                                <div>
+                                  <label className="form-label" style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Amount Paid (₹)</label>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    className="form-input"
+                                    value={drawerAmountPaid}
+                                    onChange={e => setDrawerAmountPaid(e.target.value)}
+                                    style={{ padding: '6px 10px', fontSize: '0.8rem', width: '100%', background: 'var(--white)' }}
+                                  />
+                                </div>
+                                <div>
+                                  <label className="form-label" style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Outstanding Balance</label>
+                                  <div style={{ padding: '8px 10px', fontSize: '0.82rem', fontWeight: 700, color: 'var(--danger)', background: 'var(--white)', borderRadius: '8px', border: '1px solid var(--border)', height: '34px', display: 'flex', alignItems: 'center' }}>
+                                    ₹{Math.max(0, Number(drawerTotalFee) - Number(drawerAmountPaid)).toLocaleString()}
+                                  </div>
+                                </div>
+                              </div>
+
+                              {drawerFeeError && (
+                                <div style={{ fontSize: '0.75rem', color: 'var(--danger)', fontWeight: 600 }}>
+                                  ⚠️ {drawerFeeError}
+                                </div>
+                              )}
+
+                              <div style={{ display: 'flex', gap: '8px', marginTop: '4px', justifyContent: 'flex-end' }}>
+                                <button
+                                  type="button"
+                                  onClick={() => setIsEditingDrawerFees(false)}
+                                  className="btn btn-secondary"
+                                  style={{ padding: '6px 14px', fontSize: '0.78rem', borderRadius: '8px' }}
+                                  disabled={isSavingDrawerFees}
+                                >
+                                  Cancel
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleSaveDrawerFees(selectedStudentDetails.id)}
+                                  className="btn btn-primary"
+                                  style={{ padding: '6px 14px', fontSize: '0.78rem', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}
+                                  disabled={isSavingDrawerFees}
+                                >
+                                  {isSavingDrawerFees ? (
+                                    <>
+                                      <span className="spinner" style={{ display: 'inline-block', width: '12px', height: '12px', border: '2px solid white', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite' }}></span>
+                                      Saving...
+                                    </>
+                                  ) : 'Save Changes'}
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', background: 'var(--surface)', padding: '16px', borderRadius: '12px', border: '1px solid var(--border)' }}>
+                              <div>
+                                <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', fontWeight: 700, marginBottom: '4px' }}>MONTHLY TUITION TARGET</div>
+                                <div style={{ fontSize: '1.2rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                  <span>₹{currentMonthDue.toLocaleString()}</span>
+                                </div>
+                              </div>
+                              <div>
+                                <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', fontWeight: 700, marginBottom: '4px' }}>CURRENT STATUS</div>
+                                <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '4px' }}>
+                                  <span style={{
+                                    padding: '4px 10px',
+                                    borderRadius: '6px',
+                                    fontSize: '0.75rem',
+                                    fontWeight: 800,
+                                    textTransform: 'uppercase',
+                                    color: currentMonthStatus === 'paid' ? 'var(--success)' : 'var(--danger)',
+                                    background: currentMonthStatus === 'paid' ? 'rgba(102,187,106,0.15)' : 'rgba(239,83,80,0.15)',
+                                    border: `1px solid ${currentMonthStatus === 'paid' ? 'var(--success)' : 'var(--danger)'}`
+                                  }}>{currentMonthStatus.toUpperCase()}</span>
+                                  
+                                  {user?.role === 'admin' && (
+                                    <div style={{ display: 'flex', gap: '4px' }}>
+                                      <button
+                                        onClick={async () => {
+                                          await handleUpdateFeeStatus(selectedStudentDetails.id, 'paid');
+                                        }}
+                                        style={{ padding: '4px 8px', background: 'var(--success)', color: 'white', border: 'none', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 700, cursor: 'pointer' }}
+                                      >
+                                        Paid
+                                      </button>
+                                      <button
+                                        onClick={async () => {
+                                          await handleUpdateFeeStatus(selectedStudentDetails.id, 'pending');
+                                        }}
+                                        style={{ padding: '4px 8px', background: '#F59E0B', color: 'white', border: 'none', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 700, cursor: 'pointer' }}
+                                      >
+                                        Pending
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          )}
                         </div>
-                      </div>
-                    </div>
+                      );
+                    })()}
 
                     {/* Academic Progress & Grades */}
                     {(user?.role === 'admin' || user?.role === 'faculty') && (
@@ -5490,8 +7091,305 @@ const AdminDashboard = () => {
                         </div>
                       )}
                     </div>
+
+                    {/* Aadhaar Verification Block */}
+                    {user?.role === 'admin' && (
+                      <div style={{ borderTop: '1px solid var(--border)', paddingTop: '16px', marginTop: '16px' }}>
+                        <h4 style={{ margin: '0 0 12px 0', fontWeight: 800, fontSize: '0.95rem', color: 'var(--dark)' }}>Aadhaar Verification</h4>
+                        <div style={{ background: 'var(--surface)', padding: '16px', borderRadius: '12px', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                            <div>
+                              <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', fontWeight: 700, marginBottom: '4px' }}>AADHAAR NUMBER</div>
+                              <div style={{ fontSize: '0.95rem', fontWeight: 800 }}>
+                                {currentStudentDetails.aadhaarNumber ? currentStudentDetails.aadhaarNumber : 'Not submitted'}
+                              </div>
+                            </div>
+                            <div>
+                              <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', fontWeight: 700, marginBottom: '4px' }}>STATUS</div>
+                              <div>
+                                <span style={{
+                                  display: 'inline-block',
+                                  padding: '4px 10px',
+                                  borderRadius: '6px',
+                                  fontSize: '0.75rem',
+                                  fontWeight: 800,
+                                  textTransform: 'uppercase',
+                                  color: (currentStudentDetails.aadhaarStatus === 'verified') ? 'var(--success)' : (currentStudentDetails.aadhaarStatus === 'pending' || !currentStudentDetails.aadhaarStatus) ? 'var(--warning)' : 'var(--danger)',
+                                  background: (currentStudentDetails.aadhaarStatus === 'verified') ? 'rgba(102,187,106,0.15)' : (currentStudentDetails.aadhaarStatus === 'pending' || !currentStudentDetails.aadhaarStatus) ? 'rgba(255,167,38,0.15)' : 'rgba(239,83,80,0.15)',
+                                  border: `1px solid ${(currentStudentDetails.aadhaarStatus === 'verified') ? 'var(--success)' : (currentStudentDetails.aadhaarStatus === 'pending' || !currentStudentDetails.aadhaarStatus) ? 'var(--warning)' : 'var(--danger)'}`
+                                }}>
+                                  {currentStudentDetails.aadhaarNumber ? (currentStudentDetails.aadhaarStatus || 'PENDING').toUpperCase() : 'NOT SUBMITTED'}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {currentStudentDetails.aadhaarNumber && (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', borderTop: '1px solid var(--border)', paddingTop: '12px' }}>
+                              {currentStudentDetails.aadhaarStatus === 'rejected' && currentStudentDetails.aadhaarRemarks && (
+                                <div style={{ fontSize: '0.8rem', color: 'var(--danger)', marginBottom: '4px' }}>
+                                  <strong>Reason for rejection:</strong> {currentStudentDetails.aadhaarRemarks}
+                                </div>
+                              )}
+                              <div style={{ display: 'flex', gap: '8px' }}>
+                                <button
+                                  onClick={async () => {
+                                    try {
+                                      const userRef = doc(db, 'users', currentStudentDetails.id);
+                                      await updateDoc(userRef, { aadhaarStatus: 'verified', aadhaarRemarks: deleteField ? deleteField() : '' });
+                                      triggerToast(`Aadhaar approved for ${currentStudentDetails.displayName}`, 'success');
+                                    } catch (err) {
+                                      console.error("Error verifying Aadhaar:", err);
+                                      triggerToast('Failed to verify Aadhaar: ' + err.message, 'danger');
+                                    }
+                                  }}
+                                  className="btn btn-primary"
+                                  style={{ padding: '6px 12px', fontSize: '0.78rem', background: 'var(--success)', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer' }}
+                                >
+                                  Approve Aadhaar
+                                </button>
+                                <button
+                                  onClick={async () => {
+                                    const remarks = window.prompt(`Enter remarks for rejecting ${currentStudentDetails.displayName}'s Aadhaar:`);
+                                    if (remarks === null) return;
+                                    try {
+                                      const userRef = doc(db, 'users', currentStudentDetails.id);
+                                      await updateDoc(userRef, { aadhaarStatus: 'rejected', aadhaarRemarks: remarks });
+                                      triggerToast(`Aadhaar rejected for ${currentStudentDetails.displayName}`, 'success');
+                                    } catch (err) {
+                                      console.error("Error rejecting Aadhaar:", err);
+                                      triggerToast('Failed to reject Aadhaar: ' + err.message, 'danger');
+                                    }
+                                  }}
+                                  className="btn btn-secondary"
+                                  style={{ padding: '6px 12px', fontSize: '0.78rem', background: 'var(--danger)', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer' }}
+                                >
+                                  Reject Aadhaar
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
+
+                {/* TAB 1.5: ACADEMICS & ACADEMIC PERFORMANCE */}
+                {drawerActiveTab === 'academics' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                    {/* Metrics grid */}
+                    {(() => {
+                      const studentAttendance = attendanceLogs.filter(log => log.studentId === selectedStudentDetails.id || log.studentName === selectedStudentDetails.displayName);
+                      const present = studentAttendance.filter(l => l.status === 'present').length;
+                      const attRate = studentAttendance.length > 0 ? `${Math.round((present / studentAttendance.length) * 100)}%` : '95% (Est)';
+                      
+                      const compAssignments = drawerAssignments.filter(a => a.status?.toLowerCase() === 'completed' || a.status?.toLowerCase() === 'graded').length;
+                      
+                      return (
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
+                          <div style={{ background: 'var(--surface)', padding: '14px', borderRadius: '12px', border: '1px solid var(--border)', textAlign: 'center' }}>
+                            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600, marginBottom: '4px' }}>Attendance Rate</div>
+                            <div style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--primary)' }}>{attRate}</div>
+                          </div>
+                          <div style={{ background: 'var(--surface)', padding: '14px', borderRadius: '12px', border: '1px solid var(--border)', textAlign: 'center' }}>
+                            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600, marginBottom: '4px' }}>Assignments Done</div>
+                            <div style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--success)' }}>{compAssignments} / {drawerAssignments.length || 0}</div>
+                          </div>
+                          <div style={{ background: 'var(--surface)', padding: '14px', borderRadius: '12px', border: '1px solid var(--border)', textAlign: 'center' }}>
+                            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600, marginBottom: '4px' }}>Tests Attempted</div>
+                            <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#8b5cf6' }}>{drawerAttempts.length}</div>
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                    {/* Assignments sub-section */}
+                    <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: '16px', padding: '16px' }}>
+                      <h4 style={{ margin: '0 0 12px 0', fontSize: '0.9rem', fontWeight: 800, color: 'var(--dark)' }}>Assignments Portfolio</h4>
+                      {drawerAssignmentsLoading ? (
+                        <div style={{ display: 'flex', justifyContent: 'center', padding: '12px 0' }}><span className="spinner" style={{ width: 16, height: 16, border: '2px solid var(--primary)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite' }} /></div>
+                      ) : drawerAssignments.length === 0 ? (
+                        <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-muted)' }}>No assignments assigned to this student yet.</p>
+                      ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                          {drawerAssignments.map((a, i) => (
+                            <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', background: 'var(--surface)', borderRadius: '8px', border: '1px solid var(--border)' }}>
+                              <div>
+                                <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--dark)' }}>{a.title}</div>
+                                <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '2px' }}>Due: {a.dueDate}</div>
+                              </div>
+                              <span style={{
+                                padding: '2px 8px', borderRadius: '100px', fontSize: '0.65rem', fontWeight: 800, textTransform: 'uppercase',
+                                background: a.status?.toLowerCase() === 'completed' || a.status?.toLowerCase() === 'graded' ? 'rgba(16, 185, 129, 0.08)' : 'rgba(239, 83, 80, 0.08)',
+                                color: a.status?.toLowerCase() === 'completed' || a.status?.toLowerCase() === 'graded' ? 'var(--success)' : 'var(--danger)'
+                              }}>{a.status || 'Pending'}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Test Results sub-section */}
+                    <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: '16px', padding: '16px' }}>
+                      <h4 style={{ margin: '0 0 12px 0', fontSize: '0.9rem', fontWeight: 800, color: 'var(--dark)' }}>Practice Test Scores</h4>
+                      {drawerAttemptsLoading ? (
+                        <div style={{ display: 'flex', justifyContent: 'center', padding: '12px 0' }}><span className="spinner" style={{ width: 16, height: 16, border: '2px solid var(--primary)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 1s linear infinite' }} /></div>
+                      ) : drawerAttempts.length === 0 ? (
+                        <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-muted)' }}>No test attempts recorded yet.</p>
+                      ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                          {drawerAttempts.map((at, i) => (
+                            <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', background: 'var(--surface)', borderRadius: '8px', border: '1px solid var(--border)' }}>
+                              <div>
+                                <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--dark)' }}>{at.testTitle || 'Untitled Test'}</div>
+                                <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '2px' }}>Time taken: {Math.round(at.timeTaken / 60)} min</div>
+                              </div>
+                              <div style={{ textAlign: 'right' }}>
+                                <div style={{ fontSize: '0.82rem', fontWeight: 800, color: 'var(--primary)' }}>{at.score} / {at.totalQuestions || 10}</div>
+                                <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginTop: '2px' }}>{at.submittedAt ? (at.submittedAt.toDate ? at.submittedAt.toDate().toLocaleDateString('en-IN') : new Date(at.submittedAt).toLocaleDateString('en-IN')) : ''}</div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* TAB 1.6: CHRONOLOGICAL ACTIVITY TIMELINE */}
+                {drawerActiveTab === 'timeline' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                    
+                    {/* Visual Learning Roadmap progress */}
+                    <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: '16px', padding: '16px' }}>
+                      <h4 style={{ margin: '0 0 12px 0', fontSize: '0.9rem', fontWeight: 800, color: 'var(--dark)' }}>LMS Learning Journey</h4>
+                      {(() => {
+                        const roadmapSteps = [
+                          { label: 'Admission', active: true },
+                          { label: 'Basic Coding', active: true },
+                          { label: 'Python Core', active: selectedStudentDetails.course?.includes('Python') || selectedStudentDetails.course?.includes('Coding') },
+                          { label: 'Advanced Projects', active: selectedStudentDetails.course?.includes('Advance') },
+                          { label: 'Internship', active: false },
+                          { label: 'Placements', active: false }
+                        ];
+
+                        return (
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'relative', padding: '10px 0' }}>
+                            <div style={{ position: 'absolute', top: '24px', left: '10px', right: '10px', height: '3px', background: 'var(--border)', zIndex: 1 }} />
+                            {roadmapSteps.map((step, idx) => (
+                              <div key={idx} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', zIndex: 2, flex: 1 }}>
+                                <div style={{
+                                  width: '30px',
+                                  height: '30px',
+                                  borderRadius: '50%',
+                                  background: step.active ? 'var(--primary)' : 'white',
+                                  border: step.active ? '2px solid var(--primary)' : '2px solid var(--border)',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  color: step.active ? 'white' : 'var(--text-muted)',
+                                  fontWeight: 800,
+                                  fontSize: '0.75rem',
+                                  boxShadow: '0 2px 4px rgba(0,0,0,0.05)'
+                                }}>
+                                  {idx + 1}
+                                </div>
+                                <span style={{ fontSize: '0.65rem', fontWeight: 700, color: step.active ? 'var(--dark)' : 'var(--text-muted)', marginTop: '8px', textAlign: 'center' }}>
+                                  {step.label}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      })()}
+                    </div>
+
+                    {/* Timeline logs */}
+                    <div style={{ background: 'var(--white)', border: '1px solid var(--border)', borderRadius: '16px', padding: '16px' }}>
+                      <h4 style={{ margin: '0 0 16px 0', fontSize: '0.9rem', fontWeight: 800, color: 'var(--dark)' }}>Chronological Activity Log</h4>
+                      {(() => {
+                        const events = [];
+
+                        // 1. Add attendance marked events
+                        const studentAttendance = attendanceLogs.filter(log => log.studentId === selectedStudentDetails.id || log.studentName === selectedStudentDetails.displayName);
+                        studentAttendance.forEach(a => {
+                          events.push({
+                            title: `Attendance Marked: ${a.status?.toUpperCase()}`,
+                            subtitle: `${a.subject} mentor ${a.faculty || 'Mentor'}`,
+                            date: a.date ? new Date(a.date) : new Date(),
+                            dateStr: a.date || '',
+                            type: 'attendance',
+                            color: a.status === 'present' ? 'var(--success)' : 'var(--danger)'
+                          });
+                        });
+
+                        // 2. Add test attempts
+                        drawerAttempts.forEach(at => {
+                          const subDate = at.submittedAt?.toDate ? at.submittedAt.toDate() : new Date(at.submittedAt);
+                          events.push({
+                            title: `Submitted practice Test: ${at.testTitle}`,
+                            subtitle: `Scored ${at.score}/${at.totalQuestions || 10} (${Math.round((at.score / (at.totalQuestions || 10)) * 100)}%)`,
+                            date: subDate,
+                            dateStr: subDate.toLocaleDateString('en-IN'),
+                            type: 'test',
+                            color: '#8b5cf6'
+                          });
+                        });
+
+                        // 3. Add assignment submissions
+                        drawerAssignments.forEach(asg => {
+                          if (asg.status?.toLowerCase() === 'completed' || asg.status?.toLowerCase() === 'graded') {
+                            events.push({
+                              title: `Completed Homework Assignment`,
+                              subtitle: asg.title,
+                              date: new Date(),
+                              dateStr: 'Recent',
+                              type: 'assignment',
+                              color: 'var(--success)'
+                            });
+                          }
+                        });
+
+                        // Sort by date desc
+                        events.sort((a, b) => b.date - a.date);
+
+                        if (events.length === 0) {
+                          return <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-muted)' }}>No activities recorded yet.</p>;
+                        }
+
+                        return (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', borderLeft: '2px dashed var(--border)', marginLeft: '12px', paddingLeft: '16px', position: 'relative' }}>
+                            {events.map((e, idx) => (
+                              <div key={idx} style={{ position: 'relative' }}>
+                                <div style={{
+                                  position: 'absolute',
+                                  left: '-24px',
+                                  top: '4px',
+                                  width: '12px',
+                                  height: '12px',
+                                  borderRadius: '50%',
+                                  background: e.color,
+                                  border: '2px solid white',
+                                  boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+                                }} />
+                                <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--dark)' }}>
+                                  {e.title}
+                                </div>
+                                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                                  {e.subtitle}
+                                </div>
+                                <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginTop: '4px', fontWeight: 600 }}>
+                                  {e.dateStr}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      })()}
+                  </div>
+                </div>
+              )}
                 
                 {/* TAB 2: DOUBT MESSAGING STREAM */}
                 {drawerActiveTab === 'chat' && (
@@ -5801,6 +7699,168 @@ const AdminDashboard = () => {
           <div style={{ display: 'flex', gap: '12px', marginTop: '10px' }}>
             <button type="submit" className="btn btn-primary" style={{ flex: 1 }}>Record Payment</button>
             <button type="button" onClick={() => setIsCollectPaymentOpen(false)} className="btn btn-secondary" style={{ flex: 1 }}>Cancel</button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* ==================== MODAL: SCHEDULE CLASS SLOT ==================== */}
+      <Modal isOpen={isAddScheduleOpen} onClose={() => setIsAddScheduleOpen(false)} title={editingSchedule ? "Edit Class Schedule" : "Schedule New Class Slot"}>
+        <form onSubmit={handleSaveSchedule} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <div>
+            <label className="form-label">Subject / Topic Title</label>
+            <input
+              type="text"
+              required
+              className="form-input"
+              value={eventTitle}
+              onChange={e => setEventTitle(e.target.value)}
+              placeholder="e.g. Basic Coding: Python loops"
+            />
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }} className="grid-2-col-mobile">
+            <div>
+              <label className="form-label">Day of Week</label>
+              <select
+                required
+                className="form-input"
+                value={startDate}
+                onChange={e => setStartDate(e.target.value)}
+                style={{ background: 'var(--white)' }}
+              >
+                {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map(d => (
+                  <option key={d} value={d}>{d}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="form-label">Faculty Mentor</label>
+              <select
+                required
+                className="form-input"
+                value={assignedFacultyId}
+                onChange={e => setAssignedFacultyId(e.target.value)}
+                style={{ background: 'var(--white)' }}
+              >
+                <option value="" disabled>Choose Faculty</option>
+                {facultyList.map(f => (
+                  <option key={f.id} value={f.id}>{f.displayName || f.name}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }} className="grid-2-col-mobile">
+            <div>
+              <label className="form-label">Start Time</label>
+              <input
+                type="time"
+                required
+                className="form-input"
+                value={startTime}
+                onChange={e => setStartTime(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="form-label">End Time (Auto: 1h 30m duration)</label>
+              <input
+                type="text"
+                disabled
+                className="form-input"
+                value={computeEndTime(startTime)}
+              />
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }} className="grid-2-col-mobile">
+            <div>
+              <label className="form-label">Target Group / Batch</label>
+              <select
+                required
+                className="form-input"
+                value={selectedGroups[0] || ''}
+                onChange={e => setSelectedGroups([e.target.value])}
+                style={{ background: 'var(--white)' }}
+              >
+                <option value="" disabled>Choose Group</option>
+                <option value="class_2_5">Class 2-5</option>
+                <option value="class_6_8">Class 6-8</option>
+                <option value="class_9_10">Class 9-10</option>
+                <option value="class_11_12_science">Class 11-12 Sci</option>
+                <option value="class_11_12_application">Class 11-12 App</option>
+              </select>
+            </div>
+            <div>
+              <label className="form-label">Room / Online</label>
+              <input
+                type="text"
+                required
+                className="form-input"
+                value={venue}
+                onChange={e => setVenue(e.target.value)}
+                placeholder="e.g. Room 4B, Campus"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="form-label">Google Meet Link (Optional)</label>
+            <input
+              type="url"
+              className="form-input"
+              value={meetLink}
+              onChange={e => setMeetLink(e.target.value)}
+              placeholder="https://meet.google.com/abc-defg-hij"
+            />
+          </div>
+
+          <div>
+            <label className="form-label" style={{ fontWeight: 800 }}>Assign Individual Students</label>
+            <div style={{
+              maxHeight: '140px', overflowY: 'auto', border: '1px solid var(--border)',
+              borderRadius: '8px', padding: '8px', display: 'flex', flexDirection: 'column', gap: '6px',
+              marginTop: '6px', background: '#F9FAFB'
+            }}>
+              {studentsList.map(stud => {
+                const isSelected = selectedStudents.includes(stud.id);
+                return (
+                  <label key={stud.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.8rem', cursor: 'pointer', userSelect: 'none' }}>
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => {
+                        if (isSelected) {
+                          setSelectedStudents(selectedStudents.filter(id => id !== stud.id));
+                        } else {
+                          setSelectedStudents([...selectedStudents, stud.id]);
+                        }
+                      }}
+                      style={{ cursor: 'pointer' }}
+                    />
+                    <span>{stud.displayName} ({stud.course || 'No course'})</span>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+
+          <div>
+            <label className="form-label">Lesson Notes / Description</label>
+            <textarea
+              className="form-input"
+              value={eventDesc}
+              onChange={e => setEventDesc(e.target.value)}
+              placeholder="Lesson topics or checklist for this class slot"
+              rows={2}
+              style={{ resize: 'vertical' }}
+            />
+          </div>
+
+          <div style={{ display: 'flex', gap: '12px', marginTop: '10px' }}>
+            <button type="submit" className="btn btn-primary" style={{ flex: 1 }}>
+              {editingSchedule ? 'Save Changes' : 'Schedule Class'}
+            </button>
+            <button type="button" onClick={() => setIsAddScheduleOpen(false)} className="btn btn-secondary" style={{ flex: 1 }}>Cancel</button>
           </div>
         </form>
       </Modal>

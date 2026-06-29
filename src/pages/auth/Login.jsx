@@ -11,6 +11,7 @@ import {
   updateProfile,
   sendPasswordResetEmail,
   PhoneAuthProvider,
+  EmailAuthProvider,
   linkWithCredential
 } from 'firebase/auth';
 import { collection, query, where, getDocs, doc, serverTimestamp } from 'firebase/firestore';
@@ -69,7 +70,7 @@ const Spinner = ({ size = 20 }) => (
 );
 
 const Login = () => {
-  const { user, loading: authLoading, registerMobileUser } = useAuth();
+  const { user, loading: authLoading, registerMobileUser, completeUserProfile } = useAuth();
   const navigate = useNavigate();
 
   // Login view controller: 'login' | 'register' | 'verify' | 'success' | 'otp-verify' | 'register-profile' | 'forgot' | 'reset-success'
@@ -78,7 +79,25 @@ const Login = () => {
   const [loginMethod, setLoginMethod] = useState('email');
 
   // Input states
-  const [form, setForm] = useState({ email: '', password: '', name: '' });
+  const [form, setForm] = useState({
+    email: '',
+    password: '',
+    name: '',
+    phone: '',
+    dob: '',
+    gender: '',
+    address: '',
+    district: '',
+    state: '',
+    pin: '',
+    emergencyContact: '',
+    school: '',
+    class: '',
+    course: '',
+    guardianName: '',
+    guardianPhone: '',
+    aadhaarNumber: ''
+  });
   const [phoneNumber, setPhoneNumber] = useState('');
   const [countryCode, setCountryCode] = useState('+91');
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
@@ -87,6 +106,22 @@ const Login = () => {
   const [pendingPhoneCredential, setPendingPhoneCredential] = useState(null);
   const [pendingLinkEmail, setPendingLinkEmail] = useState('');
   const [linkPassword, setLinkPassword] = useState('');
+
+  // Profile linking states
+  const [linkPhone, setLinkPhone] = useState('');
+  const [linkOtp, setLinkOtp] = useState(['', '', '', '', '', '']);
+  const [linkOTPSent, setLinkOTPSent] = useState(false);
+  const [linkConfirmationResult, setLinkConfirmationResult] = useState(null);
+  const [linkTimer, setLinkTimer] = useState(0);
+  const [linkLoading, setLinkLoading] = useState(false);
+  const [linkStatus, setLinkStatus] = useState('');
+  const [phoneLinked, setPhoneLinked] = useState(false);
+
+  const [linkEmail, setLinkEmail] = useState('');
+  const [linkEmailPassword, setLinkEmailPassword] = useState('');
+  const [emailLinked, setEmailLinked] = useState(false);
+  const [emailVerifySent, setEmailVerifySent] = useState(false);
+  const [emailVerifiedLocal, setEmailVerifiedLocal] = useState(false);
 
   // UI/Status states
   const [showPass, setShowPass] = useState(false);
@@ -104,18 +139,67 @@ const Login = () => {
 
   // Refs for OTP boxes
   const otpRefs = useRef([]);
+  const linkOtpRefs = useRef([]);
   const nameInputRef = useRef(null);
 
   useEffect(() => {
     if (!authLoading && user) {
-      if (user.needsRegistration) {
+      if (user.needsRegistration || !user.profileCompleted) {
         setView('register-profile');
+        const currentUser = auth.currentUser;
+        if (currentUser) {
+          const isEmail = currentUser.providerData.some(p => p.providerId === 'password');
+          const isPhone = currentUser.providerData.some(p => p.providerId === 'phone');
+          
+          setForm(f => ({
+            ...f,
+            name: f.name || currentUser.displayName || user.displayName || '',
+            email: f.email || currentUser.email || user.email || '',
+            phone: f.phone || currentUser.phoneNumber || user.phone || user.phoneNumber || '',
+            dob: f.dob || user.dob || '',
+            gender: f.gender || user.gender || '',
+            address: f.address || user.address || '',
+            district: f.district || user.district || '',
+            state: f.state || user.state || '',
+            pin: f.pin || user.pin || '',
+            emergencyContact: f.emergencyContact || user.emergencyContact || '',
+            school: f.school || user.school || '',
+            class: f.class || user.class || '',
+            course: f.course || user.course || '',
+            guardianName: f.guardianName || user.guardianName || '',
+            guardianPhone: f.guardianPhone || user.guardianPhone || '',
+            aadhaarNumber: f.aadhaarNumber || user.aadhaarNumber || ''
+          }));
+          
+          if (isEmail) {
+            if (currentUser.phoneNumber || user.phoneNumber || user.phone) {
+              setPhoneLinked(true);
+            }
+          }
+          if (isPhone) {
+            if (currentUser.email || user.email) {
+              setEmailLinked(true);
+              if (currentUser.emailVerified || user.emailVerified) {
+                setEmailVerifiedLocal(true);
+              }
+            }
+          }
+        }
       } else {
         setView('success');
         setTimeout(() => navigate('/dashboard'), 900);
       }
     }
   }, [user, authLoading, navigate]);
+
+  useEffect(() => {
+    if (linkTimer > 0) {
+      const interval = setInterval(() => {
+        setLinkTimer(t => t - 1);
+      }, 1000);
+      return () => clearInterval(interval);
+    }
+  }, [linkTimer]);
 
 
 
@@ -553,49 +637,244 @@ const Login = () => {
     }
   };
 
-  const handleCompleteRegistration = async (e) => {
-    e.preventDefault();
-    if (!form.name.trim()) { setError('Please enter your name'); return; }
-    if (!form.email.trim()) { setError('Please enter your email'); return; }
-
-    setLoading(true);
+  // ── LINKING & VERIFY HANDLERS FOR COMPLETE PROFILE ──
+  const handleSendLinkOTP = async (e) => {
+    if (e) e.preventDefault();
+    const trimmedPhone = linkPhone.trim();
+    if (!trimmedPhone) { setError('Please enter your phone number'); return; }
+    if (trimmedPhone.length !== 10) {
+      setError('Please enter a valid 10-digit mobile number');
+      return;
+    }
+    
+    setLinkLoading(true);
+    setLinkStatus('Sending OTP...');
     setError('');
-    const emailLower = form.email.trim().toLowerCase();
-    const fullPhone = `${countryCode}${phoneNumber.trim()}`;
-
+    
+    const fullPhone = `${countryCode}${trimmedPhone}`;
+    
     try {
-      // Search Firestore to check if this email is already registered!
-      console.log('[Phone Auth Flow] Checking if email is already registered:', emailLower);
-      const usersRef = collection(db, 'users');
-      const qEmail = query(usersRef, where('email', '==', emailLower));
-      const snapEmail = await getDocs(qEmail);
-      
-      let existingUserDoc = null;
-      snapEmail.forEach(d => { existingUserDoc = { id: d.id, ...d.data() }; });
-      
-      if (existingUserDoc) {
-        console.log('[Phone Auth Flow] Email belongs to existing profile:', existingUserDoc.id);
-        console.log('[Phone Auth Flow] Triggering Account Linking Flow...');
-        
-        const otpCode = otp.join('');
-        const credential = PhoneAuthProvider.credential(confirmationResult.verificationId, otpCode);
-        setPendingPhoneCredential(credential);
-        setPendingLinkEmail(existingUserDoc.email || emailLower);
-        setLinkPassword('');
-        
-        // Sign out from temporary phone user
-        await signOut(auth);
-        
-        // Redirect to link account screen
-        setView('link-account');
-        setLoading(false);
+      const isDuplicate = await authService.checkDuplicatePhoneNumber(fullPhone, auth.currentUser?.uid);
+      if (isDuplicate) {
+        setError('This phone number is already linked with another student account.');
+        setLinkLoading(false);
+        setLinkStatus('');
         return;
       }
-
-      await registerMobileUser(form.name, form.email, fullPhone);
+      
+      const result = await authService.sendOTP(fullPhone, 'recaptcha-container');
+      setLinkConfirmationResult(result);
+      setLinkOTPSent(true);
+      setLinkTimer(30);
+      setLinkStatus('OTP Sent!');
     } catch (err) {
-      console.error("Error during registration:", err);
-      setError(err.message || 'Failed to complete registration. Please try again.');
+      console.error(err);
+      setError(friendlyPhoneError(err.code, err.message));
+      setLinkStatus('');
+    } finally {
+      setLinkLoading(false);
+    }
+  };
+
+  const handleVerifyLinkOTP = async (e, overrideOtp = null) => {
+    if (e) e.preventDefault();
+    const otpCode = (overrideOtp || linkOtp).join('');
+    if (otpCode.length < 6) { setError('Please enter 6-digit OTP'); return; }
+    
+    setLinkLoading(true);
+    setLinkStatus('Verifying OTP...');
+    setError('');
+    
+    try {
+      const credential = PhoneAuthProvider.credential(linkConfirmationResult.verificationId, otpCode);
+      await linkWithCredential(auth.currentUser, credential);
+      
+      setPhoneLinked(true);
+      setLinkStatus('Phone Linked Successfully!');
+      setLinkOTPSent(false);
+      setForm(f => ({ ...f, phone: `${countryCode}${linkPhone.trim()}` }));
+    } catch (err) {
+      console.error(err);
+      setError(friendlyPhoneError(err.code, err.message));
+      setLinkStatus('');
+    } finally {
+      setLinkLoading(false);
+    }
+  };
+
+  const handleLinkEmail = async (e) => {
+    if (e) e.preventDefault();
+    const trimmedEmail = linkEmail.trim().toLowerCase();
+    if (!trimmedEmail) { setError('Please enter your email'); return; }
+    if (!linkEmailPassword.trim() || linkEmailPassword.length < 6) {
+      setError('Password must be at least 6 characters');
+      return;
+    }
+    
+    setLinkLoading(true);
+    setLinkStatus('Linking Email...');
+    setError('');
+    
+    try {
+      const usersRef = collection(db, 'users');
+      const qEmail = query(usersRef, where('email', '==', trimmedEmail));
+      const snapEmail = await getDocs(qEmail);
+      if (!snapEmail.empty) {
+        let duplicateUid = '';
+        snapEmail.forEach(d => { duplicateUid = d.id; });
+        if (duplicateUid !== auth.currentUser?.uid) {
+          setError('This email address is already linked with another student account.');
+          setLinkLoading(false);
+          setLinkStatus('');
+          return;
+        }
+      }
+      
+      const credential = EmailAuthProvider.credential(trimmedEmail, linkEmailPassword);
+      await linkWithCredential(auth.currentUser, credential);
+      await sendEmailVerification(auth.currentUser);
+      
+      setEmailLinked(true);
+      setLinkStatus('Email linked! Please verify it in your inbox.');
+      setEmailVerifySent(true);
+    } catch (err) {
+      console.error(err);
+      setError(friendlyError(err.code));
+      setLinkStatus('');
+    } finally {
+      setLinkLoading(false);
+    }
+  };
+
+  const handleConfirmEmailVerification = async (e) => {
+    if (e) e.preventDefault();
+    setLinkLoading(true);
+    setLinkStatus('Checking email verification...');
+    setError('');
+    
+    try {
+      await auth.currentUser.reload();
+      if (auth.currentUser.emailVerified) {
+        setEmailVerifiedLocal(true);
+        setLinkStatus('Email Verified Successfully!');
+        setForm(f => ({ ...f, email: auth.currentUser.email }));
+      } else {
+        setError('Email is not verified yet. Please check your inbox.');
+        setLinkStatus('');
+      }
+    } catch (err) {
+      console.error(err);
+      setError(err.message || 'Failed to check verification status.');
+      setLinkStatus('');
+    } finally {
+      setLinkLoading(false);
+    }
+  };
+
+  const handleLinkOtpChange = (element, index) => {
+    if (isNaN(element.value)) return false;
+
+    const newOtp = [...linkOtp];
+    newOtp[index] = element.value;
+    setLinkOtp(newOtp);
+
+    setError('');
+
+    if (element.value !== '' && index < 5) {
+      linkOtpRefs.current[index + 1].focus();
+    }
+
+    const completedOtp = newOtp.join('');
+    if (completedOtp.length === 6) {
+      handleVerifyLinkOTP(null, newOtp);
+    }
+  };
+
+  const handleLinkOtpKeyDown = (e, index) => {
+    if (e.key === 'Backspace' && linkOtp[index] === '' && index > 0) {
+      linkOtpRefs.current[index - 1].focus();
+    }
+  };
+
+  const handleCompleteRegistration = async (e) => {
+    e.preventDefault();
+    setError('');
+
+    if (!form.name?.trim()) { setError('Please enter your name'); return; }
+    if (!form.email?.trim()) { setError('Please enter your email'); return; }
+    
+    const currentUser = auth.currentUser;
+    if (!currentUser) { setError('Session expired. Please log in again.'); return; }
+    
+    const isEmail = currentUser.providerData.some(p => p.providerId === 'password');
+    const isPhone = currentUser.providerData.some(p => p.providerId === 'phone');
+    
+    if (isEmail && !phoneLinked) {
+      setError('Please link and verify your mobile number first.');
+      return;
+    }
+    if (isPhone && !emailVerifiedLocal) {
+      setError('Please link and verify your email address first.');
+      return;
+    }
+
+    if (!form.dob) { setError('Please enter your Date of Birth'); return; }
+    if (!form.gender) { setError('Please select your gender'); return; }
+    if (!form.address?.trim()) { setError('Please enter your Address'); return; }
+    if (!form.district?.trim()) { setError('Please enter your District'); return; }
+    if (!form.state?.trim()) { setError('Please enter your State'); return; }
+    
+    if (!/^\d{6}$/.test(form.pin)) {
+      setError('PIN code must be exactly 6 digits');
+      return;
+    }
+    if (!/^\d{10}$/.test(form.emergencyContact)) {
+      setError('Emergency contact must be a valid 10-digit number');
+      return;
+    }
+    if (!form.school?.trim()) { setError('Please enter your School'); return; }
+    if (!form.class) { setError('Please select your Class'); return; }
+    if (!form.course?.trim()) { setError('Please enter your Course'); return; }
+    if (!form.guardianName?.trim()) { setError('Please enter your Guardian\'s Name'); return; }
+    
+    if (!/^\d{10}$/.test(form.guardianPhone)) {
+      setError('Guardian phone must be a valid 10-digit number');
+      return;
+    }
+    if (!/^\d{12}$/.test(form.aadhaarNumber)) {
+      setError('Aadhaar number must be exactly 12 digits');
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      await completeUserProfile({
+        name: form.name,
+        email: form.email,
+        phone: form.phone || (isPhone ? currentUser.phoneNumber : ''),
+        dob: form.dob,
+        gender: form.gender,
+        address: form.address,
+        district: form.district,
+        state: form.state,
+        pin: form.pin,
+        emergencyContact: form.emergencyContact,
+        school: form.school,
+        class: form.class,
+        course: form.course,
+        guardianName: form.guardianName,
+        guardianPhone: form.guardianPhone,
+        aadhaarNumber: form.aadhaarNumber,
+        phoneVerified: isEmail ? phoneLinked : true,
+        emailVerified: isPhone ? emailVerifiedLocal : true
+      });
+      
+      setView('success');
+      setTimeout(() => navigate('/dashboard'), 900);
+    } catch (err) {
+      console.error("Error during profile completion:", err);
+      setError(err.message || 'Failed to save profile. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -654,7 +933,7 @@ const Login = () => {
             initial={{ opacity: 0, y: 24 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-            style={{ width: '100%', maxWidth: '400px' }}
+            style={{ width: '100%', maxWidth: view === 'register-profile' ? '680px' : '400px', transition: 'max-width 0.3s ease-in-out' }}
           >
             <AnimatePresence mode="wait">
 
@@ -1482,75 +1761,324 @@ const Login = () => {
               )}
 
               {/* ════════════ MOBILE COMPLETE REGISTRATION VIEW ════════════ */}
-              {view === 'register-profile' && (
-                <motion.div key="register-profile-form"
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: 0.3 }}
-                >
-                  <h1 style={{ fontSize: '2.25rem', marginBottom: '8px' }}>Complete Profile</h1>
-                  <p style={{ color: 'var(--text-muted)', marginBottom: '32px', fontSize: '1rem', lineHeight: 1.6 }}>
-                    Create your account profile to complete registration.
-                  </p>
+              {view === 'register-profile' && (() => {
+                const currentUser = auth.currentUser;
+                const isEmail = currentUser?.providerData.some(p => p.providerId === 'password');
+                const isPhone = currentUser?.providerData.some(p => p.providerId === 'phone');
+                return (
+                  <motion.div key="register-profile-form"
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.3 }}
+                  >
+                    <h1 style={{ fontSize: '2.25rem', marginBottom: '8px' }}>Complete Profile</h1>
+                    <p style={{ color: 'var(--text-muted)', marginBottom: '24px', fontSize: '1rem', lineHeight: 1.6 }}>
+                      Complete your profile registration to access your dashboard.
+                    </p>
 
-                  <form onSubmit={handleCompleteRegistration} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                    {/* Full Name */}
-                    <div>
-                      <label className="form-label">Full Name</label>
-                      <input
-                        ref={nameInputRef}
-                        name="name" value={form.name} onChange={handleChange}
-                        className="form-input" placeholder="e.g. Arjun Sen"
-                        autoComplete="name"
-                        required
-                      />
-                    </div>
+                    {/* Section 1: Authentication Methods (Locked + Link Editable) */}
+                    <div style={{ background: 'rgba(83,109,254,0.04)', padding: '20px', borderRadius: '16px', border: '1px solid var(--border)', marginBottom: '24px' }}>
+                      <h3 style={{ fontSize: '1rem', fontWeight: 800, marginBottom: '14px', color: 'var(--dark)' }}>Unified Account Link</h3>
+                      
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                        {/* Email Row */}
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px', background: 'var(--white)', borderRadius: '10px', border: '1px solid var(--border)' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <Mail size={18} color="var(--primary)" />
+                            <span style={{ fontSize: '0.9rem', fontWeight: 600 }}>{isEmail ? form.email : (emailLinked ? form.email : 'Link your email')}</span>
+                          </div>
+                          {(isEmail || emailVerifiedLocal) ? (
+                            <span style={{ color: 'var(--success)', fontWeight: 700, fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              <CheckCircle size={14} /> Verified
+                            </span>
+                          ) : isPhone && !emailLinked ? (
+                            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', flex: 1, justifyContent: 'flex-end', marginLeft: '16px' }}>
+                              <input
+                                type="email"
+                                placeholder="Link Email"
+                                value={linkEmail}
+                                onChange={(e) => setLinkEmail(e.target.value)}
+                                style={{ padding: '6px 12px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.8rem', width: '150px' }}
+                              />
+                              <input
+                                type="password"
+                                placeholder="Set Password"
+                                value={linkEmailPassword}
+                                onChange={(e) => setLinkEmailPassword(e.target.value)}
+                                style={{ padding: '6px 12px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.8rem', width: '110px' }}
+                              />
+                              <button
+                                type="button"
+                                onClick={handleLinkEmail}
+                                disabled={linkLoading}
+                                className="btn btn-primary"
+                                style={{ padding: '6px 12px', fontSize: '0.78rem', borderRadius: '6px' }}
+                              >
+                                {linkLoading ? 'Link...' : 'Link'}
+                              </button>
+                            </div>
+                          ) : isPhone && emailLinked && !emailVerifiedLocal ? (
+                            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                              <span style={{ fontSize: '0.78rem', color: 'var(--warning)', fontWeight: 600 }}>Verification Pending</span>
+                              <button
+                                type="button"
+                                onClick={handleConfirmEmailVerification}
+                                disabled={linkLoading}
+                                className="btn btn-primary"
+                                style={{ padding: '6px 12px', fontSize: '0.78rem', borderRadius: '6px' }}
+                              >
+                                {linkLoading ? 'Confirming...' : 'I Have Verified'}
+                              </button>
+                            </div>
+                          ) : null}
+                        </div>
 
-                    {/* Email */}
-                    <div>
-                      <label className="form-label">Email Address</label>
-                      <input
-                        name="email" type="email"
-                        value={form.email} onChange={handleChange}
-                        className="form-input"
-                        placeholder="you@example.com"
-                        autoComplete="email"
-                        required
-                      />
-                    </div>
-
-                    {/* Verified Mobile */}
-                    <div>
-                      <label className="form-label">Verified Mobile Number</label>
-                      <input
-                        type="text"
-                        value={`${countryCode} ${phoneNumber}`}
-                        disabled
-                        className="form-input"
-                        style={{ background: 'rgba(83,109,254,0.02)', color: 'var(--text-light)', borderStyle: 'dashed' }}
-                      />
-                    </div>
-
-                    {/* Error */}
-                    <AnimatePresence>
-                      {error && (
-                        <motion.div
-                          initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
-                          style={{ background: 'rgba(239,83,80,0.08)', border: '1px solid rgba(239,83,80,0.2)', borderRadius: 'var(--radius-md)', padding: '12px 16px', color: 'var(--danger)', fontSize: '0.9rem', fontWeight: 500 }}
-                        >{error}</motion.div>
+                        {/* Phone Row */}
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px', background: 'var(--white)', borderRadius: '10px', border: '1px solid var(--border)' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <Phone size={18} color="var(--primary)" />
+                            <span style={{ fontSize: '0.9rem', fontWeight: 600 }}>{isPhone ? form.phone : (phoneLinked ? form.phone : 'Link your mobile')}</span>
+                          </div>
+                          {(isPhone || phoneLinked) ? (
+                            <span style={{ color: 'var(--success)', fontWeight: 700, fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              <CheckCircle size={14} /> Verified
+                            </span>
+                          ) : isEmail && !linkOTPSent ? (
+                            <div style={{ display: 'flex', gap: '8px', flex: 1, justifyContent: 'flex-end', marginLeft: '16px' }}>
+                              <input
+                                type="tel"
+                                placeholder="10-digit Mobile"
+                                value={linkPhone}
+                                onChange={(e) => setLinkPhone(e.target.value.replace(/\D/g, ''))}
+                                maxLength={10}
+                                style={{ padding: '6px 12px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.8rem', width: '160px' }}
+                              />
+                              <button
+                                type="button"
+                                onClick={handleSendLinkOTP}
+                                disabled={linkLoading}
+                                className="btn btn-primary"
+                                style={{ padding: '6px 12px', fontSize: '0.78rem', borderRadius: '6px' }}
+                              >
+                                {linkLoading ? 'Send...' : 'Verify'}
+                              </button>
+                            </div>
+                          ) : isEmail && linkOTPSent ? (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', alignItems: 'flex-end', flex: 1 }}>
+                              <div style={{ display: 'flex', gap: '6px' }}>
+                                {linkOtp.map((digit, idx) => (
+                                  <input
+                                    key={idx}
+                                    ref={el => linkOtpRefs.current[idx] = el}
+                                    type="text"
+                                    pattern="[0-9]*"
+                                    inputMode="numeric"
+                                    maxLength={1}
+                                    value={digit}
+                                    onChange={(e) => handleLinkOtpChange(e.target, idx)}
+                                    onKeyDown={(e) => handleLinkOtpKeyDown(e, idx)}
+                                    style={{ width: '32px', height: '36px', borderRadius: '6px', border: '1px solid var(--border)', textAlign: 'center', fontSize: '1.1rem', fontWeight: 700 }}
+                                  />
+                                ))}
+                              </div>
+                              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                                {linkTimer > 0 ? `Resend in ${linkTimer}s` : <button type="button" onClick={handleSendLinkOTP} style={{ color: 'var(--primary)', fontWeight: 700, background: 'none', border: 'none', cursor: 'pointer' }}>Resend OTP</button>}
+                              </div>
+                            </div>
+                          ) : null}
+                        </div>
+                      </div>
+                      
+                      {linkStatus && (
+                        <div style={{ color: 'var(--primary)', fontSize: '0.82rem', fontWeight: 600, marginTop: '10px' }}>
+                          {linkStatus}
+                        </div>
                       )}
-                    </AnimatePresence>
+                    </div>
 
-                    {/* Submit */}
-                    <motion.button type="submit" className="btn btn-primary" whileTap={{ scale: 0.97 }}
-                      disabled={loading}
-                      style={{ padding: '16px', fontSize: '1.05rem', marginTop: '4px', width: '100%', justifyContent: 'center' }}>
-                      {loading ? <Spinner /> : <><UserPlus size={20} /> Complete Registration</>}
-                    </motion.button>
-                  </form>
-                </motion.div>
-              )}
+                    {/* Section 2: Profile Fields Forms (Grid) */}
+                    <form onSubmit={handleCompleteRegistration} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                      
+                      <h3 style={{ fontSize: '1.1rem', fontWeight: 800, borderBottom: '1px solid var(--border)', paddingBottom: '8px', color: 'var(--dark)' }}>Personal Information</h3>
+                      
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }} className="grid-2-col-mobile">
+                        <div>
+                          <label className="form-label">Full Name</label>
+                          <input
+                            ref={nameInputRef}
+                            name="name" value={form.name} onChange={handleChange}
+                            className="form-input" placeholder="e.g. Arjun Sen"
+                            required
+                          />
+                        </div>
+                        <div>
+                          <label className="form-label">Date of Birth</label>
+                          <input
+                            type="date"
+                            name="dob" value={form.dob} onChange={handleChange}
+                            className="form-input"
+                            required
+                          />
+                        </div>
+                        <div>
+                          <label className="form-label">Gender</label>
+                          <select
+                            name="gender" value={form.gender} onChange={handleChange}
+                            className="form-input"
+                            style={{ background: 'var(--white)' }}
+                            required
+                          >
+                            <option value="">Select Gender</option>
+                            <option value="Male">Male</option>
+                            <option value="Female">Female</option>
+                            <option value="Other">Other</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="form-label">Aadhaar Number (12-digit)</label>
+                          <input
+                            type="text"
+                            name="aadhaarNumber" value={form.aadhaarNumber}
+                            onChange={(e) => setForm({ ...form, aadhaarNumber: e.target.value.replace(/\D/g, '') })}
+                            maxLength={12}
+                            placeholder="Enter 12 digits"
+                            className="form-input"
+                            required
+                          />
+                        </div>
+                      </div>
+
+                      <h3 style={{ fontSize: '1.1rem', fontWeight: 800, borderBottom: '1px solid var(--border)', paddingBottom: '8px', color: 'var(--dark)', marginTop: '10px' }}>Contact & Address</h3>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }} className="grid-2-col-mobile">
+                        <div style={{ gridColumn: 'span 2' }}>
+                          <label className="form-label">Address</label>
+                          <input
+                            name="address" value={form.address} onChange={handleChange}
+                            className="form-input" placeholder="House/Flat No, Street Name, Locality"
+                            required
+                          />
+                        </div>
+                        <div>
+                          <label className="form-label">District</label>
+                          <input
+                            name="district" value={form.district} onChange={handleChange}
+                            className="form-input" placeholder="District name"
+                            required
+                          />
+                        </div>
+                        <div>
+                          <label className="form-label">State</label>
+                          <input
+                            name="state" value={form.state} onChange={handleChange}
+                            className="form-input" placeholder="State"
+                            required
+                          />
+                        </div>
+                        <div>
+                          <label className="form-label">PIN Code (6-digit)</label>
+                          <input
+                            type="text"
+                            name="pin" value={form.pin}
+                            onChange={(e) => setForm({ ...form, pin: e.target.value.replace(/\D/g, '') })}
+                            maxLength={6}
+                            placeholder="6-digit PIN"
+                            className="form-input"
+                            required
+                          />
+                        </div>
+                        <div>
+                          <label className="form-label">Emergency Contact (10-digit)</label>
+                          <input
+                            type="tel"
+                            name="emergencyContact" value={form.emergencyContact}
+                            onChange={(e) => setForm({ ...form, emergencyContact: e.target.value.replace(/\D/g, '') })}
+                            maxLength={10}
+                            placeholder="Emergency contact"
+                            className="form-input"
+                            required
+                          />
+                        </div>
+                      </div>
+
+                      <h3 style={{ fontSize: '1.1rem', fontWeight: 800, borderBottom: '1px solid var(--border)', paddingBottom: '8px', color: 'var(--dark)', marginTop: '10px' }}>Academic & Guardian details</h3>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }} className="grid-2-col-mobile">
+                        <div>
+                          <label className="form-label">School Name</label>
+                          <input
+                            name="school" value={form.school} onChange={handleChange}
+                            className="form-input" placeholder="School name"
+                            required
+                          />
+                        </div>
+                        <div>
+                          <label className="form-label">Class</label>
+                          <select
+                            name="class" value={form.class} onChange={handleChange}
+                            className="form-input"
+                            style={{ background: 'var(--white)' }}
+                            required
+                          >
+                            <option value="">Select Class</option>
+                            <option value="2">Class 2-5</option>
+                            <option value="6">Class 6-8</option>
+                            <option value="9">Class 9-10</option>
+                            <option value="11">Class 11</option>
+                            <option value="12">Class 12</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="form-label">Course Registered</label>
+                          <input
+                            name="course" value={form.course} onChange={handleChange}
+                            className="form-input" placeholder="e.g. Python, Class 10 Board"
+                            required
+                          />
+                        </div>
+                        <div>
+                          <label className="form-label">Guardian's Name</label>
+                          <input
+                            name="guardianName" value={form.guardianName} onChange={handleChange}
+                            className="form-input" placeholder="Guardian's name"
+                            required
+                          />
+                        </div>
+                        <div>
+                          <label className="form-label">Guardian's Phone (10-digit)</label>
+                          <input
+                            type="tel"
+                            name="guardianPhone" value={form.guardianPhone}
+                            onChange={(e) => setForm({ ...form, guardianPhone: e.target.value.replace(/\D/g, '') })}
+                            maxLength={10}
+                            placeholder="Guardian phone"
+                            className="form-input"
+                            required
+                          />
+                        </div>
+                      </div>
+
+                      {/* Error */}
+                      <AnimatePresence>
+                        {error && (
+                          <motion.div
+                            initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
+                            style={{ background: 'rgba(239,83,80,0.08)', border: '1px solid rgba(239,83,80,0.2)', borderRadius: 'var(--radius-md)', padding: '12px 16px', color: 'var(--danger)', fontSize: '0.9rem', fontWeight: 500 }}
+                          >{error}</motion.div>
+                        )}
+                      </AnimatePresence>
+
+                      {/* Submit */}
+                      <motion.button type="submit" className="btn btn-primary" whileTap={{ scale: 0.97 }}
+                        disabled={loading || (isEmail && !phoneLinked) || (isPhone && !emailVerifiedLocal)}
+                        style={{ padding: '16px', fontSize: '1.05rem', marginTop: '10px', width: '100%', justifyContent: 'center', cursor: (loading || (isEmail && !phoneLinked) || (isPhone && !emailVerifiedLocal)) ? 'not-allowed' : 'pointer' }}>
+                        {loading ? <Spinner /> : <><UserPlus size={20} /> Complete Registration</>}
+                      </motion.button>
+                    </form>
+                  </motion.div>
+                );
+              })()}
 
             </AnimatePresence>
           </motion.div>

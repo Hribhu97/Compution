@@ -6,7 +6,7 @@ import { collection, onSnapshot, query, orderBy, where, doc, serverTimestamp, ge
 import { addDoc, deleteDoc, updateDoc, setDoc } from '../../firebase';;
 import { CalendarCheck, UserX, Clock, CheckCircle2, Search, ArrowRight, BookOpen, AlertCircle, Calendar as CalendarIcon, CheckCircle, BarChart2, Loader2 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, PieChart, Pie } from 'recharts';
-import { format, parseISO } from 'date-fns';
+import { format, parseISO, startOfWeek, addDays, isSameDay, isSameMonth } from 'date-fns';
 import Modal from '../../components/Modal';
 import { AttendanceSkeleton } from '../../components/SkeletonLoader';
 
@@ -32,12 +32,13 @@ const Attendance = () => {
   // Student Today's Schedules & Calendar
   const [todaySchedules, setTodaySchedules] = useState([]);
   const [todayCalendarEvents, setTodayCalendarEvents] = useState([]);
+  const [schedules, setSchedules] = useState([]);
   
   // Loading and alerts
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState('');
 
-  const canManage = user?.role?.toLowerCase() === 'admin';
+  const canManage = user?.role?.toLowerCase() === 'admin' || user?.role?.toLowerCase() === 'faculty';
 
   // 1. FETCH STUDENTS (for marking) AND GLOBAL ATTENDANCE (for dashboard)
   useEffect(() => {
@@ -52,7 +53,21 @@ const Attendance = () => {
     let unsubStudents = () => {};
     let unsubAttendance = () => {};
     let unsubTodaySched = () => {};
-    let unsubTodayCal = () => {};
+    let unsubSchedules = () => {};
+
+    // Load classSchedules globally for security checking
+    try {
+      const schQuery = query(collection(db, 'classSchedules'));
+      unsubSchedules = onSnapshot(schQuery, (snap) => {
+        const list = [];
+        snap.forEach(doc => {
+          list.push({ id: doc.id, ...doc.data() });
+        });
+        setSchedules(list);
+      });
+    } catch (err) {
+      console.error("Attendance: schedules listener creation failed", err);
+    }
 
     if (canManage) {
       // Load all students to mark attendance
@@ -112,7 +127,7 @@ const Attendance = () => {
             t++;
             if (d.status === 'present') p++;
             else if (d.status === 'absent') a++;
-            else if (d.status === 'late') { l++; p++; } // Late present still increments attendance count
+            else if (d.status === 'late') { l++; p++; }
           });
 
           setStudentRecords(records);
@@ -130,47 +145,32 @@ const Attendance = () => {
         setLoading(false);
       }
 
-      // Load today's schedule for student check-in
+      // Load today's schedule for student check-in from classSchedules
       try {
-        const todayDateStr = format(new Date(), 'yyyy-MM-dd');
+        const daysOfWeek = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+        const todayDayName = daysOfWeek[new Date().getDay()];
+
         const schedTodayQuery = query(
-          collection(db, 'studentSchedules'),
-          where('studentId', '==', user.uid),
-          where('date', '==', todayDateStr)
+          collection(db, 'classSchedules'),
+          where('day', '==', todayDayName)
         );
+
         unsubTodaySched = onSnapshot(schedTodayQuery, (snap) => {
           const list = [];
           snap.forEach(doc => {
-            list.push({ id: doc.id, ...doc.data() });
+            const data = doc.data();
+            const isInStudents = data.studentIds?.includes(user.uid);
+            const isInGroups = data.batch === (user.studentGroup || '');
+            if (isInStudents || isInGroups) {
+              list.push({ id: doc.id, ...data });
+            }
           });
           setTodaySchedules(list);
         }, (err) => {
-          console.error("Attendance: student schedules listener error:", err);
+          console.error("Attendance: student classSchedules listener error:", err);
         });
       } catch (err) {
-        console.error("Attendance: student schedules listener creation failed", err);
-      }
-
-      // Load today's calendar events for student check-in
-      try {
-        const todayDateStr = format(new Date(), 'yyyy-MM-dd');
-        const calTodayQuery = query(
-          collection(db, 'studentCalendar'),
-          where('studentId', '==', user.uid),
-          where('date', '==', todayDateStr),
-          where('type', '==', 'class')
-        );
-        unsubTodayCal = onSnapshot(calTodayQuery, (snap) => {
-          const list = [];
-          snap.forEach(doc => {
-            list.push({ id: doc.id, ...doc.data() });
-          });
-          setTodayCalendarEvents(list);
-        }, (err) => {
-          console.error("Attendance: student calendar events listener error:", err);
-        });
-      } catch (err) {
-        console.error("Attendance: student calendar events listener creation failed", err);
+        console.error("Attendance: student classSchedules listener creation failed", err);
       }
     }
 
@@ -178,7 +178,7 @@ const Attendance = () => {
       unsubStudents();
       unsubAttendance();
       unsubTodaySched();
-      unsubTodayCal();
+      unsubSchedules();
     };
   }, [user?.uid, canManage, attendanceDate, selectedSubject]);
 
@@ -289,6 +289,20 @@ const Attendance = () => {
 
   // ── FACULTY: MARK ATTENDANCE FOR INDIVIDUAL STUDENT ──
   const handleMarkStatus = async (studentId, studentName, status) => {
+    if (user.role?.toLowerCase() === 'faculty') {
+      const studentObj = students.find(s => s.id === studentId);
+      const studentGroup = studentObj?.studentGroup || studentObj?.batch || '';
+      
+      const hasClass = schedules.some(sch => 
+        sch.facultyId === user.uid && 
+        (sch.studentIds?.includes(studentId) || sch.batch === studentGroup)
+      );
+      if (!hasClass) {
+        triggerToast('Error: You can only mark attendance for your assigned classes/batches!');
+        return;
+      }
+    }
+
     const dateStr = format(parseISO(attendanceDate), 'dd MMM yyyy');
     const docId = `${studentId}_${dateStr.replace(/\s+/g, '_')}_${selectedSubject.replace(/\s+/g, '_')}`;
     
@@ -322,9 +336,30 @@ const Attendance = () => {
   const handleBulkMark = async (status) => {
     const dateStr = format(parseISO(attendanceDate), 'dd MMM yyyy');
     
+    let targets = students;
+    if (user.role?.toLowerCase() === 'faculty') {
+      const facultyClasses = schedules.filter(sch => sch.facultyId === user.uid);
+      const facultyStudentIds = new Set();
+      const facultyBatches = new Set();
+      facultyClasses.forEach(sch => {
+        (sch.studentIds || []).forEach(sid => facultyStudentIds.add(sid));
+        if (sch.batch) facultyBatches.add(sch.batch);
+      });
+      
+      targets = students.filter(s => {
+        const isInStudentList = facultyStudentIds.has(s.id);
+        const isInBatch = facultyBatches.has(s.studentGroup || s.batch);
+        return isInStudentList || isInBatch;
+      });
+      
+      if (targets.length === 0) {
+        triggerToast('Error: No assigned student rosters found for you!');
+        return;
+      }
+    }
+    
     try {
-      const promises = students.map(async (student) => {
-        // Skip if already marked to prevent overriding custom marks
+      const promises = targets.map(async (student) => {
         if (attendanceStatusMap[student.id]) return;
 
         const docId = `${student.id}_${dateStr.replace(/\s+/g, '_')}_${selectedSubject.replace(/\s+/g, '_')}`;
@@ -359,51 +394,51 @@ const Attendance = () => {
   const todayClasses = [
     ...todaySchedules.map(s => ({
       id: s.id,
-      source: 'studentSchedules',
+      source: 'classSchedules',
       title: s.subject || 'Class',
-      time: s.time || '',
+      time: s.startTime || '',
+      endTime: s.endTime || '',
       facultyId: s.facultyId || '',
-      faculty: s.faculty || 'Faculty Mentor'
+      faculty: s.facultyName || 'Faculty Mentor'
     })),
     ...todayCalendarEvents.map(c => ({
       id: c.id,
       source: 'studentCalendar',
       title: c.title || 'Class',
       time: c.time || '',
+      endTime: c.endTime || '',
       facultyId: c.facultyId || '',
       faculty: c.faculty || 'Faculty Mentor'
     }))
   ];
 
-  const getCheckInStatus = (classTimeStr) => {
+  const getCheckInStatus = (classStartTimeStr, classEndTimeStr) => {
     try {
-      const [hours, minutes] = classTimeStr.split(':').map(Number);
-      if (isNaN(hours) || isNaN(minutes)) return { allowed: false, reason: 'Invalid timing format' };
+      const [startHours, startMinutes] = classStartTimeStr.split(':').map(Number);
+      if (isNaN(startHours) || isNaN(startMinutes)) return { allowed: false, reason: 'Invalid timing format' };
+
+      const [endHours, endMinutes] = classEndTimeStr.split(':').map(Number);
 
       const now = new Date();
-      const classTime = new Date();
-      classTime.setHours(hours, minutes, 0, 0);
+      const classStartTime = new Date();
+      classStartTime.setHours(startHours, startMinutes, 0, 0);
 
-      const windowStart = new Date(classTime.getTime() - 15 * 60 * 1000);
-      const windowEnd = new Date(classTime.getTime() + 60 * 60 * 1000);
+      const classEndTime = new Date();
+      if (!isNaN(endHours) && !isNaN(endMinutes)) {
+        classEndTime.setHours(endHours, endMinutes, 0, 0);
+      } else {
+        classEndTime.setTime(classStartTime.getTime() + 90 * 60 * 1000);
+      }
 
-      if (now < windowStart) {
+      if (now < classStartTime || now > classEndTime) {
         return {
           allowed: false,
           status: 'pending',
-          reason: `Opens at ${format(windowStart, 'hh:mm a')}`
+          reason: 'Attendance is only available during your scheduled class.'
         };
       }
 
-      if (now > windowEnd) {
-        return {
-          allowed: false,
-          status: 'absent',
-          reason: 'Check-in expired (closes 60m after starts)'
-        };
-      }
-
-      const lateCutoff = new Date(classTime.getTime() + 15 * 60 * 1000);
+      const lateCutoff = new Date(classStartTime.getTime() + 15 * 60 * 1000);
       if (now <= lateCutoff) {
         return {
           allowed: true,
@@ -473,10 +508,35 @@ const Attendance = () => {
   ].filter(d => d.value > 0);
 
   // Filter student lists (Faculty search)
-  const filteredStudents = students.filter(s =>
-    s.displayName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    s.course?.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredStudents = students.filter(s => {
+    if (user.role?.toLowerCase() === 'faculty') {
+      const facultyClasses = schedules.filter(sch => sch.facultyId === user.uid);
+      const facultyStudentIds = new Set();
+      const facultyBatches = new Set();
+      facultyClasses.forEach(sch => {
+        (sch.studentIds || []).forEach(sid => facultyStudentIds.add(sid));
+        if (sch.batch) facultyBatches.add(sch.batch);
+      });
+      const isInStudentList = facultyStudentIds.has(s.id);
+      const isInBatch = facultyBatches.has(s.studentGroup || s.batch);
+      if (!isInStudentList && !isInBatch) return false;
+    }
+    return s.displayName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      s.course?.toLowerCase().includes(searchQuery.toLowerCase());
+  });
+
+  // Get days of the week and dates for monthly calendar tracker
+  const getDayName = (dateObj) => {
+    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    return days[dateObj.getDay()];
+  };
+
+  const currentMonthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+  const startDayOfWeek = startOfWeek(currentMonthStart, { weekStartsOn: 1 });
+  const monthDays = [];
+  for (let i = 0; i < 35; i++) {
+    monthDays.push(addDays(startDayOfWeek, i));
+  }
 
   return (
     <motion.div variants={stagger} initial="hidden" animate="show" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
@@ -639,7 +699,7 @@ const Attendance = () => {
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 {todayClasses.map(classItem => {
-                  const checkIn = getCheckInStatus(classItem.time);
+                  const checkIn = getCheckInStatus(classItem.time, classItem.endTime);
                   const markedStatus = getMarkedStatus(classItem.title);
 
                   return (
@@ -778,6 +838,88 @@ const Attendance = () => {
               </div>
             </motion.div>
           </div>
+
+          {/* Visual Monthly Calendar highlighting status */}
+          <motion.div variants={item} className="card card-p" style={{ background: 'var(--white)', display: 'flex', flexDirection: 'column', gap: '16px', marginBottom: '24px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ fontSize: '1.15rem', fontWeight: 800 }}>Attendance Tracker Calendar</h3>
+              <div style={{ display: 'flex', gap: '12px', alignItems: 'center', fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><div style={{ width: 10, height: 10, borderRadius: '50%', background: 'hsl(141, 76%, 48%)' }} /> Present</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><div style={{ width: 10, height: 10, borderRadius: '50%', background: 'hsl(354, 70%, 54%)' }} /> Absent</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><div style={{ width: 10, height: 10, borderRadius: '50%', background: 'hsl(36, 100%, 50%)' }} /> Late</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><div style={{ width: 10, height: 10, borderRadius: '50%', background: 'hsl(217, 89%, 61%)' }} /> Upcoming</div>
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '10px', textAlign: 'center', marginTop: '10px' }}>
+              {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(d => (
+                <div key={d} style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-light)', textTransform: 'uppercase' }}>{d}</div>
+              ))}
+              {monthDays.map((day, idx) => {
+                const isToday = isSameDay(new Date(), day);
+                const isFuture = day > new Date();
+                
+                // Check if we have an attendance record for this day
+                const dayRecord = studentRecords.find(r => {
+                  if (!r.date) return false;
+                  let rDate;
+                  try {
+                    rDate = new Date(r.date);
+                  } catch (e) {
+                    return false;
+                  }
+                  return isSameDay(rDate, day);
+                });
+
+                // Check if this day of week has a scheduled class
+                const dayName = getDayName(day);
+                const isScheduledClassDay = schedules.some(sch => sch.day === dayName);
+
+                let bgColor = 'var(--bg)';
+                let textColor = 'var(--text-muted)';
+                let label = '';
+
+                if (dayRecord) {
+                  if (dayRecord.status === 'present') {
+                    bgColor = 'hsla(141, 76%, 48%, 0.15)';
+                    textColor = 'hsl(141, 76%, 35%)';
+                    label = 'Present';
+                  } else if (dayRecord.status === 'absent') {
+                    bgColor = 'hsla(354, 70%, 54%, 0.15)';
+                    textColor = 'hsl(354, 70%, 45%)';
+                    label = 'Absent';
+                  } else if (dayRecord.status === 'late') {
+                    bgColor = 'hsla(36, 100%, 50%, 0.15)';
+                    textColor = 'hsl(36, 100%, 40%)';
+                    label = 'Late';
+                  }
+                } else if (isFuture && isScheduledClassDay) {
+                  bgColor = 'hsla(217, 89%, 61%, 0.15)';
+                  textColor = 'hsl(217, 89%, 50%)';
+                  label = 'Upcoming Class';
+                } else if (isToday && isScheduledClassDay) {
+                  bgColor = 'rgba(83,109,254,0.1)';
+                  textColor = 'var(--primary)';
+                  label = 'Today\'s Class';
+                }
+
+                return (
+                  <div
+                    key={idx}
+                    title={label ? `${format(day, 'dd MMM')}: ${label}` : format(day, 'dd MMM')}
+                    style={{
+                      aspectRatio: '1', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                      borderRadius: '12px', background: bgColor, color: textColor,
+                      border: isToday ? '2px solid var(--primary)' : '1px solid var(--border)',
+                      position: 'relative'
+                    }}
+                  >
+                    <span style={{ fontSize: '0.9rem', fontWeight: 800 }}>{format(day, 'd')}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </motion.div>
 
           {/* Logs table list */}
           <motion.div variants={item} className="card" style={{ background: 'var(--white)', overflow: 'hidden' }}>

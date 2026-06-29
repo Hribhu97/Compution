@@ -112,9 +112,43 @@ export const runTransaction = async (firestoreInstance, updateFunction, ...args)
 };
 
 export const syncStudentFeeAggregates = async (studentId) => {
-  // Simple tuition-center fee system is now direct-to-student-profile.
-  // This helper is deprecated and performs no operations.
-  return null;
+  if (!db) return null;
+  try {
+    const monthlyRef = collection(db, 'fees', studentId, 'monthly');
+    const monthlySnap = await getDocs(monthlyRef);
+    
+    let totalAmount = 0;
+    let totalPaid = 0;
+    
+    monthlySnap.forEach(docSnap => {
+      const data = docSnap.data();
+      totalAmount += Number(data.amountDue) || 0;
+      totalPaid += Number(data.amountPaid) || 0;
+    });
+    
+    const pendingAmount = Math.max(0, totalAmount - totalPaid);
+    let feeStatus = 'pending';
+    if (pendingAmount <= 0 && totalAmount > 0) {
+      feeStatus = 'paid';
+    }
+    
+    const studentRef = doc(db, 'users', studentId);
+    const studentSnap = await getDoc(studentRef);
+    if (studentSnap.exists()) {
+      const studentData = studentSnap.data();
+      const nextStatus = studentData.statusSource === 'manual' ? (studentData.feeStatus || 'pending') : feeStatus;
+      
+      await updateDoc(studentRef, {
+        feesAmount: totalAmount,
+        paidAmount: totalPaid,
+        pendingAmount: pendingAmount,
+        feeStatus: nextStatus
+      });
+      console.log(`[Sync Helper] Successfully synced aggregates for ${studentId}: Billed=${totalAmount}, Paid=${totalPaid}, Status=${nextStatus}`);
+    }
+  } catch (err) {
+    console.error(`[Sync Helper Error] Failed to sync student fee aggregates for ${studentId}:`, err);
+  }
 };;
 
 export { app, analytics, auth, db, googleProvider, RecaptchaVerifier, signInWithPhoneNumber };

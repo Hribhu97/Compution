@@ -3,12 +3,15 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useLocation } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
-import { db } from '../../firebase';
+import { db, addDoc, setDoc, deleteDoc } from '../../firebase';
+import { askGemini } from '../../services/gemini';
 import { collection, onSnapshot, query, orderBy, serverTimestamp, where, doc, increment, getDocs } from 'firebase/firestore';
-import { addDoc, setDoc, updateDoc, deleteDoc } from '../../firebase';;
-import { MessageSquare, Plus, Clock, Search, Send, Image, FileText, Check, CheckCheck, Loader2, User, Phone, Smile, Paperclip, Pencil, Trash2 } from 'lucide-react';
 import { format, formatDistanceToNow } from 'date-fns';
 import Modal from '../../components/Modal';
+import {
+  Plus, MessageSquare, Clock, Pencil, Trash2, Search, Phone,
+  Loader2, FileText, CheckCheck, Check, Image, Paperclip, Send
+} from 'lucide-react';
 
 const stagger = { show: { transition: { staggerChildren: 0.08 } } };
 const item = { hidden: { opacity: 0, y: 14 }, show: { opacity: 1, y: 0, transition: { duration: 0.4, ease: [0.16, 1, 0.3, 1] } } };
@@ -444,24 +447,38 @@ const Community = () => {
     const receiverId = activeRoom.id.split('_').find(id => id !== user.uid) || '';
 
     try {
-      // Create message object matching new schema
       const msgObj = {
         senderId: user.uid,
         senderName: user.displayName,
         senderRole: user?.role || 'student',
         receiverId: receiverId,
         message: currentText,
-        text: currentText, // Legacy compatibility
+        text: currentText,
         readStatus: false,
-        seen: false, // Legacy compatibility
+        seen: false,
         timestamp: serverTimestamp(),
-        createdAt: serverTimestamp(), // Legacy compatibility
+        createdAt: serverTimestamp(),
         attachments: currentAttachment ? [currentAttachment] : [],
         messageType: currentAttachment ? currentAttachment.type : 'text'
       };
 
       // 1. Add to messages subcollection
       await addDoc(collection(db, `communityThreads/${roomDocId}/messages`), msgObj);
+
+      // Archive to doubtQueue in Firestore if sent by student
+      if (user.role?.toLowerCase() === 'student' && currentText) {
+        try {
+          await addDoc(collection(db, 'doubtQueue'), {
+            studentId: user.uid,
+            studentName: user.displayName || 'Student',
+            queryText: currentText,
+            status: 'pending',
+            createdAt: serverTimestamp()
+          });
+        } catch (err) {
+          console.error("Error archiving to doubtQueue:", err);
+        }
+      }
 
       // 2. Update room document metadata
       const updateObj = {
@@ -903,6 +920,46 @@ const Community = () => {
                         <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--dark)' }}>{attachment.name}</span>
                       </div>
                       <button onClick={() => setAttachment(null)} style={{ fontSize: '0.8rem', color: 'var(--danger)', fontWeight: 600 }}>Remove</button>
+                    </div>
+                  )}
+
+                  {/* Central FAQ Quick Chips */}
+                  {user?.role?.toLowerCase() === 'student' && (
+                    <div style={{
+                      display: 'flex', gap: '8px', padding: '8px 24px', overflowX: 'auto',
+                      borderTop: '1px solid var(--border)', background: '#F9FAFB', flexShrink: 0
+                    }} className="no-scrollbar">
+                      <span style={{ fontSize: '0.75rem', fontWeight: 800, color: 'var(--text-light)', alignSelf: 'center', marginRight: '4px', whiteSpace: 'nowrap' }}>
+                        💡 Quick FAQ:
+                      </span>
+                      {[
+                        "What is the duration of the Basic Course?",
+                        "How long is the Basic Coding course?",
+                        "What languages are offered in Advance Coding?",
+                        "What is the duration of the DSA course?"
+                      ].map((chipText, i) => (
+                        <button
+                          key={i}
+                          type="button"
+                          onClick={() => handleChipClick(chipText)}
+                          style={{
+                            padding: '6px 12px', borderRadius: '100px', background: 'var(--white)',
+                            border: '1px solid var(--border)', fontSize: '0.75rem', fontWeight: 700,
+                            color: 'var(--primary)', cursor: 'pointer', whiteSpace: 'nowrap',
+                            transition: 'all 0.2s', boxShadow: 'var(--shadow-sm)'
+                          }}
+                          onMouseEnter={e => {
+                            e.currentTarget.style.background = 'var(--primary)';
+                            e.currentTarget.style.color = 'var(--white)';
+                          }}
+                          onMouseLeave={e => {
+                            e.currentTarget.style.background = 'var(--white)';
+                            e.currentTarget.style.color = 'var(--primary)';
+                          }}
+                        >
+                          {chipText}
+                        </button>
+                      ))}
                     </div>
                   )}
 

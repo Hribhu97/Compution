@@ -13,15 +13,15 @@ const stagger = { show: { transition: { staggerChildren: 0.07 } } };
 const item = { hidden: { opacity: 0, y: 14 }, show: { opacity: 1, y: 0, transition: { duration: 0.4, ease: [0.16, 1, 0.3, 1] } } };
 
 const COURSE_METADATA = {
-  'Basic+AI (Prompt Engn)': { subject: 'AI & Basics', color: '#7C4DFF', emoji: '🤖', nextLesson: 'Intro to Prompts & LLMs', totalLessons: 16, schedule: 'Mon, Wed · 4 PM' },
-  'School Syllabus (Classes 2 to 5)': { subject: 'Academic', color: '#FF7043', emoji: '🎒', nextLesson: 'Intro to Computers & Keyboard', totalLessons: 12, schedule: 'Mon, Thu · 3 PM' },
-  'School Syllabus (Classes 6 to 10)': { subject: 'Academic', color: '#FFA726', emoji: '🏫', nextLesson: 'Block Coding & Flowcharts', totalLessons: 20, schedule: 'Tue, Fri · 3 PM' },
-  'Class XI & XII Computer Science': { subject: 'Academic', color: '#536DFE', emoji: '📘', nextLesson: 'Chapter 2: Data Representations', totalLessons: 22, schedule: 'Mon–Sat · 3 PM' },
-  'Class XI & XII Computer Application': { subject: 'Academic', color: '#0097A7', emoji: '📙', nextLesson: 'Lesson 1: Office Tools', totalLessons: 22, schedule: 'Mon–Sat · 3 PM' },
-  'Basic Coding': { subject: 'Programming', color: '#66BB6A', emoji: '💻', nextLesson: 'First Program & Variables', totalLessons: 24, schedule: 'Mon, Wed · 5 PM' },
-  'Advance Coding': { subject: 'Programming', color: '#ED8B00', emoji: '🚀', nextLesson: 'OOP & Code Design Patterns', totalLessons: 30, schedule: 'Tue, Thu · 7 PM' },
-  'Data Structures & Algorithms': { subject: 'Programming', color: '#43A047', emoji: '🧩', nextLesson: 'Binary Search Trees', totalLessons: 28, schedule: 'Tue, Thu · 6 PM' },
-  'Python Mastery': { subject: 'Programming', color: '#4F46E5', emoji: '🐍', nextLesson: 'Intro to Python & Syntax', totalLessons: 24, schedule: 'Mon, Wed · 5 PM' }
+  'Basic+AI (Prompt Engn)': { subject: 'AI & Basics', color: '#7C4DFF', emoji: '🤖', nextLesson: 'Intro to Prompts & LLMs', totalLessons: 16, schedule: 'Mon, Wed · 4 PM', duration: '8 Months' },
+  'School Syllabus (Classes 2 to 5)': { subject: 'Academic', color: '#FF7043', emoji: '🎒', nextLesson: 'Intro to Computers & Keyboard', totalLessons: 12, schedule: 'Mon, Thu · 3 PM', duration: 'As per class' },
+  'School Syllabus (Classes 6 to 10)': { subject: 'Academic', color: '#FFA726', emoji: '🏫', nextLesson: 'Block Coding & Flowcharts', totalLessons: 20, schedule: 'Tue, Fri · 3 PM', duration: 'As per class' },
+  'Class XI & XII Computer Science': { subject: 'Academic', color: '#536DFE', emoji: '📘', nextLesson: 'Chapter 2: Data Representations', totalLessons: 22, schedule: 'Mon–Sat · 3 PM', duration: '1-2 Years' },
+  'Class XI & XII Computer Application': { subject: 'Academic', color: '#0097A7', emoji: '📙', nextLesson: 'Lesson 1: Office Tools', totalLessons: 22, schedule: 'Mon–Sat · 3 PM', duration: '1-2 Years' },
+  'Basic Coding': { subject: 'Programming', color: '#66BB6A', emoji: '💻', nextLesson: 'First Program & Variables', totalLessons: 24, schedule: 'Mon, Wed · 5 PM', duration: '6 Months' },
+  'Advance Coding': { subject: 'Programming', color: '#ED8B00', emoji: '🚀', nextLesson: 'OOP & Code Design Patterns', totalLessons: 30, schedule: 'Tue, Thu · 7 PM', duration: '6 Months – 1 Year' },
+  'Data Structures & Algorithms': { subject: 'Programming', color: '#43A047', emoji: '🧩', nextLesson: 'Binary Search Trees', totalLessons: 28, schedule: 'Tue, Thu · 6 PM', duration: '6 Months' },
+  'Python Mastery': { subject: 'Programming', color: '#4F46E5', emoji: '🐍', nextLesson: 'Intro to Python & Syntax', totalLessons: 24, schedule: 'Mon, Wed · 5 PM', duration: '3 Months' }
 };
 
 import { DashboardSkeleton } from '../../components/SkeletonLoader';
@@ -133,7 +133,7 @@ const Courses = () => {
       nextLesson: meta.nextLesson,
       totalLessons: meta.totalLessons,
       schedule: meta.schedule,
-      duration: '3 months',
+      duration: meta.duration || '3 Months',
       isDefault: true
     }));
 

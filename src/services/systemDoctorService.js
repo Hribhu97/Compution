@@ -211,14 +211,14 @@ export const systemDoctorService = {
       // --- CHECK 8: Payment Mismatch ---
       logs.push("🔍 Check 8: Scanning student billing subcollections...");
       for (const student of users.filter(u => u.role?.toLowerCase() === 'student')) {
-        const feesRef = collection(db, 'users', student.id, 'fees');
+        const feesRef = collection(db, 'fees', student.id, 'monthly');
         const feesSnap = await getDocs(feesRef);
         let totalAmount = 0;
         let totalPaid = 0;
         feesSnap.forEach(d => {
           const f = d.data();
-          totalAmount += Number(f.amount) || 0;
-          totalPaid += Number(f.paidAmount) || 0;
+          totalAmount += Number(f.amountDue) || 0;
+          totalPaid += Number(f.amountPaid) || 0;
         });
 
         const pending = Math.max(0, totalAmount - totalPaid);

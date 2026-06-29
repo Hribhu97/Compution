@@ -3,47 +3,73 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../../contexts/AuthContext';
 import { db } from '../../firebase';
 import { collection, onSnapshot, query, where, doc, serverTimestamp, getDocs } from 'firebase/firestore';
-import { addDoc, deleteDoc, updateDoc } from '../../firebase';;
-import { Calendar as CalendarIcon, Clock, MapPin, FileText, Plus, Trash2, Edit2, Search, Check, AlertCircle, CalendarRange, List, ArrowLeft, ArrowRight, User } from 'lucide-react';
-import { format, startOfWeek, addDays, isSameDay, parseISO } from 'date-fns';
+import { addDoc, deleteDoc, updateDoc } from '../../firebase';
+import {
+  Calendar as CalendarIcon, Clock, MapPin, FileText, Plus, Trash2, Edit2,
+  Search, Check, AlertCircle, CalendarRange, List, ArrowLeft, ArrowRight,
+  User, Video, BookOpen, Clock3
+} from 'lucide-react';
+import { format, startOfWeek, addDays, isSameDay, parseISO, addMonths, subMonths, isSameMonth } from 'date-fns';
 import Modal from '../../components/Modal';
 
 const stagger = { show: { transition: { staggerChildren: 0.05 } } };
 const fadeItem = { hidden: { opacity: 0, y: 12 }, show: { opacity: 1, y: 0, transition: { duration: 0.4 } } };
+
+// Enforce end time is exactly 1 Hour 30 Minutes after start time
+const computeEndTime = (startTimeStr) => {
+  if (!startTimeStr) return '';
+  const [hours, minutes] = startTimeStr.split(':').map(Number);
+  let endHours = hours + 1;
+  let endMinutes = minutes + 30;
+  if (endMinutes >= 60) {
+    endHours += 1;
+    endMinutes -= 60;
+  }
+  const endHoursStr = String(endHours % 24).padStart(2, '0');
+  const endMinutesStr = String(endMinutes).padStart(2, '0');
+  return `${endHoursStr}:${endMinutesStr}`;
+};
 
 const Schedule = () => {
   const { user } = useAuth();
   const [schedules, setSchedules] = useState([]);
   const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [viewMode, setViewMode] = useState('card'); // 'calendar' | 'card'
+  const [viewMode, setViewMode] = useState('week'); // 'calendar' | 'week' | 'agenda'
   const [currentWeekStart, setCurrentWeekStart] = useState(() => startOfWeek(new Date(), { weekStartsOn: 1 }));
+  const [selectedDate, setSelectedDate] = useState(() => new Date());
+  const [currentMonthStart, setCurrentMonthStart] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
   
-  // Faculty management states for new engine
+  // Faculty/Admin management states
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [editingSchedule, setEditingSchedule] = useState(null);
+  
   const [eventTitle, setEventTitle] = useState('');
   const [eventDesc, setEventDesc] = useState('');
-  const [eventType, setEventType] = useState('Regular Class');
-  const [startDate, setStartDate] = useState(format(new Date(), 'yyyy-MM-dd'));
-  const [endDate, setEndDate] = useState(format(new Date(), 'yyyy-MM-dd'));
-  const [startTime, setStartTime] = useState('17:00');
-  const [endTime, setEndTime] = useState('18:00');
+  const [startDate, setStartDate] = useState('Monday'); // Represents Day of week (e.g. "Monday")
+  const [startTime, setStartTime] = useState('17:30');
   const [assignedFacultyId, setAssignedFacultyId] = useState('');
   const [assignedFacultyName, setAssignedFacultyName] = useState('');
   const [selectedGroups, setSelectedGroups] = useState([]);
   const [selectedStudents, setSelectedStudents] = useState([]);
   const [meetLink, setMeetLink] = useState('');
-  const [venue, setVenue] = useState('Compution Campus');
-  const [isRecurring, setIsRecurring] = useState(false);
-  const [recurrenceType, setRecurrenceType] = useState('none');
+  const [venue, setVenue] = useState('Room 4B');
   const [toast, setToast] = useState('');
   const [facultyUsers, setFacultyUsers] = useState([]);
+
+  // Student slot booking states
+  const [isBookingModalOpen, setIsBookingModalOpen] = useState(false);
+  const [bookingDate, setBookingDate] = useState(format(new Date(), 'yyyy-MM-dd'));
+  const [bookingTime, setBookingTime] = useState('17:30');
+  const [bookingSubject, setBookingSubject] = useState('Python Mastery');
+  const [bookingSubmitting, setBookingSubmitting] = useState(false);
 
   // Search/Filter for Staff
   const [selectedStudentFilter, setSelectedStudentFilter] = useState('all');
 
   const canManage = user?.role === 'admin' || user?.role === 'faculty';
+  const isMember = user?.role === 'member';
 
   // Load active user details
   useEffect(() => {
@@ -63,7 +89,7 @@ const Schedule = () => {
         setFacultyUsers(list);
       });
     }
-  }, [user]);
+  }, [user, canManage]);
 
   // Fetch Schedules & Students
   useEffect(() => {
@@ -79,57 +105,36 @@ const Schedule = () => {
     let unsubStudents = () => {};
 
     try {
-      // Fetch calendarEvents for real-time calendar sync
-      const schedQuery = query(collection(db, 'calendarEvents'));
+      // Fetch classSchedules in real-time
+      const schedQuery = query(collection(db, 'classSchedules'));
       unsubSched = onSnapshot(schedQuery, (snap) => {
         const list = [];
         snap.forEach(doc => {
           const d = doc.data();
           list.push({ 
             id: doc.id, 
-            ...d,
-            date: d.startDate || d.date || '',
-            time: d.startTime || d.time || '',
-            subject: d.title || d.subject || '',
-            mode: d.eventType === 'Google Meet Session' ? 'online' : 'offline',
-            faculty: d.assignedFacultyName || d.faculty || 'Faculty Mentor'
+            ...d
           });
-        });
-        // Sort by date and time
-        list.sort((a, b) => {
-          const dateCompare = (a.date || '').localeCompare(b.date || '');
-          if (dateCompare !== 0) return dateCompare;
-          return (a.time || '').localeCompare(b.time || '');
         });
         setSchedules(list);
         setLoading(false);
       }, (error) => {
-        console.error("Schedule: Error fetching calendarEvents", error);
+        console.error("Schedule: Error fetching classSchedules", error);
         setLoading(false);
       });
     } catch (err) {
-      console.error("Schedule: Failed to setup calendarEvents listener", err);
+      console.error("Schedule: Failed to setup classSchedules listener", err);
       triggerToast("Failed to connect to schedules");
       setLoading(false);
     }
 
     try {
-      // Fetch student users list for schedule assignments (for faculty/admin)
       if (canManage) {
         const studentsQuery = query(collection(db, 'users'), where('role', '==', 'student'));
         unsubStudents = onSnapshot(studentsQuery, (snap) => {
           const list = [];
           snap.forEach(doc => {
-            const data = doc.data();
-            if (user?.role === 'faculty') {
-              const hasAssignedIds = data.assignedFacultyIds?.includes(user.uid);
-              const hasAssignedLegacy = data.assignedFaculty?.includes(user.uid) || data.assignedFaculty?.includes(user.email);
-              if (hasAssignedIds || hasAssignedLegacy) {
-                list.push({ id: doc.id, ...data });
-              }
-            } else {
-              list.push({ id: doc.id, ...data });
-            }
+            list.push({ id: doc.id, ...doc.data() });
           });
           setStudents(list);
         }, (error) => {
@@ -157,10 +162,6 @@ const Schedule = () => {
       triggerToast('Please enter an event title');
       return;
     }
-    if (selectedGroups.length === 0 && selectedStudents.length === 0) {
-      triggerToast('Please assign to at least one student or group');
-      return;
-    }
     setIsSubmitting(true);
 
     try {
@@ -170,48 +171,52 @@ const Schedule = () => {
         if (matchedFac) facName = matchedFac.displayName || matchedFac.name || '';
       }
 
-      await addDoc(collection(db, 'calendarEvents'), {
-        title: eventTitle.trim(),
+      const payload = {
+        subject: eventTitle.trim(),
         description: eventDesc.trim(),
-        eventType,
-        startDate,
-        endDate,
+        day: startDate,
         startTime,
-        endTime,
-        assignedFacultyId,
-        assignedFacultyName: facName || user.displayName || 'Faculty Mentor',
-        assignedGroups: selectedGroups,
-        assignedStudents: selectedStudents,
+        endTime: computeEndTime(startTime),
+        duration: '1 Hour 30 Minutes',
+        facultyId: assignedFacultyId || user.uid,
+        facultyName: facName || user.displayName || 'Faculty Mentor',
+        batch: selectedGroups[0] || 'class_2_5',
+        studentIds: selectedStudents,
         meetLink,
-        venue,
-        recurring: isRecurring,
-        recurrenceType: isRecurring ? recurrenceType : 'none',
-        createdBy: user.displayName || user.name || 'System',
-        createdAt: serverTimestamp()
-      });
+        room: venue,
+        status: 'upcoming',
+        updatedAt: serverTimestamp()
+      };
 
-      triggerToast('Class Scheduled successfully! 📅');
+      if (editingSchedule) {
+        await updateDoc(doc(db, 'classSchedules', editingSchedule.id), payload);
+        triggerToast('Class schedule updated successfully! 📅');
+      } else {
+        payload.createdAt = serverTimestamp();
+        await addDoc(collection(db, 'classSchedules'), payload);
+        triggerToast('Class scheduled successfully! 📅');
+      }
+
       setIsAddModalOpen(false);
-      
-      // Reset form
+      setEditingSchedule(null);
       setEventTitle('');
       setEventDesc('');
       setMeetLink('');
       setSelectedGroups([]);
       setSelectedStudents([]);
     } catch (err) {
-      console.error("Error creating schedule:", err);
-      triggerToast('Failed to create class schedule');
+      console.error("Error saving schedule:", err);
+      triggerToast('Failed to save class schedule');
     } finally {
       setIsSubmitting(false);
     }
   };
 
   const handleDeleteSchedule = async (id, title) => {
-    if (window.confirm(`Are you sure you want to cancel this event: ${title}?`)) {
+    if (window.confirm(`Are you sure you want to cancel this class slot: ${title}?`)) {
       try {
-        await deleteDoc(doc(db, 'calendarEvents', id));
-        triggerToast('Event cancelled successfully');
+        await deleteDoc(doc(db, 'classSchedules', id));
+        triggerToast('Class slot cancelled successfully');
       } catch (err) {
         console.error(err);
         triggerToast('Failed to cancel event');
@@ -219,31 +224,75 @@ const Schedule = () => {
     }
   };
 
-  // Calendar dates generation
+  // Student slot booking request
+  const handleBookSlot = async (e) => {
+    e.preventDefault();
+    if (!bookingDate) {
+      triggerToast('Please select a date');
+      return;
+    }
+    setBookingSubmitting(true);
+
+    try {
+      await addDoc(collection(db, 'slotRequests'), {
+        studentId: user.uid,
+        studentName: user.displayName || 'Student',
+        requestedDate: bookingDate,
+        requestedTime: bookingTime,
+        subject: bookingSubject,
+        status: 'pending',
+        createdAt: serverTimestamp()
+      });
+      triggerToast('Slot request submitted successfully! 📅');
+      setIsBookingModalOpen(false);
+    } catch (err) {
+      console.error("Error requesting slot:", err);
+      triggerToast('Failed to request slot');
+    } finally {
+      setBookingSubmitting(false);
+    }
+  };
+
+  // Filtered schedules based on active user
+  const userGroup = user?.studentGroup || '';
+  const displayedSchedules = schedules.filter(item => {
+    if (user?.role?.toLowerCase() === 'student') {
+      const isInStudents = item.studentIds?.includes(user.uid);
+      const isInGroups = item.batch === userGroup;
+      return isInStudents || isInGroups;
+    }
+    
+    if (user?.role?.toLowerCase() === 'faculty') {
+      return item.facultyId === user.uid;
+    }
+    
+    // Admin and Member
+    if (selectedStudentFilter === 'all') return true;
+    return item.studentIds?.includes(selectedStudentFilter);
+  });
+
+  // Helper to map date to day-of-week string
+  const getDayName = (dateObj) => {
+    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    return days[dateObj.getDay()];
+  };
+
+  // Calendar view dates calculations
+  const monthDays = [];
+  const startDayOfWeek = startOfWeek(currentMonthStart, { weekStartsOn: 1 });
+  for (let i = 0; i < 35; i++) {
+    monthDays.push(addDays(startDayOfWeek, i));
+  }
+
+  // Week view dates
   const weekDays = [];
   for (let i = 0; i < 7; i++) {
     weekDays.push(addDays(currentWeekStart, i));
   }
 
-  // Filtered schedules (Phase 5)
-  const userGroup = user?.studentGroup || '';
-  const displayedSchedules = schedules.filter(item => {
-    if (user?.role?.toLowerCase() === 'student') {
-      const isInStudents = item.assignedStudents?.includes(user.uid);
-      const isInGroups = item.assignedGroups?.includes(userGroup);
-      return isInStudents || isInGroups;
-    }
-    
-    if (user?.role?.toLowerCase() === 'faculty') {
-      const isCreator = item.assignedFacultyId === user.uid;
-      const isStudentAssigned = item.assignedStudents?.some(sid => students.some(s => s.id === sid));
-      return isCreator || isStudentAssigned;
-    }
-    
-    // Admin and Member
-    if (selectedStudentFilter === 'all') return true;
-    return item.assignedStudents?.includes(selectedStudentFilter);
-  });
+  // Filter schedules matching the selected date's day of week
+  const selectedDayName = getDayName(selectedDate);
+  const selectedDaySchedules = displayedSchedules.filter(item => item.day === selectedDayName);
 
   return (
     <motion.div variants={stagger} initial="hidden" animate="show" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
@@ -261,7 +310,7 @@ const Schedule = () => {
       <motion.div variants={fadeItem} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
         <div>
           <h1 style={{ fontSize: '1.75rem', fontWeight: 800, marginBottom: '6px' }}>
-            {canManage ? 'Schedule Management' : 'My Personal Schedule'}
+            {canManage ? 'Schedule Management' : 'Academic Class Timetable'}
           </h1>
           <p style={{ color: 'var(--text-muted)' }}>
             {canManage ? 'Allocate offline/online batches and coordinate class schedules' : 'Personal class slots and upcoming batches'}
@@ -271,23 +320,32 @@ const Schedule = () => {
         <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
           {/* View toggle */}
           <div style={{ display: 'flex', background: 'var(--surface)', borderRadius: '100px', padding: '3px' }}>
-            <button onClick={() => setViewMode('card')} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 16px', borderRadius: '100px', fontSize: '0.82rem', fontWeight: 700, background: viewMode === 'card' ? 'white' : 'transparent', color: viewMode === 'card' ? 'var(--primary)' : 'var(--text-muted)', border: 'none', cursor: 'pointer', transition: 'var(--transition)' }}>
-              <List size={14} /> Cards
-            </button>
             <button onClick={() => setViewMode('calendar')} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 16px', borderRadius: '100px', fontSize: '0.82rem', fontWeight: 700, background: viewMode === 'calendar' ? 'white' : 'transparent', color: viewMode === 'calendar' ? 'var(--primary)' : 'var(--text-muted)', border: 'none', cursor: 'pointer', transition: 'var(--transition)' }}>
               <CalendarRange size={14} /> Calendar
             </button>
+            <button onClick={() => setViewMode('week')} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 16px', borderRadius: '100px', fontSize: '0.82rem', fontWeight: 700, background: viewMode === 'week' ? 'white' : 'transparent', color: viewMode === 'week' ? 'var(--primary)' : 'var(--text-muted)', border: 'none', cursor: 'pointer', transition: 'var(--transition)' }}>
+              <List size={14} /> Week
+            </button>
+            <button onClick={() => setViewMode('agenda')} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 16px', borderRadius: '100px', fontSize: '0.82rem', fontWeight: 700, background: viewMode === 'agenda' ? 'white' : 'transparent', color: viewMode === 'agenda' ? 'var(--primary)' : 'var(--text-muted)', border: 'none', cursor: 'pointer', transition: 'var(--transition)' }}>
+              <Clock3 size={14} /> Agenda
+            </button>
           </div>
 
+          {user?.role?.toLowerCase() === 'student' && (
+            <button onClick={() => setIsBookingModalOpen(true)} className="btn btn-primary" style={{ padding: '10px 18px', fontSize: '0.88rem', borderRadius: '10px' }}>
+              Book Reschedule Slot
+            </button>
+          )}
+
           {canManage && (
-            <button onClick={() => setIsAddModalOpen(true)} className="btn btn-primary" style={{ padding: '10px 18px', fontSize: '0.88rem', borderRadius: '10px' }}>
+            <button onClick={() => { setEditingSchedule(null); setIsAddModalOpen(true); }} className="btn btn-primary" style={{ padding: '10px 18px', fontSize: '0.88rem', borderRadius: '10px' }}>
               <Plus size={16} /> Add Class Slot
             </button>
           )}
         </div>
       </motion.div>
 
-      {/* Filter bar for Faculty */}
+      {/* FILTER BAR FOR FACULTY/ADMIN */}
       {canManage && (
         <motion.div variants={fadeItem} className="card card-p" style={{ padding: '16px 24px', display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap', background: 'var(--white)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, minWidth: '240px' }}>
@@ -304,7 +362,7 @@ const Schedule = () => {
             </select>
           </div>
           <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', fontWeight: 600 }}>
-            {displayedSchedules.length} scheduled class slots
+            {displayedSchedules.length} scheduled slots
           </div>
         </motion.div>
       )}
@@ -315,182 +373,249 @@ const Schedule = () => {
           <div style={{ width: '32px', height: '32px', border: '3px solid rgba(83,109,254,0.2)', borderTopColor: 'var(--primary)', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
           <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
         </div>
-      ) : displayedSchedules.length === 0 ? (
-        <motion.div variants={fadeItem} className="card card-p" style={{ textAlign: 'center', padding: '60px 20px', background: 'var(--white)' }}>
-          <CalendarIcon size={48} style={{ margin: '0 auto 16px', color: 'var(--text-light)', opacity: 0.6 }} />
-          <h3 style={{ fontSize: '1.2rem', marginBottom: '6px' }}>No classes scheduled</h3>
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-            {canManage ? 'There are no active scheduled slots. Click "Add Class Slot" to schedule classes.' : 'You have no scheduled classes at the moment.'}
-          </p>
-        </motion.div>
-      ) : viewMode === 'card' ? (
-        /* CARD VIEW */
-        <motion.div variants={stagger} className="grid-auto-cards-sm" style={{ gap: '20px' }}>
-          {displayedSchedules.map((item, idx) => {
-            const isToday = isSameDay(new Date(), parseISO(item.date));
-            const eventColor = getEventColor(item.eventType);
-            return (
-              <motion.div key={item.id} variants={fadeItem} className="card card-p" style={{ background: 'var(--white)', display: 'flex', flexDirection: 'column', gap: '14px', borderLeft: `5px solid ${eventColor}`, borderTop: isToday ? '1.5px solid var(--success)' : '1px solid var(--border)', borderRight: '1px solid var(--border)', borderBottom: '1px solid var(--border)' }}>
-                
-                {/* Top Header */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <div>
-                    <span className="badge" style={{ marginBottom: '8px', background: `${eventColor}15`, color: eventColor, fontWeight: 800, fontSize: '0.75rem', padding: '2px 8px', borderRadius: '4px' }}>
-                      {item.eventType || 'Regular Class'}
-                    </span>
-                    <h3 style={{ fontSize: '1.05rem', fontWeight: 800, marginTop: '4px' }}>{item.title || item.subject}</h3>
+      ) : (
+        <>
+          {/* 1. MONTHLY CALENDAR VIEW */}
+          {viewMode === 'calendar' && (
+            <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '24px' }} className="grid-2-col-mobile">
+              {/* Calendar grid */}
+              <motion.div variants={fadeItem} className="card card-p" style={{ background: 'var(--white)', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <h3 style={{ fontSize: '1.05rem', fontWeight: 800 }}>
+                    {format(currentMonthStart, 'MMMM yyyy')}
+                  </h3>
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    <button onClick={() => setCurrentMonthStart(prev => subMonths(prev, 1))} style={{ padding: '6px', border: '1px solid var(--border)', borderRadius: '8px', cursor: 'pointer', background: 'none' }}><ArrowLeft size={14} /></button>
+                    <button onClick={() => setCurrentMonthStart(prev => addMonths(prev, 1))} style={{ padding: '6px', border: '1px solid var(--border)', borderRadius: '8px', cursor: 'pointer', background: 'none' }}><ArrowRight size={14} /></button>
                   </div>
-                  {canManage && (
-                    <button onClick={() => handleDeleteSchedule(item.id, item.title || item.subject)} style={{ color: 'var(--danger)', background: 'rgba(239,83,80,0.1)', padding: '6px', borderRadius: '6px', cursor: 'pointer', border: 'none' }} title="Cancel Event">
-                      <Trash2 size={15} />
-                    </button>
-                  )}
                 </div>
 
-                {/* Details list */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <CalendarIcon size={14} style={{ color: 'var(--primary)' }} />
-                    <span>{format(parseISO(item.date), 'PPPP')}</span>
-                    {isToday && <span style={{ marginLeft: 'auto', background: 'var(--success)', color: 'var(--text-on-primary)', fontSize: '0.7rem', fontWeight: 800, padding: '2px 8px', borderRadius: '100px' }}>TODAY</span>}
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <Clock size={14} style={{ color: 'var(--primary)' }} />
-                    <span>{item.startTime} - {item.endTime || 'End Time'}</span>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <User size={14} style={{ color: 'var(--primary)' }} />
-                    <span>Faculty: {item.assignedFacultyName || 'Faculty Mentor'}</span>
-                  </div>
-                  {item.venue && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.8rem' }}>
-                      <MapPin size={14} style={{ color: 'var(--primary)' }} />
-                      <span>{item.venue}</span>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '8px', textAlign: 'center' }}>
+                  {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(d => (
+                    <div key={d} style={{ fontSize: '0.72rem', fontWeight: 800, color: 'var(--text-light)', textTransform: 'uppercase' }}>{d}</div>
+                  ))}
+                  {monthDays.map((day, idx) => {
+                    const isSelected = isSameDay(selectedDate, day);
+                    const isCurrentMonth = isSameMonth(currentMonthStart, day);
+                    const daySchedulesList = displayedSchedules.filter(item => item.day === getDayName(day));
+
+                    return (
+                      <div
+                        key={idx}
+                        onClick={() => setSelectedDate(day)}
+                        style={{
+                          aspectRatio: '1', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                          borderRadius: '12px', cursor: 'pointer', position: 'relative', transition: 'all 0.2s',
+                          background: isSelected ? 'var(--primary)' : 'transparent',
+                          color: isSelected ? 'white' : isCurrentMonth ? 'var(--dark)' : 'var(--text-light)',
+                          border: isSameDay(new Date(), day) ? '1.5px solid var(--primary)' : '1px solid transparent'
+                        }}
+                      >
+                        <span style={{ fontSize: '0.85rem', fontWeight: 700 }}>{format(day, 'd')}</span>
+                        {/* Dot indicator for classes */}
+                        <div style={{ display: 'flex', gap: '2px', position: 'absolute', bottom: '4px' }}>
+                          {daySchedulesList.slice(0, 3).map((item, i) => (
+                            <span key={i} style={{ width: '4px', height: '4px', borderRadius: '50%', background: isSelected ? 'white' : 'var(--primary)' }} />
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </motion.div>
+
+              {/* Day details panel */}
+              <motion.div variants={fadeItem} className="card card-p" style={{ background: 'var(--white)', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <h3 style={{ fontSize: '1.05rem', fontWeight: 800 }}>
+                  Classes for {format(selectedDate, 'EEEE, d MMMM')}
+                </h3>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  {selectedDaySchedules.map(item => (
+                    <div key={item.id} style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '14px', borderRadius: '12px', border: '1px solid var(--border)', borderLeft: '4px solid var(--primary)' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontSize: '0.72rem', fontWeight: 800, textTransform: 'uppercase', color: 'var(--primary)' }}>{item.batch}</span>
+                        {canManage && (
+                          <div style={{ display: 'flex', gap: '6px' }}>
+                            <button
+                              onClick={() => {
+                                setEditingSchedule(item);
+                                setEventTitle(item.subject);
+                                setEventDesc(item.description || '');
+                                setStartDate(item.day);
+                                setStartTime(item.startTime);
+                                setVenue(item.room);
+                                setSelectedGroups([item.batch]);
+                                setSelectedStudents(item.studentIds || []);
+                                setMeetLink(item.meetLink || '');
+                                setIsAddModalOpen(true);
+                              }}
+                              style={{ color: 'var(--primary)', background: 'none', border: 'none', cursor: 'pointer' }}
+                            >
+                              <Edit2 size={13} />
+                            </button>
+                            <button onClick={() => handleDeleteSchedule(item.id, item.subject)} style={{ color: 'var(--danger)', background: 'none', border: 'none', cursor: 'pointer' }}><Trash2 size={13} /></button>
+                          </div>
+                        )}
+                      </div>
+                      <h4 style={{ fontSize: '0.92rem', fontWeight: 800, margin: 0 }}>{item.subject}</h4>
+                      <div style={{ display: 'flex', gap: '12px', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Clock size={12} /> {item.startTime} - {item.endTime}</div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><MapPin size={12} /> {item.room}</div>
+                      </div>
+                      {item.meetLink && (
+                        <a href={item.meetLink} target="_blank" rel="noopener noreferrer" className="btn btn-primary" style={{ padding: '6px 12px', fontSize: '0.7rem', display: 'flex', alignItems: 'center', gap: '4px', width: 'fit-content' }}>
+                          <Video size={12} /> Join Meet Link
+                        </a>
+                      )}
                     </div>
-                  )}
-                  {item.description && (
-                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', marginTop: '6px', padding: '10px', background: 'var(--surface)', borderRadius: '8px' }}>
-                      <FileText size={14} style={{ color: 'var(--text-light)', marginTop: '2px', flexShrink: 0 }} />
-                      <span style={{ fontSize: '0.78rem', fontStyle: 'italic', lineHeight: 1.4 }}>{item.description}</span>
+                  ))}
+                  {selectedDaySchedules.length === 0 && (
+                    <div style={{ textAlign: 'center', color: 'var(--text-light)', fontStyle: 'italic', padding: '40px 0' }}>
+                      No classes scheduled for this day.
                     </div>
-                  )}
-                  {item.meetLink && (
-                    <a
-                      href={item.meetLink}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="btn btn-primary"
-                      style={{ padding: '8px 12px', fontSize: '0.75rem', borderRadius: '8px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '6px', marginTop: '4px' }}
-                    >
-                      Join Meeting Link
-                    </a>
                   )}
                 </div>
               </motion.div>
-            );
-          })}
-        </motion.div>
-      ) : (
-        /* CALENDAR WEEKLY VIEW */
-        <motion.div variants={fadeItem} className="card card-p" style={{ background: 'var(--white)', display: 'flex', flexDirection: 'column', gap: '20px', overflowX: 'auto' }}>
-          
-          {/* Week Changer header */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minWidth: '600px' }}>
-            <button onClick={() => setCurrentWeekStart(prev => addDays(prev, -7))} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600, fontSize: '0.85rem', color: 'var(--primary)', background: 'none', border: 'none', cursor: 'pointer' }}>
-              <ArrowLeft size={16} /> Previous Week
-            </button>
-            <h3 style={{ fontSize: '1.1rem', fontWeight: 800 }}>
-              Week of {format(currentWeekStart, 'MMMM d, yyyy')}
-            </h3>
-            <button onClick={() => setCurrentWeekStart(prev => addDays(prev, 7))} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600, fontSize: '0.85rem', color: 'var(--primary)', background: 'none', border: 'none', cursor: 'pointer' }}>
-              Next Week <ArrowRight size={16} />
-            </button>
-          </div>
+            </div>
+          )}
 
-          {/* Grid structure */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '12px', minWidth: '700px', marginTop: '10px' }}>
-            {weekDays.map((day, idx) => {
-              const daySchedules = displayedSchedules.filter(item => isSameDay(day, parseISO(item.date)));
-              const isToday = isSameDay(new Date(), day);
+          {/* 2. WEEK VIEW GRID */}
+          {viewMode === 'week' && (
+            <motion.div variants={fadeItem} className="card card-p" style={{ background: 'var(--white)', display: 'flex', flexDirection: 'column', gap: '20px', overflowX: 'auto' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minWidth: '700px' }}>
+                <button onClick={() => setCurrentWeekStart(prev => addDays(prev, -7))} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700, fontSize: '0.85rem', color: 'var(--primary)', background: 'none', border: 'none', cursor: 'pointer' }}>
+                  <ArrowLeft size={16} /> Previous Week
+                </button>
+                <h3 style={{ fontSize: '1.1rem', fontWeight: 800 }}>
+                  Week of {format(currentWeekStart, 'MMMM d, yyyy')}
+                </h3>
+                <button onClick={() => setCurrentWeekStart(prev => addDays(prev, 7))} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700, fontSize: '0.85rem', color: 'var(--primary)', background: 'none', border: 'none', cursor: 'pointer' }}>
+                  Next Week <ArrowRight size={16} />
+                </button>
+              </div>
 
-              return (
-                <div key={idx} style={{ display: 'flex', flexDirection: 'column', gap: '10px', background: isToday ? 'rgba(83,109,254,0.02)' : 'transparent', border: isToday ? '1px solid rgba(83,109,254,0.2)' : '1px solid var(--border)', borderRadius: '16px', padding: '12px', minHeight: '280px' }}>
-                  
-                  {/* Day Date labels */}
-                  <div style={{ textAlign: 'center', paddingBottom: '8px', borderBottom: '1px solid var(--border)' }}>
-                    <div style={{ fontSize: '0.75rem', fontWeight: 700, color: isToday ? 'var(--primary)' : 'var(--text-light)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{format(day, 'eee')}</div>
-                    <div style={{ fontSize: '1.25rem', fontWeight: 900, color: isToday ? 'var(--primary)' : 'var(--dark)' }}>{format(day, 'd')}</div>
-                  </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '12px', minWidth: '700px', marginTop: '10px' }}>
+                {weekDays.map((day, idx) => {
+                  const dayName = getDayName(day);
+                  const daySchedules = displayedSchedules.filter(item => item.day === dayName);
+                  const isToday = isSameDay(new Date(), day);
 
-                  {/* Day class list */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1, overflowY: 'auto' }}>
-                    {daySchedules.map(item => {
-                      const eventColor = getEventColor(item.eventType);
-                      return (
-                        <div key={item.id} style={{ display: 'flex', flexDirection: 'column', gap: '4px', padding: '8px', background: `${eventColor}08`, borderLeft: `3px solid ${eventColor}`, borderRadius: '8px', fontSize: '0.72rem', position: 'relative' }}>
-                          <div style={{ fontWeight: 800, color: 'var(--dark)', display: 'flex', justifyContent: 'space-between' }}>
-                            <span>{item.startTime}</span>
-                            <span style={{ fontSize: '0.62rem', color: eventColor, fontWeight: 700 }}>{item.eventType?.split(' ')[0] || 'Class'}</span>
-                          </div>
-                          <div style={{ fontWeight: 700, color: 'var(--dark)' }}>{item.title || item.subject}</div>
-                          <div style={{ color: 'var(--text-light)', fontWeight: 600 }}>{item.assignedFacultyName || 'Mentor'}</div>
-                          {canManage && (
-                            <button onClick={() => handleDeleteSchedule(item.id, item.title || item.subject)} style={{ position: 'absolute', top: 4, right: 4, background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', padding: 0 }} title="Cancel Class">
-                              ×
-                            </button>
-                          )}
-                        </div>
-                      );
-                    })}
-                    {daySchedules.length === 0 && (
-                      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.7rem', color: 'var(--text-light)', fontStyle: 'italic', textAlign: 'center' }}>
-                        Free day
+                  return (
+                    <div key={idx} style={{ display: 'flex', flexDirection: 'column', gap: '10px', background: isToday ? 'rgba(83,109,254,0.02)' : 'transparent', border: isToday ? '1px solid rgba(83,109,254,0.2)' : '1px solid var(--border)', borderRadius: '16px', padding: '12px', minHeight: '280px' }}>
+                      <div style={{ textAlign: 'center', paddingBottom: '8px', borderBottom: '1px solid var(--border)' }}>
+                        <div style={{ fontSize: '0.75rem', fontWeight: 700, color: isToday ? 'var(--primary)' : 'var(--text-light)', textTransform: 'uppercase' }}>{format(day, 'eee')}</div>
+                        <div style={{ fontSize: '1.25rem', fontWeight: 900, color: isToday ? 'var(--primary)' : 'var(--dark)' }}>{format(day, 'd')}</div>
                       </div>
+
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1, overflowY: 'auto' }}>
+                        {daySchedules.map(item => (
+                          <div key={item.id} style={{ display: 'flex', flexDirection: 'column', gap: '4px', padding: '8px', background: 'rgba(83,109,254,0.05)', borderLeft: '3px solid var(--primary)', borderRadius: '8px', fontSize: '0.72rem', position: 'relative' }}>
+                            <div style={{ fontWeight: 800, color: 'var(--dark)', display: 'flex', justifyContent: 'space-between' }}>
+                              <span>{item.startTime}</span>
+                              <span style={{ fontSize: '0.62rem', color: 'var(--primary)', fontWeight: 700 }}>{item.batch}</span>
+                            </div>
+                            <div style={{ fontWeight: 700, color: 'var(--dark)' }}>{item.subject}</div>
+                            <div style={{ color: 'var(--text-light)', fontWeight: 600 }}>{item.facultyName}</div>
+                            {canManage && (
+                              <button onClick={() => handleDeleteSchedule(item.id, item.subject)} style={{ position: 'absolute', top: 4, right: 4, background: 'none', border: 'none', color: 'var(--danger)', cursor: 'pointer', padding: 0 }}>×</button>
+                            )}
+                          </div>
+                        ))}
+                        {daySchedules.length === 0 && (
+                          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.7rem', color: 'var(--text-light)', fontStyle: 'italic', textAlign: 'center' }}>
+                            Free Day
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </motion.div>
+          )}
+
+          {/* 3. AGENDA VIEW */}
+          {viewMode === 'agenda' && (
+            <motion.div variants={stagger} className="grid-auto-cards-sm" style={{ gap: '20px' }}>
+              {displayedSchedules.map(item => (
+                <motion.div key={item.id} variants={fadeItem} className="card card-p" style={{ background: 'var(--white)', borderLeft: '5px solid var(--primary)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <div>
+                      <span className="badge" style={{ background: 'rgba(83,109,254,0.1)', color: 'var(--primary)', fontWeight: 800, fontSize: '0.75rem', padding: '2px 8px', borderRadius: '4px' }}>
+                        {item.day} Slot
+                      </span>
+                      <h3 style={{ fontSize: '1.05rem', fontWeight: 800, marginTop: '4px' }}>{item.subject}</h3>
+                    </div>
+                    {canManage && (
+                      <button onClick={() => handleDeleteSchedule(item.id, item.subject)} style={{ color: 'var(--danger)', background: 'rgba(239,83,80,0.1)', padding: '6px', borderRadius: '6px', border: 'none', cursor: 'pointer' }}>
+                        <Trash2 size={14} />
+                      </button>
                     )}
                   </div>
-                </div>
-              );
-            })}
-          </div>
-        </motion.div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <Clock size={14} style={{ color: 'var(--primary)' }} />
+                      <span>{item.startTime} - {item.endTime} (1.5 hrs)</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <User size={14} style={{ color: 'var(--primary)' }} />
+                      <span>Faculty: {item.facultyName}</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <BookOpen size={14} style={{ color: 'var(--primary)' }} />
+                      <span>Batch: {item.batch}</span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <MapPin size={14} style={{ color: 'var(--primary)' }} />
+                      <span>Venue: {item.room}</span>
+                    </div>
+                    {item.meetLink && (
+                      <a href={item.meetLink} target="_blank" rel="noopener noreferrer" className="btn btn-primary" style={{ padding: '8px 12px', fontSize: '0.75rem', borderRadius: '8px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '6px', marginTop: '4px' }}>
+                        <Video size={14} /> Join Meeting Link
+                      </a>
+                    )}
+                  </div>
+                </motion.div>
+              ))}
+            </motion.div>
+          )}
+        </>
       )}
 
-      {/* CREATE CALENDAR EVENT MODAL (Phase 4) */}
-      <Modal isOpen={isAddModalOpen} onClose={() => setIsAddModalOpen(false)} title="Schedule Academic Class Event">
+      {/* MODAL: ADD/EDIT SCHEDULE (ADMIN/FACULTY ONLY) */}
+      <Modal isOpen={isAddModalOpen} onClose={() => setIsAddModalOpen(false)} title={editingSchedule ? "Edit Class Schedule" : "Schedule Academic Class Event"}>
         <form onSubmit={handleAddSchedule} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <div>
-            <label className="form-label">Event Title</label>
+            <label className="form-label">Subject Title</label>
             <input
               required
               type="text"
               className="form-input"
               value={eventTitle}
               onChange={e => setEventTitle(e.target.value)}
-              placeholder="e.g. Regular Class: Intro to Python loops"
+              placeholder="e.g. Python Loops and Functions"
             />
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }} className="grid-2-col-mobile">
             <div>
-              <label className="form-label">Event Type</label>
+              <label className="form-label">Day of Week</label>
               <select
                 required
                 className="form-input"
-                value={eventType}
-                onChange={e => setEventType(e.target.value)}
+                value={startDate}
+                onChange={e => setStartDate(e.target.value)}
                 style={{ background: 'var(--white)' }}
               >
-                <option value="Regular Class">Regular Class</option>
-                <option value="Extra Class">Extra Class</option>
-                <option value="Practical Class">Practical Class</option>
-                <option value="Practice Session">Practice Session</option>
-                <option value="Google Meet Session">Google Meet Session</option>
-                <option value="Exam Revision Session">Exam Revision Session</option>
+                {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map(d => (
+                  <option key={d} value={d}>{d}</option>
+                ))}
               </select>
             </div>
             <div>
-              <label className="form-label">Faculty Leader</label>
-              {user?.role?.toLowerCase() === 'admin' ? (
+              <label className="form-label">Faculty Mentor</label>
+              {user?.role === 'admin' ? (
                 <select
                   required
                   className="form-input"
@@ -504,38 +629,8 @@ const Schedule = () => {
                   ))}
                 </select>
               ) : (
-                <input
-                  disabled
-                  className="form-input"
-                  value={assignedFacultyName}
-                />
+                <input disabled className="form-input" value={assignedFacultyName} />
               )}
-            </div>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }} className="grid-2-col-mobile">
-            <div>
-              <label className="form-label">Start Date</label>
-              <input
-                type="date"
-                required
-                className="form-input"
-                value={startDate}
-                onChange={e => {
-                  setStartDate(e.target.value);
-                  setEndDate(e.target.value);
-                }}
-              />
-            </div>
-            <div>
-              <label className="form-label">End Date</label>
-              <input
-                type="date"
-                required
-                className="form-input"
-                value={endDate}
-                onChange={e => setEndDate(e.target.value)}
-              />
             </div>
           </div>
 
@@ -551,88 +646,44 @@ const Schedule = () => {
               />
             </div>
             <div>
-              <label className="form-label">End Time</label>
+              <label className="form-label">End Time (Auto: 1h 30m duration)</label>
               <input
-                type="time"
-                required
+                type="text"
+                disabled
                 className="form-input"
-                value={endTime}
-                onChange={e => setEndTime(e.target.value)}
+                value={computeEndTime(startTime)}
               />
             </div>
           </div>
 
-          {/* Group assignment checkboxes */}
-          <div>
-            <label className="form-label" style={{ fontWeight: 800 }}>Assign Academic Student Groups</label>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '6px' }}>
-              {[
-                { id: 'class_2_5', label: 'Class 2-5' },
-                { id: 'class_6_8', label: 'Class 6-8' },
-                { id: 'class_9_10', label: 'Class 9-10' },
-                { id: 'class_11_12_science', label: 'Class 11-12 Sci' },
-                { id: 'class_11_12_application', label: 'Class 11-12 App' }
-              ].map(grp => {
-                const isSelected = selectedGroups.includes(grp.id);
-                return (
-                  <button
-                    type="button"
-                    key={grp.id}
-                    onClick={() => {
-                      if (isSelected) {
-                        setSelectedGroups(selectedGroups.filter(g => g !== grp.id));
-                      } else {
-                        setSelectedGroups([...selectedGroups, grp.id]);
-                      }
-                    }}
-                    style={{
-                      padding: '6px 12px', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 700,
-                      background: isSelected ? 'var(--primary)' : 'var(--surface)',
-                      color: isSelected ? 'white' : 'var(--text-muted)',
-                      border: '1px solid ' + (isSelected ? 'var(--primary)' : 'var(--border)'),
-                      cursor: 'pointer', transition: 'all 0.2s'
-                    }}
-                  >
-                    {grp.label}
-                  </button>
-                );
-              })}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }} className="grid-2-col-mobile">
+            <div>
+              <label className="form-label">Assign Batch Group</label>
+              <select
+                required
+                className="form-input"
+                value={selectedGroups[0] || ''}
+                onChange={e => setSelectedGroups([e.target.value])}
+                style={{ background: 'var(--white)' }}
+              >
+                <option value="" disabled>Choose Batch</option>
+                <option value="class_2_5">Class 2-5</option>
+                <option value="class_6_8">Class 6-8</option>
+                <option value="class_9_10">Class 9-10</option>
+                <option value="class_11_12_science">Class 11-12 Sci</option>
+                <option value="class_11_12_application">Class 11-12 App</option>
+              </select>
             </div>
-          </div>
-
-          {/* Student selection scrollbox */}
-          <div>
-            <label className="form-label" style={{ fontWeight: 800 }}>Assign Individual Students</label>
-            <div style={{
-              maxHeight: '140px', overflowY: 'auto', border: '1px solid var(--border)',
-              borderRadius: '8px', padding: '8px', display: 'flex', flexDirection: 'column', gap: '6px',
-              marginTop: '6px', background: '#F9FAFB'
-            }}>
-              {students.map(stud => {
-                const isSelected = selectedStudents.includes(stud.id);
-                return (
-                  <label key={stud.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.8rem', cursor: 'pointer', userSelect: 'none' }}>
-                    <input
-                      type="checkbox"
-                      checked={isSelected}
-                      onChange={() => {
-                        if (isSelected) {
-                          setSelectedStudents(selectedStudents.filter(id => id !== stud.id));
-                        } else {
-                          setSelectedStudents([...selectedStudents, stud.id]);
-                        }
-                      }}
-                      style={{ cursor: 'pointer' }}
-                    />
-                    <span>{stud.displayName} ({stud.course || 'No course'})</span>
-                  </label>
-                );
-              })}
-              {students.length === 0 && (
-                <div style={{ textAlign: 'center', fontSize: '0.75rem', color: 'var(--text-light)', fontStyle: 'italic', padding: '12px 0' }}>
-                  No students assigned to you yet
-                </div>
-              )}
+            <div>
+              <label className="form-label">Venue / Room / Location</label>
+              <input
+                type="text"
+                required
+                className="form-input"
+                value={venue}
+                onChange={e => setVenue(e.target.value)}
+                placeholder="e.g. Room 4B, Campus"
+              />
             </div>
           </div>
 
@@ -647,45 +698,36 @@ const Schedule = () => {
             />
           </div>
 
-          <div>
-            <label className="form-label">Venue / Location</label>
-            <input
-              type="text"
-              className="form-input"
-              value={venue}
-              onChange={e => setVenue(e.target.value)}
-              placeholder="e.g. Room 4B, Compution Campus"
-            />
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }} className="grid-2-col-mobile">
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <input
-                type="checkbox"
-                id="isRecurring"
-                checked={isRecurring}
-                onChange={e => setIsRecurring(e.target.checked)}
-                style={{ cursor: 'pointer' }}
-              />
-              <label htmlFor="isRecurring" style={{ fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer' }}>Recurring Event</label>
-            </div>
-            {isRecurring && (
-              <div>
-                <select
-                  required
-                  className="form-input"
-                  value={recurrenceType}
-                  onChange={e => setRecurrenceType(e.target.value)}
-                  style={{ background: 'var(--white)' }}
-                >
-                  <option value="none" disabled>Choose Type</option>
-                  <option value="daily">Daily</option>
-                  <option value="weekly">Weekly</option>
-                  <option value="monthly">Monthly</option>
-                </select>
+          {canManage && (
+            <div>
+              <label className="form-label" style={{ fontWeight: 800 }}>Assign Individual Students</label>
+              <div style={{
+                maxHeight: '140px', overflowY: 'auto', border: '1px solid var(--border)',
+                borderRadius: '8px', padding: '8px', display: 'flex', flexDirection: 'column', gap: '6px',
+                marginTop: '6px', background: '#F9FAFB'
+              }}>
+                {students.map(stud => {
+                  const isSelected = selectedStudents.includes(stud.id);
+                  return (
+                    <label key={stud.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.8rem', cursor: 'pointer', userSelect: 'none' }}>
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => {
+                          if (isSelected) {
+                            setSelectedStudents(selectedStudents.filter(id => id !== stud.id));
+                          } else {
+                            setSelectedStudents([...selectedStudents, stud.id]);
+                          }
+                        }}
+                      />
+                      <span>{stud.displayName} ({stud.course || 'No course'})</span>
+                    </label>
+                  );
+                })}
               </div>
-            )}
-          </div>
+            </div>
+          )}
 
           <div>
             <label className="form-label">Description / Lesson Notes (Optional)</label>
@@ -694,15 +736,68 @@ const Schedule = () => {
               value={eventDesc}
               onChange={e => setEventDesc(e.target.value)}
               placeholder="e.g. Bring Python File I/O homework, dry run of recursion loops"
-              rows={3}
-              style={{ resize: 'vertical' }}
+              rows={2}
             />
           </div>
 
           <div style={{ display: 'flex', gap: '12px', marginTop: '12px' }}>
             <button type="button" onClick={() => setIsAddModalOpen(false)} className="btn btn-ghost" style={{ flex: 1 }}>Cancel</button>
             <button type="submit" disabled={isSubmitting} className="btn btn-primary" style={{ flex: 1 }}>
-              {isSubmitting ? 'Scheduling...' : 'Schedule Event'}
+              {isSubmitting ? 'Saving...' : 'Save Class Slot'}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* MODAL: SLOT BOOKING REQUEST (STUDENTS ONLY) */}
+      <Modal isOpen={isBookingModalOpen} onClose={() => setIsBookingModalOpen(false)} title="Book Reschedule / Alternative Class Slot">
+        <form onSubmit={handleBookSlot} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <div>
+            <label className="form-label">Subject Course</label>
+            <select
+              required
+              className="form-input"
+              value={bookingSubject}
+              onChange={e => setBookingSubject(e.target.value)}
+              style={{ background: 'var(--white)' }}
+            >
+              {['Python Mastery', 'Data Structures & Algorithms', 'Web Development', 'Basic Computer'].map(sub => (
+                <option key={sub} value={sub}>{sub}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="form-label">Preferred Date</label>
+            <input
+              type="date"
+              required
+              min={format(new Date(), 'yyyy-MM-dd')}
+              className="form-input"
+              value={bookingDate}
+              onChange={e => setBookingDate(e.target.value)}
+            />
+          </div>
+
+          <div>
+            <label className="form-label">Preferred Time Slot</label>
+            <select
+              required
+              className="form-input"
+              value={bookingTime}
+              onChange={e => setBookingTime(e.target.value)}
+              style={{ background: 'var(--white)' }}
+            >
+              {['09:00', '10:30', '12:00', '14:00', '15:30', '17:00', '17:30', '19:00'].map(t => (
+                <option key={t} value={t}>{t}</option>
+              ))}
+            </select>
+          </div>
+
+          <div style={{ display: 'flex', gap: '12px', marginTop: '12px' }}>
+            <button type="button" onClick={() => setIsBookingModalOpen(false)} className="btn btn-ghost" style={{ flex: 1 }}>Cancel</button>
+            <button type="submit" disabled={bookingSubmitting} className="btn btn-primary" style={{ flex: 1 }}>
+              {bookingSubmitting ? 'Requesting...' : 'Request Slot'}
             </button>
           </div>
         </form>
@@ -710,19 +805,6 @@ const Schedule = () => {
 
     </motion.div>
   );
-};
-
-// Color coding mapping
-const getEventColor = (type) => {
-  switch (type) {
-    case 'Regular Class': return '#3B82F6'; // Blue
-    case 'Extra Class': return '#8B5CF6'; // Purple
-    case 'Practical Class': return '#F97316'; // Orange
-    case 'Exam Revision Session': return '#EF4444'; // Red
-    case 'Practice Session': return '#10B981'; // Green
-    case 'Google Meet Session': return '#06B6D4'; // Cyan
-    default: return '#536DFE'; // Theme color
-  }
 };
 
 export default Schedule;

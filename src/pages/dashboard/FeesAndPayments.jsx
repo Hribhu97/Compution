@@ -3,9 +3,9 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
 import { db } from '../../firebase';
-import { addDoc, updateDoc } from '../../firebase';
+import { addDoc, updateDoc, runTransaction } from '../../firebase';
 import { 
-  collection, doc, onSnapshot, query, where, 
+  collection, collectionGroup, doc, onSnapshot, query, where, 
   serverTimestamp, getDoc, getDocs, Timestamp, deleteDoc
 } from 'firebase/firestore';
 import { 
@@ -17,41 +17,8 @@ import {
 import { QRCodeSVG } from 'qrcode.react';
 import { FeesSkeleton } from '../../components/SkeletonLoader';
 
-// --- Fee Calculation Helpers ---
-const calculateMonthlyFee = (student) => {
-  const category = String(student.classCategory || student.grade || '').trim().toLowerCase();
-  
-  if (category.includes('2') || category.includes('3') || category.includes('4') || category.includes('5') || category === 'class_2_5') {
-    return 500;
-  }
-  if (category.includes('6') || category.includes('7') || category.includes('8') || category === 'class_6_8') {
-    return 600;
-  }
-  if (category.includes('9') || category.includes('10') || category === 'class_9_10') {
-    return 700;
-  }
-  if (category.includes('11') || category.includes('12') || category.includes('11th') || category.includes('12th') || category.includes('science') || category.includes('application')) {
-    return 1000;
-  }
-  
-  const numCat = parseInt(student.classCategory);
-  if (numCat >= 2 && numCat <= 5) return 500;
-  if (numCat >= 6 && numCat <= 8) return 600;
-  if (numCat >= 9 && numCat <= 10) return 700;
-  if (numCat >= 11 && numCat <= 12) return 1000;
+import { calculateFeeMetrics, getStudentMonthlyFee } from '../../utils/feeCalculator';
 
-  return 700; // Default fallback
-};
-
-const getStudentMonthlyFee = (student) => {
-  if (student.monthlyFee && Number(student.monthlyFee) > 0) {
-    return Number(student.monthlyFee);
-  }
-  if (student.feeTarget && Number(student.feeTarget) > 0) {
-    return Number(student.feeTarget);
-  }
-  return calculateMonthlyFee(student);
-};
 
 const isCurrentMonth = (dateVal) => {
   if (!dateVal) return false;
@@ -104,6 +71,8 @@ export default function FeesAndPayments() {
   const [allPayments, setAllPayments] = useState([]);
   const [allUsers, setAllUsers] = useState([]);
   const [paymentSubmissions, setPaymentSubmissions] = useState([]);
+  const [studentMonthlyFeeDoc, setStudentMonthlyFeeDoc] = useState(null);
+  const [allFees, setAllFees] = useState([]);
   const [loading, setLoading] = useState(true);
   const [errorState, setErrorState] = useState(null);
   const [retryTrigger, setRetryTrigger] = useState(0);
@@ -147,7 +116,45 @@ export default function FeesAndPayments() {
 
     // Common Student listener
     let unsubStudentPayments;
+    let unsubStudentFeeDoc;
     if (!isAdmin && user?.uid) {
+      const currentMonthStr = new Date().toISOString().slice(0, 7);
+      const feeDocRef = doc(db, 'fees', user.uid, 'monthly', currentMonthStr);
+
+      // Auto-initialize current month fee record for this student on load if not exists
+      (async () => {
+        try {
+          const studentMonthlyFee = getStudentMonthlyFee(user || {});
+          const docSnap = await getDoc(feeDocRef);
+          if (!docSnap.exists()) {
+            await setDoc(feeDocRef, {
+              amountDue: studentMonthlyFee,
+              amountPaid: 0,
+              status: 'pending',
+              paymentDate: null,
+              transactionId: null,
+              paymentMethod: null,
+              verifiedBy: null,
+              createdAt: serverTimestamp(),
+              updatedAt: serverTimestamp()
+            });
+            console.log(`[Student Init] Initialized monthly fee record for ${currentMonthStr}`);
+          }
+        } catch (e) {
+          console.error("Error auto-initializing student monthly fee:", e);
+        }
+      })();
+
+      unsubStudentFeeDoc = onSnapshot(feeDocRef, (docSnap) => {
+        if (docSnap.exists()) {
+          setStudentMonthlyFeeDoc(docSnap.data());
+        } else {
+          setStudentMonthlyFeeDoc(null);
+        }
+      }, (err) => {
+        console.error("Error listening to student monthly fee doc:", err);
+      });
+
       unsubStudentPayments = onSnapshot(
         query(collection(db, 'payments'), where('studentId', '==', user.uid)),
         (snap) => {
@@ -165,7 +172,7 @@ export default function FeesAndPayments() {
     }
 
     // Admin Listeners
-    let unsubUsers, unsubPayments, unsubSubmissions;
+    let unsubUsers, unsubPayments, unsubSubmissions, unsubFees;
     if (isAdmin) {
       unsubUsers = onSnapshot(
         collection(db, 'users'),
@@ -177,6 +184,26 @@ export default function FeesAndPayments() {
         (error) => {
           console.error('[Firebase Error - users listener]', error);
           setErrorState(error);
+        }
+      );
+
+      unsubFees = onSnapshot(
+        collectionGroup(db, 'monthly'),
+        (snap) => {
+          const list = [];
+          snap.forEach(d => {
+            const studentId = d.ref.parent.parent.id;
+            list.push({
+              id: d.id,
+              studentId,
+              month: d.id,
+              ...d.data()
+            });
+          });
+          setAllFees(list);
+        },
+        (error) => {
+          console.error('[Firebase Error - monthly collectionGroup listener]', error);
         }
       );
 
@@ -211,7 +238,9 @@ export default function FeesAndPayments() {
 
     return () => {
       if (unsubStudentPayments) unsubStudentPayments();
+      if (unsubStudentFeeDoc) unsubStudentFeeDoc();
       if (unsubUsers) unsubUsers();
+      if (unsubFees) unsubFees();
       if (unsubPayments) unsubPayments();
       if (unsubSubmissions) unsubSubmissions();
     };
@@ -219,33 +248,36 @@ export default function FeesAndPayments() {
 
   // --- 2. AUTOMATIC MONTHLY RESET SYNC LOGIC (Admin Only) ---
   useEffect(() => {
-    if (!isAdmin || loading || allUsers.length === 0 || allPayments.length === 0) return;
+    if (!isAdmin || loading || allUsers.length === 0) return;
 
+    const currentMonthStr = new Date().toISOString().slice(0, 7);
     const students = allUsers.filter(u => u.role === 'student');
 
     students.forEach(async (student) => {
-      // Find if student has a successful payment for this current month
-      const hasPaidThisMonth = allPayments.some(p => 
-        p.studentId === student.uid && 
-        p.status === 'paid' && 
-        isCurrentMonth(p.paymentDate)
-      );
-
-      const expectedStatus = hasPaidThisMonth ? 'paid' : 'pending';
-      const currentStatusInDb = (student.feeStatus || 'pending').toLowerCase();
-
-      if (currentStatusInDb !== expectedStatus) {
-        console.log(`[Monthly Reset] Syncing ${student.displayName || student.uid} to status "${expectedStatus}"`);
-        try {
-          await updateDoc(doc(db, 'users', student.uid), {
-            feeStatus: expectedStatus
+      const monthlyFeeAmount = getStudentMonthlyFee(student);
+      const feeDocRef = doc(db, 'fees', student.id, 'monthly', currentMonthStr);
+      
+      try {
+        const docSnap = await getDoc(feeDocRef);
+        if (!docSnap.exists()) {
+          await setDoc(feeDocRef, {
+            amountDue: monthlyFeeAmount,
+            amountPaid: 0,
+            status: 'pending',
+            paymentDate: null,
+            transactionId: null,
+            paymentMethod: null,
+            verifiedBy: null,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp()
           });
-        } catch (err) {
-          console.error(`[Monthly Reset Sync Error] student ${student.uid}:`, err);
+          console.log(`[Monthly Reset FeesAndPayments] Created ${currentMonthStr} fee record for student ${student.id}`);
         }
+      } catch (err) {
+        console.error("Monthly Reset check failed for student", student.id, err);
       }
     });
-  }, [allUsers, allPayments, isAdmin, loading]);
+  }, [allUsers, isAdmin, loading]);
 
   const handleRetry = () => {
     setRetryTrigger(prev => prev + 1);
@@ -286,64 +318,133 @@ export default function FeesAndPayments() {
   }
 
   // --- STATS CALCULATIONS ---
-  const activeStudents = allUsers.filter(u => u.role === 'student');
+  const activeStudents = allUsers.filter(u => 
+    u.role?.toLowerCase() === 'student' &&
+    u.status !== 'inactive' &&
+    u.status !== 'deleted' &&
+    u.archived !== true &&
+    u.deleted !== true
+  );
+  const currentMonthStr = new Date().toISOString().slice(0, 7);
+  const currentMonthFeesList = allFees.filter(f => f.month === currentMonthStr);
 
-  // Total collected this month: sum(amount of payments where status is paid and date falls in current month)
-  const totalCollectedThisMonth = allPayments
-    .filter(p => p.status === 'paid' && isCurrentMonth(p.paymentDate))
-    .reduce((sum, p) => sum + Number(p.amount || 0), 0);
-
-  // Total monthly fees (billed): sum(s.monthlyFee) of all active students
-  const totalMonthlyBilled = activeStudents.reduce((sum, s) => sum + getStudentMonthlyFee(s), 0);
-
-  // Total pending: sum(s.monthlyFee) of students whose status is pending
-  const totalPendingDues = activeStudents
-    .filter(s => (s.feeStatus || 'pending').toLowerCase() === 'pending')
-    .reduce((sum, s) => sum + getStudentMonthlyFee(s), 0);
-
-  // Students paid: count(status === "paid")
-  const studentsPaidCount = activeStudents
-    .filter(s => (s.feeStatus || 'pending').toLowerCase() === 'paid').length;
-
-  // Students pending: count(status === "pending")
-  const studentsPendingCount = activeStudents
-    .filter(s => (s.feeStatus || 'pending').toLowerCase() === 'pending').length;
-
-  // Collection rate
+  const metrics = calculateFeeMetrics(activeStudents, allFees);
+  const totalMonthlyBilled = metrics.totalMonthlyFees;
+  const totalCollectedThisMonth = metrics.collectedAmount;
+  const totalPendingDues = metrics.pendingTuition;
+  const studentsPaidCount = metrics.studentsPaid;
+  const studentsPendingCount = metrics.studentsPending;
   const collectionPercentage = totalMonthlyBilled > 0 ? Math.round((totalCollectedThisMonth / totalMonthlyBilled) * 100) : 100;
 
   // --- ADMIN ACTIONS ---
   const handleApproveSubmission = async (sub) => {
+    if (!sub.studentId || !sub.amount || Number(sub.amount) <= 0) {
+      showToast('Validation Error: Invalid student ID or amount', 'danger');
+      return;
+    }
+
+    const currentMonthStr = new Date().toISOString().slice(0, 7);
+    const txId = sub.transactionId || '';
+
+    if (!txId) {
+      showToast('Validation Error: Transaction UTR ID is missing', 'danger');
+      return;
+    }
+
     try {
-      // 1. Create payment record
-      await addDoc(collection(db, 'payments'), {
-        studentId: sub.studentId,
-        studentName: sub.studentName,
-        email: sub.email || '',
-        phone: sub.phone || '',
-        amount: Number(sub.amount),
-        transactionId: sub.transactionId,
-        paymentDate: sub.paymentDate || serverTimestamp(),
-        status: 'paid',
-        createdAt: serverTimestamp(),
-        course: sub.course || 'Not specified'
-      });
+      // 1. Check for duplicate transaction UTR
+      const dupQuery = query(collection(db, 'payments'), where('transactionId', '==', txId));
+      const dupSnap = await getDocs(dupQuery);
+      if (!dupSnap.empty) {
+        showToast('Validation Error: Duplicate Transaction UTR ID detected!', 'danger');
+        return;
+      }
 
-      // 2. Update student status in Firestore
-      await updateDoc(doc(db, 'users', sub.studentId), {
-        feeStatus: 'paid'
-      });
+      // 2. Perform runTransaction
+      const feeDocRef = doc(db, 'fees', sub.studentId, 'monthly', currentMonthStr);
+      const studentRef = doc(db, 'users', sub.studentId);
+      const submissionRef = doc(db, 'paymentSubmissions', sub.id);
 
-      // 3. Mark request as approved
-      await updateDoc(doc(db, 'paymentSubmissions', sub.id), {
-        status: 'approved',
-        verifiedAt: serverTimestamp()
+      await runTransaction(db, async (transaction) => {
+        const feeDocSnap = await transaction.get(feeDocRef);
+        const amountPaidNum = Number(sub.amount);
+        
+        let oldStatus = 'pending';
+        let amountDue = getStudentMonthlyFee(sub);
+
+        if (feeDocSnap.exists()) {
+          const feeData = feeDocSnap.data();
+          oldStatus = feeData.status || 'pending';
+          amountDue = feeData.amountDue;
+          
+          if (feeData.status === 'paid') {
+            throw new Error('Double Payment Error: This month is already marked as fully paid.');
+          }
+          if (feeData.amountPaid + amountPaidNum > amountDue) {
+            throw new Error(`Overpayment Error: Paid amount exceeds amount due of ₹${amountDue}.`);
+          }
+        }
+
+        const newAmountPaid = (feeDocSnap.exists() ? feeDocSnap.data().amountPaid : 0) + amountPaidNum;
+        const newStatus = newAmountPaid >= amountDue ? 'paid' : 'pending';
+
+        // Write monthly fee doc
+        transaction.set(feeDocRef, {
+          amountDue,
+          amountPaid: newAmountPaid,
+          status: newStatus,
+          paymentDate: serverTimestamp(),
+          transactionId: txId,
+          paymentMethod: sub.paymentMethod || 'UPI',
+          verifiedBy: user.displayName || 'Admin',
+          updatedAt: serverTimestamp()
+        }, { merge: true });
+
+        // Update student profile status for compatibility
+        transaction.update(studentRef, {
+          feeStatus: newStatus
+        });
+
+        // Mark submission request as Approved
+        transaction.update(submissionRef, {
+          status: 'approved',
+          verifiedAt: serverTimestamp(),
+          verifiedBy: user.displayName || 'Admin'
+        });
+
+        // Create Payment record in payments collection
+        const newPaymentRef = doc(collection(db, 'payments'));
+        transaction.set(newPaymentRef, {
+          studentId: sub.studentId,
+          studentName: sub.studentName,
+          email: sub.email || '',
+          phone: sub.phone || '',
+          amount: amountPaidNum,
+          transactionId: txId,
+          paymentDate: serverTimestamp(),
+          status: 'paid',
+          createdAt: serverTimestamp(),
+          course: sub.course || 'Not specified'
+        });
+
+        // Create auditLogs record
+        const newAuditRef = doc(collection(db, 'auditLogs'));
+        transaction.set(newAuditRef, {
+          action: 'payment_verify',
+          studentId: sub.studentId,
+          studentName: sub.studentName,
+          oldStatus,
+          newStatus,
+          amount: amountPaidNum,
+          admin: user.displayName || 'Admin',
+          timestamp: serverTimestamp()
+        });
       });
 
       showToast(`Payment of ₹${sub.amount} verified for ${sub.studentName}!`, 'success');
     } catch (err) {
       console.error('[Verify Approval Failed]', err);
-      showToast('Failed to approve transaction.', 'danger');
+      showToast(err.message || 'Failed to approve transaction.', 'danger');
     }
   };
 
@@ -358,10 +459,25 @@ export default function FeesAndPayments() {
       return;
     }
     try {
-      await updateDoc(doc(db, 'paymentSubmissions', rejectingRequest.id), {
-        status: 'rejected',
-        rejectionReason: rejectionReason.trim(),
-        rejectedAt: serverTimestamp()
+      const submissionRef = doc(db, 'paymentSubmissions', rejectingRequest.id);
+      await runTransaction(db, async (transaction) => {
+        transaction.update(submissionRef, {
+          status: 'rejected',
+          rejectionReason: rejectionReason.trim(),
+          rejectedAt: serverTimestamp()
+        });
+
+        const newAuditRef = doc(collection(db, 'auditLogs'));
+        transaction.set(newAuditRef, {
+          action: 'payment_reject',
+          studentId: rejectingRequest.studentId || 'unknown',
+          studentName: rejectingRequest.studentName || 'Unknown Student',
+          oldStatus: 'pending',
+          newStatus: 'rejected',
+          amount: Number(rejectingRequest.amount || 0),
+          admin: user.displayName || 'Admin',
+          timestamp: serverTimestamp()
+        });
       });
       showToast('Payment verification request rejected.', 'danger');
       setRejectingRequest(null);
@@ -412,21 +528,21 @@ export default function FeesAndPayments() {
 
     // Add pending virtual entries for current month
     activeStudents.forEach(student => {
-      const hasPaidCurrentMonth = allPayments.some(p => 
-        p.studentId === student.uid && 
-        p.status === 'paid' && 
-        isCurrentMonth(p.paymentDate)
-      );
+      const feeRecord = currentMonthFeesList.find(f => f.studentId === student.id);
+      const isPaid = feeRecord && feeRecord.status === 'paid';
 
-      if (!hasPaidCurrentMonth) {
+      if (!isPaid) {
+        const amountDue = feeRecord ? feeRecord.amountDue : getStudentMonthlyFee(student);
+        const amountPaid = feeRecord ? feeRecord.amountPaid : 0;
+
         items.push({
-          id: `virtual-${student.uid}`,
+          id: `virtual-${student.id}`,
           isVirtual: true,
-          studentId: student.uid,
+          studentId: student.id,
           studentName: student.displayName || student.name || 'Student',
           email: student.email || '',
           phone: student.phone || student.phoneNumber || '',
-          amount: getStudentMonthlyFee(student),
+          amount: amountDue - amountPaid,
           transactionId: '—',
           paymentDate: null,
           status: 'pending',
@@ -489,16 +605,17 @@ export default function FeesAndPayments() {
   const filteredLedger = getFilteredLedger();
 
   // --- STUDENT STATUS CALCULATIONS ---
-  // Student status derived dynamically
-  const studentHasPaidCurrentMonth = allPayments.some(p => 
-    p.studentId === user?.uid && 
-    p.status === 'paid' && 
-    isCurrentMonth(p.paymentDate)
-  );
-
+  // Student status derived dynamically from canonical Monthly Fee record
+  const studentHasPaidCurrentMonth = studentMonthlyFeeDoc 
+    ? studentMonthlyFeeDoc.status === 'paid'
+    : false;
   const studentStatus = studentHasPaidCurrentMonth ? 'Paid' : 'Pending';
-  const studentMonthlyFee = getStudentMonthlyFee(user || {});
-  const studentAmountDue = studentHasPaidCurrentMonth ? 0 : studentMonthlyFee;
+  const studentMonthlyFee = studentMonthlyFeeDoc
+    ? studentMonthlyFeeDoc.amountDue
+    : getStudentMonthlyFee(user || {});
+  const studentAmountDue = studentMonthlyFeeDoc
+    ? (studentMonthlyFeeDoc.amountDue - studentMonthlyFeeDoc.amountPaid)
+    : studentMonthlyFee;
 
   // Get date of last payment
   const studentPayments = allPayments
@@ -534,6 +651,26 @@ export default function FeesAndPayments() {
 
     setIsSubmitting(true);
     try {
+      // 1. Check for duplicate Transaction ID in processed payments
+      const paymentsRef = collection(db, 'payments');
+      const dupQuery = query(paymentsRef, where('transactionId', '==', utrNumber.trim()));
+      const dupSnap = await getDocs(dupQuery);
+      if (!dupSnap.empty) {
+        showToast('This Transaction ID has already been verified and processed.', 'danger');
+        setIsSubmitting(false);
+        return;
+      }
+
+      // 2. Check for duplicate Transaction ID in pending submissions
+      const submissionsRef = collection(db, 'paymentSubmissions');
+      const subQuery = query(submissionsRef, where('transactionId', '==', utrNumber.trim()), where('status', '==', 'pending_verification'));
+      const subSnap = await getDocs(subQuery);
+      if (!subSnap.empty) {
+        showToast('This Transaction ID is already pending verification.', 'warning');
+        setIsSubmitting(false);
+        return;
+      }
+
       await addDoc(collection(db, 'paymentSubmissions'), {
         studentId: user.uid,
         studentName: user.displayName || user.name || 'Student',

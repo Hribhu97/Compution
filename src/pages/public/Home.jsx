@@ -816,14 +816,14 @@ const CoursesSection = ({ onOpenAdmission }) => {
   const filters = ['All', 'Academic', 'Programming'];
 
   const courses = [
-    { tag: 'Programming', title: 'Basic+AI (Prompt Engn)', desc: 'Master computing basics along with Prompt Engineering and AI tools to supercharge your learning and productivity.', color: '#7C4DFF', icon: '🤖', duration: '2 Months', students: '0/15', isNew: true },
-    { tag: 'Academic', title: 'School Syllabus (Classes 2 to 5)', desc: 'Foundation computer classes covering school curricula, basics of typing, scratch programming, and digital literacy.', color: '#FF7043', icon: '🎒', duration: 'Ongoing', students: '0/15' },
-    { tag: 'Academic', title: 'School Syllabus (Classes 6 to 10)', desc: 'Comprehensive school syllabus support for computer applications, logic building, block coding, and basic programming concepts.', color: '#FFA726', icon: '🏫', duration: 'Ongoing', students: '0/15' },
+    { tag: 'Programming', title: 'Basic+AI (Prompt Engn)', desc: 'Master computing basics along with Prompt Engineering and AI tools to supercharge your learning and productivity.', color: '#7C4DFF', icon: '🤖', duration: '8 Months', students: '0/15', isNew: true },
+    { tag: 'Academic', title: 'School Syllabus (Classes 2 to 5)', desc: 'Foundation computer classes covering school curricula, basics of typing, scratch programming, and digital literacy.', color: '#FF7043', icon: '🎒', duration: 'As per class', students: '0/15' },
+    { tag: 'Academic', title: 'School Syllabus (Classes 6 to 10)', desc: 'Comprehensive school syllabus support for computer applications, logic building, block coding, and basic programming concepts.', color: '#FFA726', icon: '🏫', duration: 'As per class', students: '0/15' },
     { tag: 'Academic', title: 'Class XI & XII Computer Science', desc: 'Board exam mastery & complete syllabus — programming fundamentals, SQL, networking, and full-stack projects in Python, C++ & Java.', color: '#536DFE', icon: '📘', duration: '1-2 Years', students: '22/30' },
     { tag: 'Academic', title: 'Class XI & XII Computer Application', desc: 'Applied computing, database management, HTML/CSS/JS, and real-world software development skills scaled to school standards.', color: '#0097A7', icon: '📙', duration: '1-2 Years', students: '18/30' },
-    { tag: 'Programming', title: 'Basic Coding', desc: 'Begin your coding journey: C, C++, Java, Python, and AI/ML foundations.', color: '#66BB6A', icon: '💻', duration: '3 Months', students: '0/15' },
-    { tag: 'Programming', title: 'Advance Coding', desc: 'Master one language of your choice: C, C++, Java, or Python to build robust software.', color: '#ED8B00', icon: '🚀', duration: '4 Months', students: '0/15' },
-    { tag: 'Programming', title: 'Data Structures & Algorithms', desc: 'Arrays, trees, graphs, sorting — crack coding interviews and olympiads.', color: '#43A047', icon: '🧩', duration: '4 Months', students: '13/15' },
+    { tag: 'Programming', title: 'Basic Coding', desc: 'Begin your coding journey: C, C++, Java, Python, and AI/ML foundations.', color: '#66BB6A', icon: '💻', duration: '6 Months', students: '0/15' },
+    { tag: 'Programming', title: 'Advance Coding', desc: 'Master one language of your choice: C, C++, Java, or Python to build robust software. (Choose your preference, you can learn any 1 language in advance coding)', color: '#ED8B00', icon: '🚀', duration: '6 Months – 1 Year', students: '0/15' },
+    { tag: 'Programming', title: 'Data Structures & Algorithms', desc: 'Arrays, trees, graphs, sorting — crack coding interviews and olympiads.', color: '#43A047', icon: '🧩', duration: '6 Months', students: '13/15' },
   ];
 
   const filtered = activeFilter === 'All' ? courses : courses.filter(c => c.tag === activeFilter);

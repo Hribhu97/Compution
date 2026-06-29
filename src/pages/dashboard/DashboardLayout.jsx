@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import GuidedTour from '../../components/GuidedTour';
 import { motion, AnimatePresence } from 'framer-motion';
 import { auth, db } from '../../firebase';
+import { notificationService } from '../../services/notificationService';
 import { authService } from '../../services/authService';
 import { collection, onSnapshot, query, orderBy, limit, doc } from 'firebase/firestore';
 import { updateDoc, setDoc } from '../../firebase';;
@@ -12,7 +13,7 @@ import {
   LayoutDashboard, BookOpen, ClipboardList,
   FileText, Settings, LogOut, Search, Bell,
   CalendarCheck, Calendar, MessageSquare, User, Sparkles, ShieldAlert, Loader2,
-  Video, Gamepad2, CreditCard
+  Video, Gamepad2, CreditCard, Menu, Trophy
 } from 'lucide-react';
 
 const ADMISSION_SUBJECTS = [
@@ -57,9 +58,13 @@ const NAV_MAIN = [
   { to: '/dashboard/assignments', label: 'Assignments', icon: FileText },
   { to: '/dashboard/community', label: 'Community', icon: MessageSquare },
   { to: '/dashboard/fees', label: 'Fees & Payments', icon: CreditCard },
+  { to: '/dashboard/tracker', label: 'Class Tracker', icon: Trophy },
 ];
 
 import FeesPayment from '../../components/FeesPayment';
+import CommandPalette from '../../components/CommandPalette';
+import QuickActionButton from '../../components/QuickActionButton';
+import NotificationDrawer from '../../components/NotificationDrawer';
 
 const DashboardLayout = () => {
   const navigate = useNavigate();
@@ -67,8 +72,93 @@ const DashboardLayout = () => {
   const [tourCompleted, setTourCompleted] = useState(true);
   const [isFeePaymentOpen, setIsFeePaymentOpen] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
   const [hasUnread, setHasUnread] = useState(false);
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
+  
+  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
+  const [isNotificationDrawerOpen, setIsNotificationDrawerOpen] = useState(false);
+
+  // Ctrl + K / ⌘ + K key listener
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key?.toLowerCase() === 'k') {
+        e.preventDefault();
+        setIsCommandPaletteOpen(prev => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+  
+  const [reminderToast, setReminderToast] = useState('');
+  const [schedules, setSchedules] = useState([]);
+  const sentReminders = useRef(new Set());
+
+  // Real-time Class Schedules listener for Reminders
+  useEffect(() => {
+    if (!user?.uid) return;
+    if (!db) return;
+    
+    try {
+      const q = query(collection(db, 'classSchedules'));
+      const unsub = onSnapshot(q, (snap) => {
+        const list = [];
+        snap.forEach(doc => {
+          const d = doc.data();
+          const isInStudents = d.studentIds?.includes(user.uid);
+          const isInGroups = d.batch === (user.studentGroup || '');
+          const isFaculty = d.facultyId === user.uid;
+          if (isInStudents || isInGroups || isFaculty) {
+            list.push({ id: doc.id, ...d });
+          }
+        });
+        setSchedules(list);
+      });
+      return unsub;
+    } catch (err) {
+      console.error("DashboardLayout: error setting up classSchedules listener", err);
+    }
+  }, [user?.uid, user?.studentGroup]);
+
+  // Live 15-minute class reminders checker
+  useEffect(() => {
+    if (!user?.uid || schedules.length === 0) return;
+
+    const checkReminders = () => {
+      const now = new Date();
+      const daysOfWeek = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+      const currentDay = daysOfWeek[now.getDay()];
+      
+      schedules.forEach(async (item) => {
+        if (item.day !== currentDay) return;
+        
+        const [startHours, startMinutes] = item.startTime.split(':').map(Number);
+        const classTime = new Date(now.getFullYear(), now.getMonth(), now.getDate(), startHours, startMinutes, 0);
+        
+        // Difference in milliseconds
+        const diffMs = classTime - now;
+        const diffMins = Math.round(diffMs / 60000);
+        
+        // Trigger if starts in exactly 15 minutes
+        if (diffMins === 15) {
+          const reminderId = `${item.id}_${now.toDateString()}`;
+          if (sentReminders.current.has(reminderId)) return;
+          sentReminders.current.add(reminderId);
+          
+          const msg = `Your ${item.subject} class starts in 15 minutes (Today ${item.startTime}). Faculty: ${item.facultyName}.`;
+          
+          setReminderToast(msg);
+          await notificationService.send(user.uid, 'Class Reminder 📅', msg, 'class_reminder');
+        }
+      });
+    };
+
+    const interval = setInterval(checkReminders, 30000);
+    checkReminders();
+    
+    return () => clearInterval(interval);
+  }, [user?.uid, schedules]);
 
   // Subscribe to tour preferences
   useEffect(() => {
@@ -335,8 +425,7 @@ const DashboardLayout = () => {
     { to: '/dashboard', label: 'Home', icon: LayoutDashboard, exact: true },
     { to: '/dashboard/courses', label: 'Courses', icon: BookOpen },
     { to: '/dashboard/schedule', label: 'Schedule', icon: Calendar },
-    { to: '/dashboard/community', label: 'Chat', icon: MessageSquare },
-    { to: '/dashboard/fees', label: 'Fees', icon: CreditCard },
+    { to: '/dashboard/mini-games', label: 'Games', icon: Gamepad2 },
   ];
 
 
@@ -420,6 +509,47 @@ const DashboardLayout = () => {
 
       <div className="dash-main">
         <AnimatePresence>
+          {reminderToast && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              style={{
+                background: 'var(--primary-light)',
+                color: 'var(--primary)',
+                borderBottom: '1px solid rgba(83,109,254,0.2)',
+                padding: '16px 24px',
+                fontSize: '0.9rem',
+                fontWeight: 700,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '12px',
+                width: '100%',
+                boxSizing: 'border-box',
+                backdropFilter: 'blur(8px)',
+                boxShadow: 'var(--shadow-sm)'
+              }}
+            >
+              <Bell size={18} style={{ color: 'var(--primary)', animation: 'ring 1s ease-in-out infinite' }} />
+              <span style={{ flex: 1 }}>{reminderToast}</span>
+              <button 
+                onClick={() => setReminderToast('')}
+                style={{ marginLeft: 'auto', background: 'none', border: 'none', color: 'var(--primary)', fontWeight: 800, cursor: 'pointer', outline: 'none' }}
+              >
+                Dismiss
+              </button>
+              <style>{`
+                @keyframes ring {
+                  0% { transform: rotate(0); }
+                  10% { transform: rotate(15deg); }
+                  20% { transform: rotate(-10deg); }
+                  30% { transform: rotate(10deg); }
+                  40% { transform: rotate(-5deg); }
+                  50% { transform: rotate(0); }
+                }
+              `}</style>
+            </motion.div>
+          )}
           {isOffline && (
             <motion.div
               initial={{ height: 0, opacity: 0 }}
@@ -537,12 +667,18 @@ const DashboardLayout = () => {
               </button>
             )}
 
-            <button style={{ 
-              position: 'relative', 
-              color: 'var(--text-secondary)', 
-              padding: '8px',
-              transition: 'color 0.3s ease'
-            }}>
+            <button 
+              onClick={() => setIsNotificationDrawerOpen(true)}
+              style={{ 
+                position: 'relative', 
+                color: 'var(--text-secondary)', 
+                padding: '8px',
+                transition: 'color 0.3s ease',
+                background: 'transparent',
+                border: 'none',
+                cursor: 'pointer'
+              }}
+            >
               <Bell size={22} />
               {hasUnread && <span style={{ 
                 position: 'absolute', 
@@ -657,7 +793,12 @@ const DashboardLayout = () => {
           background: 'var(--surface-card)',
           borderTop: '1px solid var(--border)',
           boxShadow: 'var(--shadow-md)',
-          transition: 'all 0.3s ease'
+          transition: 'all 0.3s ease',
+          padding: '8px 16px calc(8px + env(safe-area-inset-bottom, 0px))',
+          height: 'auto',
+          justifyContent: 'space-around',
+          alignItems: 'center',
+          gap: '12px'
         }}
       >
         {bottomNav.map(({ to, label, icon: Icon, exact }) => (
@@ -666,41 +807,136 @@ const DashboardLayout = () => {
             to={to} 
             end={exact} 
             style={({ isActive }) => ({
-              color: isActive ? 'var(--primary)' : 'var(--text-secondary)',
-              background: isActive ? 'var(--primary-light)' : 'transparent',
-              transition: 'all 0.2s ease',
-              borderRadius: 'var(--radius-sm)',
-            })}
-          >
-            <Icon size={20} />
-            <span>{label}</span>
-          </NavLink>
-        ))}
-        {(user?.role?.toLowerCase() === 'admin' || user?.role?.toLowerCase() === 'faculty') && (
-          <a 
-            href="https://meet.google.com/kzw-aheq-ejj" 
-            target="_blank" 
-            rel="noopener noreferrer"
-            style={{
               flex: 1,
+              height: '48px',
               display: 'flex',
               flexDirection: 'column',
               alignItems: 'center',
-              gap: '4px',
-              padding: '8px 4px',
-              borderRadius: 'var(--radius-sm)',
-              color: 'var(--text-secondary)',
-              fontSize: '0.65rem',
-              fontWeight: 600,
-              minWidth: 0,
-              transition: 'all 0.2s ease',
-            }}
+              justifyContent: 'center',
+              gap: '2px',
+              padding: '4px 0',
+              color: isActive ? 'var(--primary)' : 'var(--text-secondary)',
+              background: isActive ? 'rgba(83, 109, 254, 0.08)' : 'transparent',
+              transition: 'all 0.25s ease',
+              borderRadius: '16px',
+              textDecoration: 'none',
+              minWidth: 0
+            })}
           >
-            <Video size={20} />
-            <span>Meet</span>
-          </a>
-        )}
+            {({ isActive }) => (
+              <>
+                <Icon size={20} style={{ transform: isActive ? 'scale(1.05)' : 'scale(1)', transition: 'transform 0.2s ease' }} />
+                <span style={{ fontSize: '11px', marginTop: '2px', fontWeight: isActive ? 700 : 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>{label}</span>
+              </>
+            )}
+          </NavLink>
+        ))}
+        <button
+          type="button"
+          onClick={() => setIsMoreMenuOpen(true)}
+          style={{
+            flex: 1,
+            height: '48px',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '2px',
+            padding: '4px 0',
+            color: isMoreMenuOpen ? 'var(--primary)' : 'var(--text-secondary)',
+            background: isMoreMenuOpen ? 'rgba(83, 109, 254, 0.08)' : 'transparent',
+            transition: 'all 0.25s ease',
+            borderRadius: '16px',
+            border: 'none',
+            cursor: 'pointer',
+            minWidth: 0
+          }}
+        >
+          <Menu size={20} style={{ transform: isMoreMenuOpen ? 'scale(1.05)' : 'scale(1)', transition: 'transform 0.2s ease' }} />
+          <span style={{ fontSize: '11px', marginTop: '2px', fontWeight: isMoreMenuOpen ? 700 : 500 }}>More</span>
+        </button>
       </nav>
+
+      <AnimatePresence>
+        {isMoreMenuOpen && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              style={{
+                position: 'fixed', inset: 0, zIndex: 999,
+                background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)'
+              }}
+              onClick={() => setIsMoreMenuOpen(false)}
+            />
+            <motion.div
+              initial={{ y: '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 250 }}
+              style={{
+                position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 1000,
+                background: 'var(--surface-card, #ffffff)',
+                borderTopLeftRadius: '24px', borderTopRightRadius: '24px',
+                padding: '24px 24px calc(24px + env(safe-area-inset-bottom, 8px))',
+                boxShadow: '0 -10px 40px rgba(0,0,0,0.15)',
+                display: 'flex', flexDirection: 'column', gap: '16px',
+                color: 'var(--text-primary)'
+              }}
+            >
+              <div style={{ width: '40px', height: '4px', background: 'var(--border)', borderRadius: '100px', margin: '0 auto 8px' }} />
+              <h3 style={{ fontSize: '1rem', fontWeight: 800, margin: '0 0 8px', textAlign: 'center' }}>More Options</h3>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', textAlign: 'center', paddingBottom: '8px' }}>
+                <NavLink
+                  to="/dashboard/community"
+                  onClick={() => setIsMoreMenuOpen(false)}
+                  style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', textDecoration: 'none', color: 'var(--text-secondary)' }}
+                >
+                  <div style={{ width: '52px', height: '52px', borderRadius: '50%', background: 'var(--primary-light)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--primary)', margin: '0 auto' }}>
+                    <MessageSquare size={22} />
+                  </div>
+                  <span style={{ fontSize: '0.78rem', fontWeight: 600 }}>Chat</span>
+                </NavLink>
+                <NavLink
+                  to="/dashboard/fees"
+                  onClick={() => setIsMoreMenuOpen(false)}
+                  style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', textDecoration: 'none', color: 'var(--text-secondary)' }}
+                >
+                  <div style={{ width: '52px', height: '52px', borderRadius: '50%', background: 'var(--primary-light)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--primary)', margin: '0 auto' }}>
+                    <CreditCard size={22} />
+                  </div>
+                  <span style={{ fontSize: '0.78rem', fontWeight: 600 }}>Fees</span>
+                </NavLink>
+                <NavLink
+                  to="/dashboard/tracker"
+                  onClick={() => setIsMoreMenuOpen(false)}
+                  style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', textDecoration: 'none', color: 'var(--text-secondary)' }}
+                >
+                  <div style={{ width: '52px', height: '52px', borderRadius: '50%', background: 'rgba(99,102,241,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--primary)', margin: '0 auto' }}>
+                    <Trophy size={22} />
+                  </div>
+                  <span style={{ fontSize: '0.78rem', fontWeight: 600 }}>Tracker</span>
+                </NavLink>
+                {(user?.role?.toLowerCase() === 'admin' || user?.role?.toLowerCase() === 'faculty') ? (
+                  <a
+                    href="https://meet.google.com/kzw-aheq-ejj"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={() => setIsMoreMenuOpen(false)}
+                    style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', textDecoration: 'none', color: 'var(--text-secondary)' }}
+                  >
+                    <div style={{ width: '52px', height: '52px', borderRadius: '50%', background: 'rgba(34,197,94,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--success)', margin: '0 auto' }}>
+                      <Video size={22} />
+                    </div>
+                    <span style={{ fontSize: '0.78rem', fontWeight: 600 }}>Meet</span>
+                  </a>
+                ) : null}
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {isProfileIncomplete(user) && (
@@ -978,6 +1214,16 @@ const DashboardLayout = () => {
           studentId={user?.uid}
         />
       )}
+
+      <CommandPalette 
+        isOpen={isCommandPaletteOpen} 
+        onClose={() => setIsCommandPaletteOpen(false)} 
+      />
+      <QuickActionButton />
+      <NotificationDrawer 
+        isOpen={isNotificationDrawerOpen} 
+        onClose={() => setIsNotificationDrawerOpen(false)} 
+      />
     </div>
   );
 };
