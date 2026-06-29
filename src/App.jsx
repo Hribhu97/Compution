@@ -3,7 +3,6 @@ import { ReactLenis } from '@studio-freight/react-lenis';
 import { BrowserRouter as Router, Routes, Route, Outlet, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ToastProvider } from './contexts/ToastContext';
-import ChatAssistant from './components/ChatAssistant';
 
 import Home from './pages/public/Home';
 import Staff from './pages/public/Staff';
@@ -85,7 +84,6 @@ function App() {
             <Route path="/error/server-error" element={<ServerErrorPage />} />
             <Route path="*" element={<NotFoundPage />} />
           </Routes>
-          <ChatAssistant />
           <div id="recaptcha-container"></div>
         </Router>
       </ToastProvider>
