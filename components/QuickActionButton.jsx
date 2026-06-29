@@ -73,7 +73,7 @@ const QuickActionButton = () => {
       ref={menuRef}
       style={{
         position: 'fixed',
-        bottom: 'calc(72px + env(safe-area-inset-bottom, 12px))',
+        bottom: 'calc(96px + env(safe-area-inset-bottom, 0px))',
         right: '20px',
         zIndex: 1050,
         display: 'flex',
