@@ -36,7 +36,7 @@ const QuickActionButton = () => {
     ],
     student: [
       { label: 'Pay Monthly Tuition', icon: CreditCard, path: '/dashboard/fees' },
-      { label: 'Start Coding Arcade', icon: Play, path: '/dashboard/mini-games' },
+      { label: 'Start World Cup Match', icon: Play, path: '/dashboard/worldcup' },
       { label: 'Ask Doubt Room', icon: MessageSquare, path: '/dashboard/community' },
     ]
   }[role] || [];
@@ -73,8 +73,8 @@ const QuickActionButton = () => {
       ref={menuRef}
       style={{
         position: 'fixed',
-        bottom: '24px',
-        right: '24px',
+        bottom: 'calc(96px + env(safe-area-inset-bottom, 0px))',
+        right: '20px',
         zIndex: 1050,
         display: 'flex',
         flexDirection: 'column',

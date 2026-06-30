@@ -9,10 +9,11 @@ import { db } from '../../firebase';
 import { collection, query, where, doc, onSnapshot, orderBy, limit } from 'firebase/firestore';
 import { 
   Users, Calendar, Clock, BookOpen, ClipboardList, Gamepad2, Award, 
-  Flame, MessageSquare, AlertCircle, FileText, Bell, ArrowUpRight 
+  Flame, MessageSquare, AlertCircle, FileText, Bell, ArrowUpRight, Trophy, Star, X 
 } from 'lucide-react';
 import { format, parseISO, isSameDay } from 'date-fns';
 import FacultyQueryModal from '../../components/FacultyQueryModal';
+import { getActiveSeason, getStandings } from '../../services/worldCupService';
 
 /* ── TOAST NOTIFICATION ────────────────────────────── */
 const Toast = ({ message, onClose }) => {
@@ -67,6 +68,76 @@ const getStatusStyle = (status) => {
 const StudentOverview = ({ isDarkMode }) => {
   const { user } = useAuth();
   const navigate = useNavigate();
+
+  // Subscribe to World Cup Squad
+  const [wcSquad, setWcSquad] = useState(null);
+  const [wcSeason, setWcSeason] = useState(null);
+  const [wcLoading, setWcLoading] = useState(true);
+  const [wcStats, setWcStats] = useState({ goals: 0, score: 0, teamRank: '-', playedToday: false });
+
+  const getWcCountdown = () => {
+    if (!wcSeason?.endDate) return '24 Days';
+    const end = wcSeason.endDate.toDate ? wcSeason.endDate.toDate() : new Date(wcSeason.endDate);
+    const diff = end - new Date();
+    if (diff <= 0) return 'Season Ended';
+    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+    const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+    return `${days} Days ${hours} Hours`;
+  };
+
+  useEffect(() => {
+    let unsub = () => {};
+    const fetchWC = async () => {
+      try {
+        const season = await getActiveSeason();
+        setWcSeason(season);
+        
+        if (user?.worldcupGroupId) {
+          const squadRef = doc(db, 'worldcup_groups', user.worldcupGroupId);
+          unsub = onSnapshot(squadRef, (docSnap) => {
+            if (docSnap.exists()) {
+              setWcSquad(docSnap.data());
+            } else {
+              setWcSquad(null);
+            }
+          });
+        }
+      } catch (err) {
+        console.error("Error setting up WC subscriptions in StudentOverview:", err);
+      } finally {
+        setWcLoading(false);
+      }
+    };
+    fetchWC();
+    return () => unsub();
+  }, [user?.uid, user?.worldcupGroupId]);
+
+  useEffect(() => {
+    if (!user?.uid || !user?.worldcupGroupId || !wcSquad) return;
+    
+    // Find player in squad members
+    const member = wcSquad.members?.find(m => m.uid === user.uid);
+    const goals = member?.goals || 0;
+    const score = member?.score || 0;
+    
+    // Check if played today
+    const playedKey = `wc_played_${user.uid}_${new Date().toDateString()}`;
+    const playedToday = localStorage.getItem(playedKey) === 'true';
+    
+    // Fetch team rank
+    const getTeamRank = async () => {
+      try {
+        const season = await getActiveSeason();
+        const standings = await getStandings(season.id);
+        const rankIdx = standings.squadStandings.findIndex(s => s.id === user.worldcupGroupId);
+        const teamRank = rankIdx !== -1 ? `#${rankIdx + 1}` : '-';
+        setWcStats({ goals, score, teamRank, playedToday });
+      } catch (err) {
+        console.error(err);
+      }
+    };
+    getTeamRank();
+  }, [user?.uid, user?.worldcupGroupId, wcSquad]);
 
   // Custom Hooks for core SaaS data
   const { courses, loading: coursesLoading } = useCourses(user);
@@ -262,6 +333,105 @@ const StudentOverview = ({ isDarkMode }) => {
           <Award size={64} style={{ color: 'var(--text-on-primary)', opacity: 0.8 }} />
         </div>
 
+        {/* Fullscreen Event Announcement (Show on first login if unjoined) */}
+        {wcSeason && wcSeason.status !== 'completed' && (!user?.worldcupGroupId) && (
+          <AnimatePresence>
+            {!localStorage.getItem(`wc_announced_${user?.uid}`) && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                style={{
+                  position: 'fixed', inset: 0, zIndex: 99999,
+                  background: 'rgba(9, 11, 20, 0.95)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  padding: '20px', overflowY: 'auto'
+                }}
+              >
+                <motion.div
+                  initial={{ scale: 0.9, y: 20 }}
+                  animate={{ scale: 1, y: 0 }}
+                  exit={{ scale: 0.9, y: 20 }}
+                  style={{
+                    background: 'radial-gradient(circle at center, #1e293b 0%, #0f172a 100%)',
+                    border: '2px solid rgba(99, 102, 241, 0.3)',
+                    borderRadius: '32px',
+                    padding: '40px',
+                    maxWidth: '550px',
+                    width: '100%',
+                    textAlign: 'center',
+                    boxShadow: '0 25px 70px -10px rgba(99,102,241,0.4)',
+                    color: 'white',
+                    position: 'relative'
+                  }}
+                >
+                  {/* Decorative close button */}
+                  <button 
+                    onClick={() => {
+                      localStorage.setItem(`wc_announced_${user?.uid}`, 'true');
+                      // Force re-render of this block
+                      setWcLoading(p => !p);
+                    }}
+                    style={{ position: 'absolute', top: '20px', right: '20px', background: 'none', border: 'none', color: 'rgba(255,255,255,0.4)', cursor: 'pointer' }}
+                  >
+                    <X size={20} />
+                  </button>
+
+                  <div style={{ fontSize: '3.5rem', marginBottom: '16px', filter: 'drop-shadow(0 10px 15px rgba(99,102,241,0.3))' }}>🌍</div>
+                  <h1 style={{ fontSize: '2.2rem', fontWeight: 950, letterSpacing: '0.05em', margin: '0 0 8px', color: '#60A5FA' }}>WORLD CUP MANIA</h1>
+                  <div style={{ fontSize: '0.78rem', color: '#f59e0b', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.15em', marginBottom: '24px' }}>
+                    🏆 Limited Time Campus Championship
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', alignItems: 'center', fontSize: '0.95rem', opacity: 0.9, margin: '20px 0 32px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>⚽ <span>Pick your favourite country.</span></div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>👥 <span>Represent your squad.</span></div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>🔥 <span>Compete with classmates.</span></div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>🏅 <span>Win trophies.</span></div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>👑 <span>Become Campus Champion.</span></div>
+                  </div>
+
+                  <div style={{ 
+                    background: 'rgba(99,102,241,0.06)', 
+                    border: '1.5px dashed rgba(99,102,241,0.3)', 
+                    padding: '16px', 
+                    borderRadius: '16px', 
+                    marginBottom: '32px' 
+                  }}>
+                    <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase', fontWeight: 800 }}>Season ends in</div>
+                    <div style={{ fontSize: '1.25rem', fontWeight: 950, color: '#f59e0b', marginTop: '4px' }}>{getWcCountdown()}</div>
+                  </div>
+
+                  <button
+                    onClick={() => {
+                      localStorage.setItem(`wc_announced_${user?.uid}`, 'true');
+                      navigate('/dashboard/worldcup');
+                    }}
+                    style={{
+                      width: '100%',
+                      padding: '16px 0',
+                      borderRadius: '100px',
+                      background: 'linear-gradient(135deg, #3b82f6, #6366f1)',
+                      color: 'white',
+                      fontWeight: 900,
+                      fontSize: '1rem',
+                      border: 'none',
+                      cursor: 'pointer',
+                      boxShadow: '0 10px 24px rgba(99,102,241,0.3)',
+                      transition: 'transform 0.2s'
+                    }}
+                    onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.02)'}
+                    onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
+                  >
+                    Choose My Team
+                  </button>
+                </motion.div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        )}
+
+
         {/* Metrics Grid */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '16px' }}>
           {[
@@ -280,6 +450,70 @@ const StudentOverview = ({ isDarkMode }) => {
             );
           })}
         </div>
+
+        {/* Debug Info Banner */}
+        <div style={{ padding: '12px', background: 'rgba(255,255,255,0.05)', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.1)', fontSize: '0.8rem', color: 'var(--text-primary)', marginBottom: '16px' }}>
+          🛠️ Debug Info — wcSeason: {wcSeason ? `${wcSeason.name} (${wcSeason.status})` : 'NULL'} | GroupId: {user?.worldcupGroupId || 'NONE'} | Squad: {wcSquad ? 'LOADED' : 'NULL'}
+        </div>
+
+        {/* World Cup Event Section */}
+        {wcSeason && (
+          <div style={{
+            background: 'linear-gradient(135deg, #1e1b4b 0%, #030712 100%)',
+            border: '1.5px solid rgba(99,102,241,0.25)',
+            borderRadius: '24px',
+            padding: '24px',
+            position: 'relative',
+            overflow: 'hidden',
+            boxShadow: '0 10px 30px rgba(0,0,0,0.3)',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: '16px',
+            marginBottom: '24px'
+          }}>
+            {/* Stadium Lights visual effect */}
+            <div style={{
+              position: 'absolute', top: 0, left: 0, right: 0, height: '100%',
+              background: 'linear-gradient(180deg, rgba(99,102,241,0.1) 0%, transparent 100%)',
+              pointerEvents: 'none'
+            }} />
+            
+            <div style={{ zIndex: 1 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#60A5FA', fontWeight: 900, fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                🔥 LIVE EVENT
+              </div>
+              <h3 style={{ margin: '6px 0 2px', fontSize: '1.45rem', fontWeight: 950, color: 'white' }}>
+                WORLD CUP MANIA 2026
+              </h3>
+              <p style={{ margin: 0, fontSize: '0.82rem', color: 'rgba(255,255,255,0.6)' }}>
+                Represent your country and lead your squad to glory! Season ends: <strong>{getWcCountdown()}</strong>
+              </p>
+            </div>
+            
+            <button
+              onClick={() => navigate('/dashboard/worldcup')}
+              style={{
+                zIndex: 1,
+                padding: '12px 28px',
+                borderRadius: '100px',
+                border: 'none',
+                background: 'linear-gradient(135deg, #3b82f6, #6366f1)',
+                color: 'white',
+                fontWeight: 900,
+                fontSize: '0.88rem',
+                cursor: 'pointer',
+                boxShadow: '0 6px 18px rgba(99,102,241,0.4)',
+                transition: 'transform 0.2s'
+              }}
+              onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.05)'}
+              onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
+            >
+              Continue →
+            </button>
+          </div>
+        )}
 
         {/* My Assigned Courses List */}
         <div style={{ background: 'var(--surface-card)', padding: '24px', borderRadius: '20px', border: '1px solid var(--border)' }}>

@@ -1,88 +1,14 @@
-import React, { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import React from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { useToast } from '../../contexts/ToastContext';
-import { db } from '../../firebase';
-import { collection, query, doc, serverTimestamp, where, increment } from 'firebase/firestore';
-import { updateDoc, addDoc, setDoc } from '../../firebase';;
-import { useNavigate } from 'react-router-dom';
-import {
-  Users, Send, Clock, UserMinus, ChevronDown, Share2,
-  Sparkles, Download, ExternalLink, Calendar, Flame,
-  ChevronRight, BookOpen, Clock3, CheckCircle, Info, Play, MessageSquare, ShieldAlert,
-  FileEdit, Trash2, Pencil, Plus, FileText, GraduationCap, Globe, Megaphone, ClipboardList, UserCheck, ArrowUpRight, Phone, Swords, Star, UserPlus, Copy, X, Search
-} from 'lucide-react';
-import { format, startOfWeek, addDays, isSameDay, parseISO, startOfMonth, endOfMonth, eachDayOfInterval, addMonths } from 'date-fns';
 import AdminDashboard from '../../components/AdminDashboard';
-import ChildDashboard from '../../components/ChildDashboard';
-import Modal from '../../components/Modal';
-import { queryManager } from '../../utils/FirestoreQueryManager';
 import StudentOverview from '../../features/dashboard/StudentOverview';
 import { DashboardSkeleton } from '../../components/SkeletonLoader';
 import { useTheme } from '../../theme/useTheme';
-import { StudentWorkspaceTheme } from '../../theme/StudentWorkspaceTheme';
-
-const stagger = { show: { transition: { staggerChildren: 0.06 } } };
 
 export default function Overview() {
   const { user, loading } = useAuth();
-  const { showToast } = useToast();
-  
-  const { theme, resolvedTheme, setTheme } = useTheme();
+  const { theme, resolvedTheme } = useTheme();
   const isDarkMode = false;
-
-  // UI layout mode switcher
-  // UI layout mode switcher
-  const [uiMode, setUiMode] = useState(() => {
-    if (!user?.uid) return 'default';
-    const saved = localStorage.getItem(`uiMode_${user.uid}`);
-    if (saved) return saved;
-    const numCat = parseInt(user.classCategory);
-    if (!isNaN(numCat) && numCat >= 2 && numCat <= 5) {
-      return 'child';
-    }
-    return 'default';
-  });
-
-  // Derived state from Firestore-backed user profile
-  const xp = user?.xp || 0;
-  const level = user?.level || 1;
-  const rankPoints = user?.rankPoints || 0;
-  const streak = user?.streak || 0;
-
-  const [friends, setFriends] = useState(() => {
-    if (!user?.uid) return [];
-    const saved = localStorage.getItem(`friends_${user.uid}`);
-    return saved ? JSON.parse(saved).filter(f => f.id !== '1' && f.id !== '2' && f.id !== '3' && f.id !== '4' && f.id !== '5') : [];
-  });
-  const [duels, setDuels] = useState([]);
-  const [studentHasCrown, setStudentHasCrown] = useState(() => {
-    if (!user?.uid) return false;
-    return localStorage.getItem(`studentHasCrown_${user.uid}`) === 'true';
-  });
-  const [hasPlayedGame, setHasPlayedGame] = useState(() => {
-    if (!user?.uid) return false;
-    return localStorage.getItem(`hasPlayedGame_${user.uid}`) === 'true';
-  });
-
-  useEffect(() => {
-    if (user?.uid) {
-      localStorage.setItem(`uiMode_${user.uid}`, uiMode);
-      localStorage.setItem(`friends_${user.uid}`, JSON.stringify(friends));
-      localStorage.setItem(`studentHasCrown_${user.uid}`, studentHasCrown);
-      localStorage.setItem(`hasPlayedGame_${user.uid}`, hasPlayedGame);
-    }
-  }, [uiMode, friends, studentHasCrown, hasPlayedGame, user?.uid]);
-
-  const getReferralCode = () => {
-    if (!user?.studentId) return 'COMP2K260000';
-    const digits = user.studentId.replace(/\D/g, ''); 
-    const lastDigits = digits.slice(-4); 
-    return `COMP2K26${lastDigits.padStart(4, '0')}`;
-  };
-
-  const referralCode = getReferralCode();
-  const referralLink = `https://compution.vercel.app/login?ref=${referralCode}`;
 
   if (loading) {
     return <DashboardSkeleton />;
@@ -102,82 +28,7 @@ export default function Overview() {
       borderRadius: '24px',
       transition: 'background-color 0.3s ease'
     }}>
-      {/* UI Mode Toggle Switcher Header */}
-      <div style={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        padding: '16px 24px',
-        background: 'var(--surface-card)',
-        color: 'var(--text-primary)',
-        borderRadius: '20px',
-        border: '1px solid var(--border)',
-        boxShadow: 'var(--shadow-sm)',
-        flexWrap: 'wrap',
-        gap: '12px',
-        transition: 'all 0.3s ease'
-      }}>
-        <div>
-          <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 800 }}>Student Workspace</h3>
-          <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Choose between gamified child theme or classic layout</p>
-        </div>
-        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-          {/* Layout buttons */}
-          <div style={{ display: 'flex', gap: '4px', background: 'var(--surface-elevated)', padding: '4px', borderRadius: '10px' }}>
-            <button
-              onClick={() => setUiMode('child')}
-              style={{
-                padding: '6px 14px',
-                borderRadius: '7px',
-                fontSize: '0.78rem',
-                fontWeight: 700,
-                background: uiMode === 'child' ? 'var(--primary)' : 'transparent',
-                color: uiMode === 'child' ? 'var(--text-on-primary)' : 'var(--text-secondary)',
-                transition: 'all 0.2s',
-                cursor: 'pointer'
-              }}
-            >
-              🎮 Child Theme
-            </button>
-            <button
-              onClick={() => setUiMode('default')}
-              style={{
-                padding: '6px 14px',
-                borderRadius: '7px',
-                fontSize: '0.78rem',
-                fontWeight: 700,
-                background: uiMode === 'default' ? 'var(--primary)' : 'transparent',
-                color: uiMode === 'default' ? 'var(--text-on-primary)' : 'var(--text-secondary)',
-                transition: 'all 0.2s',
-                cursor: 'pointer'
-              }}
-            >
-              💼 Default UI
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {uiMode === 'child' ? (
-        <StudentWorkspaceTheme>
-          <ChildDashboard 
-            user={user} 
-            showToast={showToast} 
-            isDarkMode={isDarkMode} 
-            xp={xp} setXp={setXp}
-            level={level} setLevel={setLevel}
-            rankPoints={rankPoints} setRankPoints={setRankPoints}
-            streak={streak} setStreak={setStreak}
-            friends={friends} setFriends={setFriends}
-            duels={duels} setDuels={setDuels}
-            studentHasCrown={studentHasCrown} setStudentHasCrown={setStudentHasCrown}
-            hasPlayedGame={hasPlayedGame} setHasPlayedGame={setHasPlayedGame}
-            referralCode={referralCode} referralLink={referralLink}
-          />
-        </StudentWorkspaceTheme>
-      ) : (
-        <StudentOverview isDarkMode={isDarkMode} />
-      )}
+      <StudentOverview isDarkMode={isDarkMode} />
     </div>
   );
 }

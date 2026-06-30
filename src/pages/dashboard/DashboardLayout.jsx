@@ -53,7 +53,7 @@ const NAV_MAIN = [
   { to: '/dashboard/courses', label: 'Course', icon: BookOpen },
   { to: '/dashboard/schedule', label: 'Schedule', icon: Calendar },
   { to: '/dashboard/tests', label: 'Tests', icon: ClipboardList },
-  { to: '/dashboard/mini-games', label: 'Mini Games', icon: Gamepad2 },
+  { to: '/dashboard/worldcup', label: 'World Cup', icon: Gamepad2 },
   { to: '/dashboard/attendance', label: 'Attendance', icon: CalendarCheck },
   { to: '/dashboard/assignments', label: 'Assignments', icon: FileText },
   { to: '/dashboard/community', label: 'Community', icon: MessageSquare },
@@ -425,7 +425,7 @@ const DashboardLayout = () => {
     { to: '/dashboard', label: 'Home', icon: LayoutDashboard, exact: true },
     { to: '/dashboard/courses', label: 'Courses', icon: BookOpen },
     { to: '/dashboard/schedule', label: 'Schedule', icon: Calendar },
-    { to: '/dashboard/mini-games', label: 'Games', icon: Gamepad2 },
+    { to: '/dashboard/worldcup', label: 'World Cup', icon: Gamepad2 },
   ];
 
 
@@ -434,7 +434,7 @@ const DashboardLayout = () => {
     if (to === '/dashboard/courses') return 'tour-nav-courses';
     if (to === '/dashboard/schedule') return 'tour-nav-schedule';
     if (to === '/dashboard/tests') return 'tour-nav-tests';
-    if (to === '/dashboard/mini-games') return 'tour-nav-minigames';
+    if (to === '/dashboard/worldcup') return 'tour-nav-minigames';
     if (to === '/dashboard/attendance') return 'tour-nav-attendance';
     if (to === '/dashboard/assignments') return 'tour-nav-assignments';
     if (to === '/dashboard/community') return 'tour-nav-community';
