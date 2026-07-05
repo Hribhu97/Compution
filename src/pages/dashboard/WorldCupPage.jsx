@@ -1564,12 +1564,18 @@ const WorldCupPage = () => {
 
  // ——— SCREEN 3: ACTIVE MATCH PENALTY ENGINE (SPLIT MATCH BROADCAST VIEW) ———
  if (screen === 'match' && activeQuestion) {
- return (
- <div style={{
- background: 'radial-gradient(circle at center, #0b0f19 0%, #020617 100%)',
- height: '100%', minHeight: 0, maxHeight: '100%', overflowY: 'auto', overflowX: 'hidden', display: 'flex', flexDirection: 'column',
- color: 'white', padding: isMobile ? '12px' : '20px', borderRadius: '32px', boxSizing: 'border-box'
- }}>
+  console.log('WorldCupPage Match Screen Options Length:', activeQuestion.options?.length);
+  console.log('WorldCupPage Match Screen Options:', activeQuestion.options);
+  return (
+  <div style={{
+  background: 'radial-gradient(circle at center, #0b0f19 0%, #020617 100%)',
+  height: '100%', minHeight: 0, maxHeight: '100%',
+  overflowY: 'auto', overflowX: 'hidden',
+  WebkitOverflowScrolling: 'touch',
+  touchAction: 'pan-y',
+  display: 'flex', flexDirection: 'column',
+  color: 'white', padding: isMobile ? '12px' : '20px', borderRadius: '32px', boxSizing: 'border-box'
+  }}>
  {/* TV Style Scoreboard & Broadcast Banner */}
  <div style={{
  width: '100%', maxWidth: '650px', margin: isMobile ? '0 auto 10px' : '0 auto 20px',
