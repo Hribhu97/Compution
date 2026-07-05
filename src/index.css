@@ -797,3 +797,71 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover {
   box-shadow: var(--shadow-sm);
 }
 
+/* Responsive Scrollable Container for Tabs */
+.tabs-scrollable-container {
+  display: flex;
+  gap: 8px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 12px;
+  overflow-x: auto;
+  flex-wrap: nowrap !important;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none; /* Firefox */
+  flex-shrink: 0;
+  width: 100%;
+}
+.tabs-scrollable-container::-webkit-scrollbar {
+  display: none; /* Safari & Chrome */
+}
+
+/* Mobile card list helpers */
+.mobile-card-item {
+  background: var(--surface-card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: var(--shadow-sm);
+  margin-bottom: 12px;
+  transition: var(--transition);
+}
+.mobile-card-item:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+
+.mobile-card-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.88rem;
+}
+
+.mobile-card-label {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.mobile-card-value {
+  color: var(--text-primary);
+  font-weight: 700;
+}
+
+/* Touch targets and iOS fixes */
+@media (max-width: 768px) {
+  /* Prevent iOS zoom on focus */
+  input[type="text"],
+  input[type="number"],
+  input[type="password"],
+  input[type="email"],
+  input[type="tel"],
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
+
+

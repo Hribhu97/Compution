@@ -58,6 +58,177 @@ const Tests = () => {
     correctAnswerIndex: 0
   });
 
+  // DOCX Import States
+  const [importDocxQuestions, setImportDocxQuestions] = useState([]);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [isParsingDocx, setIsParsingDocx] = useState(false);
+  const [importError, setImportError] = useState('');
+  const docxInputRef = useRef(null);
+
+  // Lazy-load mammoth parser from CDN
+  const loadMammoth = () => {
+    return new Promise((resolve, reject) => {
+      if (window.mammoth) {
+        resolve(window.mammoth);
+        return;
+      }
+      const script = document.createElement('script');
+      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.8.0/mammoth.browser.min.js';
+      script.onload = () => resolve(window.mammoth);
+      script.onerror = () => reject(new Error('Failed to load mammoth parser from CDN'));
+      document.head.appendChild(script);
+    });
+  };
+
+  // Parser: Extract MCQ blocks from plain text
+  const parseMcqFromText = (text) => {
+    const lines = text.split('\n').map(line => line.trim()).filter(line => line.length > 0);
+    const questions = [];
+    let currentQuestion = null;
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+
+      // Match question start: "1. What is...", "Q1. What is...", "Question 1: What is..."
+      const questionMatch = line.match(/^(?:Q|Question\s*)?(\d+)\s*[\.:\)-]\s*(.*)$/i);
+      // Match option: "A. Option", "B) Option", "(C) Option"
+      const optionMatch = line.match(/^([A-D])\s*[\.:\)-]\s*(.*)$/i) || line.match(/^\(([A-D])\)\s*(.*)$/i);
+      // Match correct answer: "Answer: A", "Correct Answer: B", "Ans: C"
+      const answerMatch = line.match(/^(?:Correct\s+)?Answer\s*[\.:\s]*([A-D])/i) || line.match(/^Ans\s*[\.:\s]*([A-D])/i);
+
+      if (questionMatch) {
+        if (currentQuestion) {
+          questions.push(currentQuestion);
+        }
+        currentQuestion = {
+          id: questions.length + 1,
+          questionText: questionMatch[2] || '',
+          options: ['', '', '', ''],
+          correctAnswerIndex: -1,
+          error: ''
+        };
+      } else if (optionMatch && currentQuestion) {
+        const optChar = optionMatch[1].toUpperCase();
+        const optText = optionMatch[2] || '';
+        const idx = optChar.charCodeAt(0) - 65; // A=0, B=1, C=2, D=3
+        if (idx >= 0 && idx < 4) {
+          currentQuestion.options[idx] = optText;
+        }
+      } else if (answerMatch && currentQuestion) {
+        const ansChar = answerMatch[1].toUpperCase();
+        currentQuestion.correctAnswerIndex = ansChar.charCodeAt(0) - 65;
+      } else if (currentQuestion) {
+        // Multi-line question text or trailing option texts
+        if (currentQuestion.options.every(o => o === '')) {
+          currentQuestion.questionText += ' ' + line;
+        }
+      }
+    }
+
+    if (currentQuestion) {
+      questions.push(currentQuestion);
+    }
+
+    // Validate questions and mark errors
+    return questions.map(q => {
+      const missingOpts = q.options.filter(o => !o.trim()).length;
+      let error = '';
+      if (missingOpts > 0) {
+        error = `${4 - missingOpts} options found. Requires exactly 4 options.`;
+      } else if (q.correctAnswerIndex === -1) {
+        error = 'No correct answer specified (e.g. Answer: A).';
+      }
+      return { ...q, error };
+    });
+  };
+
+  const handleImportDocxClick = () => {
+    setImportError('');
+    if (docxInputRef.current) {
+      docxInputRef.current.click();
+    }
+  };
+
+  const handleDocxImport = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Friendly validation: accept ONLY .docx
+    const ext = file.name.split('.').pop().toLowerCase();
+    if (ext !== 'docx') {
+      showToast("Only .docx files are supported. Please select a valid Word Document.", "error");
+      e.target.value = '';
+      return;
+    }
+
+    setIsParsingDocx(true);
+    setImportError('');
+
+    try {
+      const mammothInstance = await loadMammoth();
+      const reader = new FileReader();
+
+      reader.onload = async (event) => {
+        try {
+          const arrayBuffer = event.target.result;
+          const result = await mammothInstance.extractRawText({ arrayBuffer });
+          const parsed = parseMcqFromText(result.value);
+          
+          if (parsed.length === 0) {
+            setImportError("No questions found in the document. Verify format: 1. Question \\n A. Option A \\n Answer: A");
+          } else {
+            setImportDocxQuestions(parsed);
+            setIsImportModalOpen(true);
+          }
+        } catch (err) {
+          console.error("Mammoth parsing error:", err);
+          setImportError("Failed to extract text from DOCX file.");
+        } finally {
+          setIsParsingDocx(false);
+        }
+      };
+
+      reader.onerror = () => {
+        setImportError("Failed to read file buffer.");
+        setIsParsingDocx(false);
+      };
+
+      reader.readAsArrayBuffer(file);
+    } catch (err) {
+      console.error("Loader error:", err);
+      setImportError("Failed to load DOCX parser library.");
+      setIsParsingDocx(false);
+    }
+
+    // Reset file input
+    e.target.value = '';
+  };
+
+  const handleSaveImportedQuestions = () => {
+    // Filter out any completely empty/invalid questions
+    const validQuestions = importDocxQuestions.filter(q => q.questionText.trim() && q.options.every(o => o.trim()));
+    
+    if (validQuestions.length === 0) {
+      showToast("No valid questions to import.", "warning");
+      return;
+    }
+
+    // Add imported questions to form
+    const currentQuestions = [...testForm.questions];
+    validQuestions.forEach(q => {
+      currentQuestions.push({
+        id: currentQuestions.length + 1,
+        questionText: q.questionText,
+        options: q.options,
+        correctAnswerIndex: q.correctAnswerIndex === -1 ? 0 : q.correctAnswerIndex
+      });
+    });
+
+    setTestForm({ ...testForm, questions: currentQuestions });
+    setIsImportModalOpen(false);
+    showToast(`Successfully imported ${validQuestions.length} questions!`, "success");
+  };
+
   // Resolve local tests from /Test/ folder
   const [localTests, setLocalTests] = useState([]);
   useEffect(() => {
@@ -612,7 +783,38 @@ const Tests = () => {
 
           {/* Builder Section for Questions */}
           <div style={{ border: '1px solid var(--border-strong)', padding: '16px', borderRadius: '12px', background: '#F8F7F4', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            <h4 style={{ margin: 0, fontSize: '0.9rem', fontWeight: 800 }}>Add MCQ Question</h4>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h4 style={{ margin: 0, fontSize: '0.9rem', fontWeight: 800 }}>Add MCQ Question</h4>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <input
+                  type="file"
+                  ref={docxInputRef}
+                  onChange={handleDocxImport}
+                  accept=".docx"
+                  style={{ display: 'none' }}
+                />
+                <button
+                  type="button"
+                  onClick={handleImportDocxClick}
+                  disabled={isParsingDocx}
+                  className="btn btn-secondary"
+                  style={{ padding: '6px 12px', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}
+                >
+                  {isParsingDocx ? (
+                    <span>Parsing...</span>
+                  ) : (
+                    <>
+                      <span>📄</span> Import DOCX
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+            {importError && (
+              <div style={{ padding: '8px 12px', borderRadius: '8px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', color: 'var(--danger)', fontSize: '0.78rem' }}>
+                ⚠️ {importError}
+              </div>
+            )}
             
             <div>
               <label className="form-label" style={{ fontSize: '0.78rem' }}>Question Text</label>
@@ -680,6 +882,150 @@ const Tests = () => {
         </form>
       </Modal>
 
+      {/* DOCX Import Review Modal */}
+      <Modal isOpen={isImportModalOpen} onClose={() => setIsImportModalOpen(false)} title="Review & Edit Imported Questions">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', maxHeight: '70vh', overflowY: 'auto', paddingRight: '6px' }}>
+          <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+            We found <strong>{importDocxQuestions.length}</strong> questions in your document. Please review and correct any malformed entries before saving.
+          </p>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            {importDocxQuestions.map((q, idx) => (
+              <div 
+                key={q.id} 
+                style={{ 
+                  border: q.error ? '1.5px solid var(--danger)' : '1px solid var(--border)', 
+                  padding: '16px', 
+                  borderRadius: '12px', 
+                  background: q.error ? 'rgba(239,68,68,0.02)' : 'var(--white)',
+                  display: 'flex', 
+                  flexDirection: 'column', 
+                  gap: '12px',
+                  position: 'relative'
+                }}
+              >
+                {/* Remove button */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const updated = importDocxQuestions.filter(item => item.id !== q.id);
+                    setImportDocxQuestions(updated);
+                  }}
+                  style={{
+                    position: 'absolute', top: '12px', right: '12px',
+                    background: 'none', border: 'none', color: 'var(--text-muted)',
+                    cursor: 'pointer', padding: '4px'
+                  }}
+                  title="Remove question"
+                >
+                  <X size={16} />
+                </button>
+
+                <div style={{ fontWeight: 800, fontSize: '0.85rem', color: 'var(--primary)' }}>
+                  Question {idx + 1}
+                </div>
+
+                {q.error && (
+                  <div style={{ padding: '6px 10px', borderRadius: '6px', background: 'rgba(239,68,68,0.08)', color: 'var(--danger)', fontSize: '0.72rem', fontWeight: 700 }}>
+                    ⚠️ {q.error}
+                  </div>
+                )}
+
+                <div>
+                  <label className="form-label" style={{ fontSize: '0.72rem' }}>Question Text</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    value={q.questionText}
+                    onChange={e => {
+                      const updated = [...importDocxQuestions];
+                      updated[idx].questionText = e.target.value;
+                      // Clear error if now valid
+                      if (e.target.value.trim()) {
+                        const missingOpts = updated[idx].options.filter(o => !o.trim()).length;
+                        if (missingOpts === 0 && updated[idx].correctAnswerIndex !== -1) {
+                          updated[idx].error = '';
+                        }
+                      }
+                      setImportDocxQuestions(updated);
+                    }}
+                    placeholder="Question text"
+                  />
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                  {q.options.map((opt, oIdx) => (
+                    <div key={oIdx}>
+                      <label className="form-label" style={{ fontSize: '0.68rem' }}>Option {oIdx + 1}</label>
+                      <input
+                        type="text"
+                        className="form-input"
+                        value={opt}
+                        onChange={e => {
+                          const updated = [...importDocxQuestions];
+                          updated[idx].options[oIdx] = e.target.value;
+                          // Recalculate error
+                          const missingOpts = updated[idx].options.filter(o => !o.trim()).length;
+                          if (missingOpts > 0) {
+                            updated[idx].error = `${4 - missingOpts} options found. Requires exactly 4 options.`;
+                          } else if (updated[idx].correctAnswerIndex === -1) {
+                            updated[idx].error = 'No correct answer specified.';
+                          } else {
+                            updated[idx].error = '';
+                          }
+                          setImportDocxQuestions(updated);
+                        }}
+                        placeholder={`Option ${oIdx + 1}`}
+                      />
+                    </div>
+                  ))}
+                </div>
+
+                <div>
+                  <label className="form-label" style={{ fontSize: '0.72rem' }}>Correct Option</label>
+                  <select
+                    className="form-input"
+                    value={q.correctAnswerIndex}
+                    onChange={e => {
+                      const updated = [...importDocxQuestions];
+                      updated[idx].correctAnswerIndex = Number(e.target.value);
+                      if (updated[idx].questionText.trim() && updated[idx].options.every(o => o.trim())) {
+                        updated[idx].error = '';
+                      }
+                      setImportDocxQuestions(updated);
+                    }}
+                  >
+                    <option value={-1} disabled>Select Correct Option</option>
+                    <option value={0}>Option 1 (A)</option>
+                    <option value={1}>Option 2 (B)</option>
+                    <option value={2}>Option 3 (C)</option>
+                    <option value={3}>Option 4 (D)</option>
+                  </select>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div style={{ display: 'flex', gap: '12px', marginTop: '12px', borderTop: '1px solid var(--border)', paddingTop: '16px' }}>
+            <button 
+              type="button" 
+              onClick={() => setIsImportModalOpen(false)} 
+              className="btn btn-ghost" 
+              style={{ flex: 1 }}
+            >
+              Cancel
+            </button>
+            <button 
+              type="button" 
+              onClick={handleSaveImportedQuestions} 
+              className="btn btn-primary" 
+              style={{ flex: 1.5 }}
+            >
+              Import {importDocxQuestions.filter(q => q.questionText.trim() && q.options.every(o => o.trim())).length} Questions
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 };

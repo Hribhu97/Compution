@@ -56,6 +56,7 @@ export const AuthProvider = ({ children }) => {
       emergencyContact: profileData.emergencyContact || '',
       school: profileData.school || '',
       class: profileData.class || '',
+      semester: profileData.semester || '',
       course: profileData.course || 'Not specified',
       guardianName: profileData.guardianName || '',
       guardianPhone: profileData.guardianPhone || '',
@@ -75,13 +76,68 @@ export const AuthProvider = ({ children }) => {
       let regFee = 300;
       let admFee = 0;
       let baseMonthly = 500;
+      
+      let classCategory = '';
+      let autoGroup = '';
+      const cls = (profileData.class || '').trim();
+      
+      if (['Class 2', 'Class 3', 'Class 4', 'Class 5'].includes(cls)) {
+        classCategory = 'class_2_5';
+        autoGroup = 'Class 2-5';
+      } else if (['Class 6', 'Class 7', 'Class 8'].includes(cls)) {
+        classCategory = 'class_6_8';
+        autoGroup = 'Class 6-8';
+      } else if (['Class 9', 'Class 10'].includes(cls)) {
+        classCategory = 'class_9_10';
+        autoGroup = 'Class 9-10';
+      } else if (cls === 'Class 11') {
+        classCategory = 'class_11';
+        autoGroup = 'Class 11';
+      } else if (cls === 'Class 12') {
+        classCategory = 'class_12';
+        autoGroup = 'Class 12';
+      } else if (cls === 'Basic Computer') {
+        classCategory = 'basic_computer';
+        autoGroup = 'Basic Computer';
+      } else if (cls === 'Basic with AI') {
+        classCategory = 'basic_with_ai';
+        autoGroup = 'Basic with AI';
+      } else if (cls === 'Tally') {
+        classCategory = 'tally';
+        autoGroup = 'Tally';
+      } else if (cls === 'B.Sc') {
+        classCategory = 'bsc';
+        autoGroup = 'B.Sc';
+      } else if (cls === 'BCA') {
+        classCategory = 'bca';
+        autoGroup = 'BCA';
+      } else if (cls === 'B.Tech') {
+        classCategory = 'btech';
+        autoGroup = 'B.Tech';
+      } else {
+        classCategory = 'other';
+        autoGroup = 'Other';
+      }
+
       try {
         const fsSnap = await getDoc(doc(db, 'settings', 'feeStructure'));
         if (fsSnap.exists()) {
           const fs = fsSnap.data();
           regFee = Number(fs.registrationFee) || 300;
           admFee = Number(fs.admissionFee) || 0;
-          baseMonthly = Number(fs.class2to5) || 500;
+          if (classCategory === 'class_2_5') {
+            baseMonthly = Number(fs.class2to5) || 500;
+          } else if (classCategory === 'class_6_8') {
+            baseMonthly = Number(fs.class6to8) || 600;
+          } else if (classCategory === 'class_9_10') {
+            baseMonthly = Number(fs.class9to10) || 700;
+          } else if (['class_11', 'class_12'].includes(classCategory)) {
+            baseMonthly = Number(fs.class11Science) || 900;
+          } else if (['basic_computer', 'basic_with_ai', 'tally'].includes(classCategory)) {
+            baseMonthly = Number(fs.basicCourse) || 700;
+          } else {
+            baseMonthly = 1000;
+          }
         }
       } catch (e) {
         console.error("Error fetching fee structure in completeUserProfile:", e);
@@ -94,9 +150,9 @@ export const AuthProvider = ({ children }) => {
         studentId: existingData.studentId || `COMP-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
         assignedFacultyIds: existingData.assignedFacultyIds || [],
         studentGroup: existingData.studentGroup || null,
-        classCategory: existingData.classCategory || '',
+        classCategory: existingData.classCategory || classCategory,
         stream: existingData.stream || '',
-        autoGroup: existingData.autoGroup || '',
+        autoGroup: existingData.autoGroup || autoGroup,
         customGroupException: existingData.customGroupException || '',
         feeStatus: existingData.feeStatus || 'pending',
         feeTarget: existingData.feeTarget !== undefined ? existingData.feeTarget : baseMonthly,

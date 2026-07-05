@@ -14,7 +14,8 @@ import {
  getStandings, 
  getActiveSeason
 } from '../../services/worldCupService';
-import TeamSelection from '../../components/garden/TeamSelection';
+import TeamSelection from '../../components/worldcup/TeamSelection.jsx';
+import { useIsMobile } from '../../hooks/useIsMobile';
 import { 
  Trophy, MessageSquare, Send, Users, Award, 
  Play, Shield, Star, LogOut, Check, X, Volume2, VolumeX, ArrowLeft, Share2, Clock
@@ -514,6 +515,7 @@ const QUESTIONS_POOL = {
 
 const WorldCupPage = () => {
  const { user } = useAuth();
+ const isMobile = useIsMobile();
  const { showToast } = useToast();
  const chatEndRef = useRef(null);
 
@@ -834,7 +836,7 @@ const WorldCupPage = () => {
 
  if (squadLoading) {
  return (
- <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '80vh' }}>
+ <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', minHeight: '80vh' }}>
  <div style={{ width: '48px', height: '48px', borderRadius: '50%', border: '4px solid rgba(99,102,241,0.2)', borderTopColor: '#6366f1', animation: 'spin 1s linear infinite' }} />
  </div>
  );
@@ -843,7 +845,25 @@ const WorldCupPage = () => {
  // ——— UNJOINED STATE ———
  if (!user?.chosenTeam || !user?.worldcupGroupId || !squad) {
  return (
- <div style={{ padding: '40px 20px', maxWidth: '800px', margin: '0 auto', textAlign: 'center', color: 'white', background: 'radial-gradient(circle at center, #1e1b4b 0%, #09090b 100%)', borderRadius: '32px', border: '1.5px solid rgba(99,102,241,0.2)', boxShadow: '0 25px 70px rgba(0,0,0,0.4)' }}>
+ <div style={{
+  padding: isMobile ? '24px 16px' : '40px 20px',
+  maxWidth: '800px',
+  margin: '0 auto',
+  textAlign: 'center',
+  color: 'white',
+  background: 'radial-gradient(circle at center, #1e1b4b 0%, #09090b 100%)',
+  borderRadius: '32px',
+  border: '1.5px solid rgba(99,102,241,0.2)',
+  boxShadow: '0 25px 70px rgba(0,0,0,0.4)',
+  height: '100%',
+  maxHeight: '100%',
+  overflowY: 'auto',
+  WebkitOverflowScrolling: 'touch',
+  touchAction: 'pan-y',
+  flex: 1,
+  minHeight: 0,
+  boxSizing: 'border-box'
+ }}>
  <div style={{ marginBottom: '24px', display: 'flex', justifyContent: 'center' }}>
  <svg width="80" height="80" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
  <circle cx="40" cy="40" r="38" stroke="#60A5FA" strokeWidth="2" fill="rgba(96,165,250,0.08)" />
@@ -877,19 +897,29 @@ const WorldCupPage = () => {
 
  <AnimatePresence>
  {showTeamSelection && (
- <div style={{
- position: 'fixed', inset: 0, zIndex: 99999,
- display: 'flex', alignItems: 'center', justifyContent: 'center',
- background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)'
- }}>
- <div style={{ background: '#09090b', padding: '12px', borderRadius: '24px', width: 'min(92vw, 750px)', border: '1.5px solid rgba(255,255,255,0.08)' }}>
- <TeamSelection 
- user={user} 
- onClose={() => setShowTeamSelection(false)} 
- onJoined={() => setShowTeamSelection(false)}
- />
- </div>
- </div>
+  isMobile ? (
+  <div style={{ position: 'fixed', inset: 0, zIndex: 99999, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }}>
+  <TeamSelection 
+  user={user} 
+  onClose={() => setShowTeamSelection(false)} 
+  onJoined={() => setShowTeamSelection(false)}
+  />
+  </div>
+  ) : (
+  <div style={{
+  position: 'fixed', inset: 0, zIndex: 99999,
+  display: 'flex', alignItems: 'center', justifyContent: 'center',
+  background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)'
+  }}>
+  <div style={{ background: '#09090b', padding: '12px', borderRadius: '24px', width: 'min(92vw, 750px)', border: '1.5px solid rgba(255,255,255,0.08)' }}>
+  <TeamSelection 
+  user={user} 
+  onClose={() => setShowTeamSelection(false)} 
+  onJoined={() => setShowTeamSelection(false)}
+  />
+  </div>
+  </div>
+  )
  )}
  </AnimatePresence>
  </div>
@@ -931,9 +961,14 @@ const WorldCupPage = () => {
  <div style={{
  position: 'relative',
  width: '100%',
- minHeight: '88vh',
+ height: '100%',
+ minHeight: 0,
+ maxHeight: '100%',
+ flex: 1,
+ overflowY: 'auto',
+ WebkitOverflowScrolling: 'touch',
+ touchAction: 'pan-y',
  borderRadius: '24px',
- overflow: 'hidden',
  fontFamily: "'Inter', system-ui, sans-serif",
  color: 'white',
  display: 'flex',
@@ -981,12 +1016,12 @@ const WorldCupPage = () => {
  <div style={{
  position: 'relative', zIndex: 10,
  display: 'grid',
- gridTemplateColumns: '280px 1fr 240px',
- gap: '24px',
- padding: '28px 24px',
+ gridTemplateColumns: isMobile ? '1fr' : '280px 1fr 240px',
+ gap: isMobile ? '16px' : '24px',
+ padding: isMobile ? '16px 12px' : '28px 24px',
  flex: 1,
  alignItems: 'start',
- minHeight: '88vh'
+ minHeight: 0
  }}>
 
  {/* ——— LEFT: Squad Roster Panel ——— */}
@@ -1383,10 +1418,10 @@ const WorldCupPage = () => {
  // ——— SCREEN 2: KICK OFF TRANSITION ———
  if (screen === 'kickoff') {
  return (
- <div style={{
- background: '#020617', minHeight: '85vh', display: 'flex', flexDirection: 'column',
- alignItems: 'center', justifyContent: 'center', color: 'white', borderRadius: '32px'
- }}>
+  <div style={{
+  background: '#020617', height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column',
+  alignItems: 'center', justifyContent: 'center', color: 'white', borderRadius: '32px'
+  }}>
  <div style={{ fontSize: '6rem', marginBottom: '16px', animation: 'bounce 1s infinite' }}>⚽</div>
  <div style={{ fontSize: '0.85rem', fontWeight: 900, color: theme.primary, textTransform: 'uppercase', letterSpacing: '0.25em', marginBottom: '12px' }}>
  WORLD CUP MANIA
@@ -1415,14 +1450,14 @@ const WorldCupPage = () => {
  return (
  <div style={{
  background: 'radial-gradient(circle at center, #0b0f19 0%, #020617 100%)',
- minHeight: '85vh', display: 'flex', flexDirection: 'column',
- color: 'white', padding: '20px', borderRadius: '32px'
+ height: '100%', minHeight: 0, maxHeight: '100%', overflow: 'hidden', display: 'flex', flexDirection: 'column',
+ color: 'white', padding: isMobile ? '12px' : '20px', borderRadius: '32px', boxSizing: 'border-box'
  }}>
  {/* TV Style Scoreboard & Broadcast Banner */}
  <div style={{
- width: '100%', maxWidth: '650px', margin: '0 auto 20px',
+ width: '100%', maxWidth: '650px', margin: isMobile ? '0 auto 10px' : '0 auto 20px',
  background: 'rgba(0,0,0,0.5)', border: '1.5px solid rgba(255,255,255,0.06)',
- borderRadius: '16px', padding: '12px 20px', display: 'flex',
+ borderRadius: '16px', padding: isMobile ? '8px 12px' : '12px 20px', display: 'flex',
  justifyContent: 'space-between', alignItems: 'center', position: 'relative'
  }}>
  {/* Live broadcast visual element */}
@@ -1454,7 +1489,7 @@ const WorldCupPage = () => {
 
  {/* 15s shrinking progress bar */}
  {botActiveKick === null && (
- <div style={{ width: '100%', maxWidth: '650px', margin: '0 auto 20px' }}>
+ <div style={{ width: '100%', maxWidth: '650px', margin: isMobile ? '0 auto 10px' : '0 auto 20px' }}>
  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px', fontSize: '0.78rem', color: 'rgba(255,255,255,0.5)', fontWeight: 800 }}>
  <span>⚽ PENALTY SHOT #{qIndex + 1}</span>
  <span style={{ color: timeLeft <= 5 ? '#ef4444' : '#f59e0b' }}>{timeLeft}s REMAINING</span>
@@ -1467,12 +1502,12 @@ const WorldCupPage = () => {
 
  {/* TV Broadcaster field box (Split visual structure) */}
  <div style={{
- flex: 1.2, width: '100%', maxWidth: '650px', margin: '0 auto 24px',
- background: 'rgba(16, 185, 129, 0.05)',
- border: `2px solid ${theme.primary}30`, borderRadius: '24px',
- position: 'relative', overflow: 'hidden', minHeight: '220px',
- display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center'
- }}>
+  flex: 1, width: '100%', maxWidth: '650px', margin: isMobile ? '0 auto 12px' : '0 auto 24px',
+  background: 'rgba(16, 185, 129, 0.05)',
+  border: `2px solid ${theme.primary}30`, borderRadius: '24px',
+  position: 'relative', overflow: 'hidden', minHeight: isMobile ? '160px' : '220px',
+  display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center'
+  }}>
  {/* Turf grid lines */}
  <div style={{ position: 'absolute', inset: 0, opacity: 0.1, backgroundImage: 'linear-gradient(rgba(255,255,255,0.2) 2px, transparent 2px), linear-gradient(90deg, rgba(255,255,255,0.2) 2px, transparent 2px)', backgroundSize: '30px 30px' }} />
  
@@ -1620,10 +1655,17 @@ const WorldCupPage = () => {
  if (screen === 'halftime') {
  return (
  <div style={{
- background: 'radial-gradient(circle at center, #1e1b4b 0%, #020617 100%)',
- minHeight: '85vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
- color: 'white', padding: '24px', borderRadius: '32px'
- }}>
+  background: 'radial-gradient(circle at center, #1e1b4b 0%, #020617 100%)',
+  height: '100%',
+  maxHeight: '100%',
+  flex: 1,
+  minHeight: 0,
+  display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+  color: 'white', padding: '24px', borderRadius: '32px',
+  overflowY: 'auto',
+  WebkitOverflowScrolling: 'touch',
+  touchAction: 'pan-y'
+  }}>
  <div style={{ fontSize: '5rem', marginBottom: '16px' }}>⏱</div>
  <div style={{ fontSize: '0.85rem', fontWeight: 900, color: '#f59e0b', textTransform: 'uppercase', letterSpacing: '0.25em', marginBottom: '8px' }}>
  Match Summary
@@ -1688,8 +1730,15 @@ const WorldCupPage = () => {
  return (
  <div style={{
  background: `radial-gradient(circle at center, ${isWin ? '#022c22' : '#7c2d12'}25 0%, #020617 100%)`,
- minHeight: '85vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
- color: 'white', padding: '24px', textAlign: 'center', borderRadius: '32px'
+ height: '100%',
+  maxHeight: '100%',
+  flex: 1,
+  minHeight: 0,
+  display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+  color: 'white', padding: '24px', textAlign: 'center', borderRadius: '32px',
+  overflowY: 'auto',
+  WebkitOverflowScrolling: 'touch',
+  touchAction: 'pan-y'
  }}>
  <div style={{ fontSize: '6rem', marginBottom: '16px' }}>{isWin ? '🏆' : '⚽'}</div>
  <div style={{ fontSize: '0.85rem', fontWeight: 900, color: isWin ? '#10b981' : '#f59e0b', textTransform: 'uppercase', letterSpacing: '0.25em', marginBottom: '8px' }}>
@@ -1752,7 +1801,20 @@ const WorldCupPage = () => {
  const seats = [0, 1, 2, 3].map(i => squad.members?.[i] || null);
 
  return (
- <div style={{ padding: '24px', maxWidth: '1000px', margin: '0 auto', color: 'white' }}>
+ <div style={{
+  padding: isMobile ? '12px' : '24px',
+  maxWidth: '1000px',
+  margin: '0 auto',
+  color: 'white',
+  height: '100%',
+  maxHeight: '100%',
+  flex: 1,
+  minHeight: 0,
+  overflowY: 'auto',
+  WebkitOverflowScrolling: 'touch',
+  touchAction: 'pan-y',
+  boxSizing: 'border-box'
+  }}>
  
  {/* Header bar */}
  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px', marginBottom: '32px' }}>
@@ -1917,7 +1979,7 @@ const WorldCupPage = () => {
  ))}
  </div>
 
- <div style={{ flex: 1, overflowY: 'auto', padding: '16px' }}>
+ <div style={{ flex: 1, overflowY: lobbyTab === 'leaderboards' ? 'auto' : 'hidden', WebkitOverflowScrolling: 'touch', padding: '16px', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
  
  {/* Lobby Tab: Chat */}
  {lobbyTab === 'chat' && (

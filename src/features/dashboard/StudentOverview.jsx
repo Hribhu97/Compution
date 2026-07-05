@@ -6,7 +6,7 @@ import { useCourses } from '../../hooks/useCourses';
 import { useTests } from '../../hooks/useTests';
 import { useGames } from '../../hooks/useGames';
 import { db } from '../../firebase';
-import { collection, query, where, doc, onSnapshot, orderBy, limit } from 'firebase/firestore';
+import { collection, query, where, doc, onSnapshot, orderBy, limit, updateDoc } from 'firebase/firestore';
 import { 
   Users, Calendar, Clock, BookOpen, ClipboardList, Gamepad2, Award, 
   Flame, MessageSquare, AlertCircle, FileText, Bell, ArrowUpRight, Trophy, Star, X 
@@ -68,6 +68,39 @@ const getStatusStyle = (status) => {
 const StudentOverview = ({ isDarkMode }) => {
   const { user } = useAuth();
   const navigate = useNavigate();
+
+  const [aadhaarInput, setAadhaarInput] = useState('');
+  const [isEditingAadhaar, setIsEditingAadhaar] = useState(false);
+  const [aadhaarError, setAadhaarError] = useState('');
+  const [aadhaarSuccess, setAadhaarSuccess] = useState('');
+  const [dismissedAadhaar, setDismissedAadhaar] = useState(
+    sessionStorage.getItem('aadhaar_dismissed') === 'true'
+  );
+
+  const handleSaveAadhaar = async () => {
+    if (!/^\d{12}$/.test(aadhaarInput)) {
+      setAadhaarError('Aadhaar number must be exactly 12 digits');
+      return;
+    }
+    setAadhaarError('');
+    try {
+      const userRef = doc(db, 'users', user.uid);
+      await updateDoc(userRef, {
+        aadhaarNumber: aadhaarInput,
+        aadhaarStatus: 'pending'
+      });
+      setAadhaarSuccess('Aadhaar updated successfully!');
+      setIsEditingAadhaar(false);
+    } catch (err) {
+      console.error('Error updating Aadhaar:', err);
+      setAadhaarError('Failed to update Aadhaar. Please try again.');
+    }
+  };
+
+  const handleDismissAadhaar = () => {
+    sessionStorage.setItem('aadhaar_dismissed', 'true');
+    setDismissedAadhaar(true);
+  };
 
   // Subscribe to World Cup Squad
   const [wcSquad, setWcSquad] = useState(null);
@@ -332,6 +365,98 @@ const StudentOverview = ({ isDarkMode }) => {
           </div>
           <Award size={64} style={{ color: 'var(--text-on-primary)', opacity: 0.8 }} />
         </div>
+
+        {/* Aadhaar Completion Card */}
+        {!user?.aadhaarNumber && !dismissedAadhaar && (
+          <div style={{
+            background: 'var(--surface-elevated, #ffffff)',
+            border: '1.5px solid var(--border)',
+            borderRadius: '20px',
+            padding: '24px',
+            boxShadow: 'var(--shadow-sm)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '16px'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                <AlertCircle size={24} style={{ color: 'var(--warning, #eab308)' }} />
+                <div>
+                  <h4 style={{ margin: 0, fontSize: '1rem', fontWeight: 700 }}>Complete Your Profile</h4>
+                  <p style={{ margin: '4px 0 0 0', fontSize: '0.88rem', color: 'var(--text-muted)' }}>
+                    Your Aadhaar helps verify your student account.
+                  </p>
+                </div>
+              </div>
+              <button 
+                onClick={handleDismissAadhaar}
+                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '4px' }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {aadhaarSuccess ? (
+              <span style={{ fontSize: '0.88rem', color: '#22c55e', fontWeight: 600 }}>{aadhaarSuccess}</span>
+            ) : isEditingAadhaar ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
+                  <input
+                    type="text"
+                    placeholder="Enter 12-digit Aadhaar"
+                    value={aadhaarInput}
+                    onChange={(e) => setAadhaarInput(e.target.value.replace(/\D/g, ''))}
+                    maxLength={12}
+                    style={{
+                      padding: '8px 16px',
+                      borderRadius: '10px',
+                      border: '1px solid var(--border)',
+                      fontSize: '0.9rem',
+                      flex: 1,
+                      minWidth: '200px'
+                    }}
+                  />
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button 
+                      onClick={handleSaveAadhaar}
+                      className="btn btn-primary"
+                      style={{ padding: '8px 16px', fontSize: '0.88rem', borderRadius: '10px' }}
+                    >
+                      Save
+                    </button>
+                    <button 
+                      onClick={() => setIsEditingAadhaar(false)}
+                      className="btn btn-secondary"
+                      style={{ padding: '8px 16px', fontSize: '0.88rem', borderRadius: '10px', background: 'rgba(0,0,0,0.05)' }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+                {aadhaarError && (
+                  <span style={{ fontSize: '0.82rem', color: 'var(--danger)', fontWeight: 500 }}>{aadhaarError}</span>
+                )}
+              </div>
+            ) : (
+              <div style={{ display: 'flex', gap: '12px' }}>
+                <button
+                  onClick={() => setIsEditingAadhaar(true)}
+                  className="btn btn-primary"
+                  style={{ padding: '8px 18px', fontSize: '0.88rem', borderRadius: '10px' }}
+                >
+                  Add Aadhaar
+                </button>
+                <button
+                  onClick={handleDismissAadhaar}
+                  className="btn btn-secondary"
+                  style={{ padding: '8px 18px', fontSize: '0.88rem', borderRadius: '10px', background: 'rgba(0,0,0,0.05)' }}
+                >
+                  Later
+                </button>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Fullscreen Event Announcement (Show on first login if unjoined) */}
         {wcSeason && wcSeason.status !== 'completed' && (!user?.worldcupGroupId) && (

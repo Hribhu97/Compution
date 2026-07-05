@@ -6,6 +6,7 @@ import {
   addDoc as fsAddDoc, setDoc as fsSetDoc, updateDoc as fsUpdateDoc, 
   deleteDoc as fsDeleteDoc, runTransaction as fsRunTransaction 
 } from "firebase/firestore";
+import { getStorage } from "firebase/storage";
 
 export const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyA_HF7oefhK3DEYO99jG7zVj4vWUCERo-4",
@@ -27,6 +28,7 @@ setPersistence(auth, browserLocalPersistence).catch((err) => {
 });
 
 const db = getFirestore(app);
+const storage = getStorage(app);
 
 enableIndexedDbPersistence(db).catch((err) => {
   if (err.code === 'failed-precondition') {
@@ -151,4 +153,4 @@ export const syncStudentFeeAggregates = async (studentId) => {
   }
 };;
 
-export { app, analytics, auth, db, googleProvider, RecaptchaVerifier, signInWithPhoneNumber };
+export { app, analytics, auth, db, storage, googleProvider, RecaptchaVerifier, signInWithPhoneNumber };

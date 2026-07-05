@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Outlet, NavLink, useNavigate } from 'react-router-dom';
+import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import GuidedTour from '../../components/GuidedTour';
 import { motion, AnimatePresence } from 'framer-motion';
 import { auth, db } from '../../firebase';
@@ -65,9 +65,13 @@ import FeesPayment from '../../components/FeesPayment';
 import CommandPalette from '../../components/CommandPalette';
 import QuickActionButton from '../../components/QuickActionButton';
 import NotificationDrawer from '../../components/NotificationDrawer';
+import { useIsMobile } from '../../hooks/useIsMobile';
 
 const DashboardLayout = () => {
+  const isMobile = useIsMobile();
   const navigate = useNavigate();
+  const location = useLocation();
+  const isWorldCup = location.pathname === '/dashboard/worldcup';
   const { user } = useAuth();
   const [tourCompleted, setTourCompleted] = useState(true);
   const [isFeePaymentOpen, setIsFeePaymentOpen] = useState(false);
@@ -442,7 +446,20 @@ const DashboardLayout = () => {
   };
 
   return (
-    <div className="dash-shell" style={{ transition: 'background-color 0.3s ease' }}>
+    <div 
+      className="dash-shell" 
+      style={isWorldCup && isMobile ? {
+        transition: 'background-color 0.3s ease',
+        height: '100dvh',
+        minHeight: '100dvh',
+        maxHeight: '100dvh',
+        overflow: 'hidden',
+        padding: '0px',
+        margin: '0px',
+        borderRadius: '0px',
+        gap: '0px'
+      } : { transition: 'background-color 0.3s ease' }}
+    >
       <aside className="dash-sidebar-panel hide-mobile">
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', paddingLeft: '8px', marginBottom: '40px' }}>
           <div style={{
@@ -774,12 +791,30 @@ const DashboardLayout = () => {
           </div>
         </header>
 
-        <div className="dash-body-scroll">
+        <div 
+          className="dash-body-scroll"
+          style={isWorldCup ? {
+            flex: 1,
+            overflow: 'hidden',
+            paddingBottom: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            height: '100%',
+            minHeight: 0
+          } : {}}
+        >
           <AnimatePresence mode="wait">
             <motion.div
               key={typeof window !== 'undefined' ? window.location.pathname : ''}
               initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}
               transition={{ duration: 0.3 }}
+              style={isWorldCup ? {
+                flex: 1,
+                display: 'flex',
+                flexDirection: 'column',
+                height: '100%',
+                minHeight: 0
+              } : {}}
             >
               <Outlet />
             </motion.div>
@@ -798,7 +833,8 @@ const DashboardLayout = () => {
           height: 'auto',
           justifyContent: 'space-around',
           alignItems: 'center',
-          gap: '12px'
+          gap: '12px',
+          zIndex: 1100
         }}
       >
         {bottomNav.map(({ to, label, icon: Icon, exact }) => (

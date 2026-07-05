@@ -3,11 +3,15 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   BookOpen, Plus, Trophy, Zap, Coins, Flame, TrendingUp,
   Filter, Search, Trash2, Edit3, X, Loader2, BarChart2,
-  CheckCircle2, Star, Clock, ChevronDown, Sparkles, Users
+  CheckCircle2, Star, Clock, ChevronDown, Sparkles, Users,
+  UploadCloud, FileText, Check, CheckCheck, Info, AlertTriangle, CheckCircle, Calendar
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
-import { db } from '../../firebase';
-import { collection, query, where, onSnapshot, orderBy, getDocs } from 'firebase/firestore';
+import { useToast } from '../../contexts/ToastContext';
+import { db, storage } from '../../firebase';
+import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
+import { collection, query, where, onSnapshot, orderBy, getDocs, doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { notificationService } from '../../services/notificationService';
 import {
   subscribeTrackerEntries,
   subscribeStudentXP,
@@ -174,6 +178,207 @@ const ClassTracker = () => {
   const [deleteConfirmId, setDeleteConfirmId] = useState(null);
   const [deleting, setDeleting] = useState(false);
 
+  const [faculties, setFaculties] = useState([]);
+  const [uploadingStudentId, setUploadingStudentId] = useState(null);
+
+  useEffect(() => {
+    if (!canManage) return;
+    const q = query(collection(db, 'users'), where('role', 'in', ['faculty', 'Faculty', 'admin', 'Admin', 'member', 'staff']));
+    const unsub = onSnapshot(q, snap => {
+      const list = [];
+      snap.forEach(d => list.push({ id: d.id, ...d.data() }));
+      setFaculties(list);
+    });
+    return unsub;
+  }, [canManage]);
+
+  const handleUploadFile = async (e, studentId, actionType) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const ext = file.name.split('.').pop().toLowerCase();
+    if (!['pdf', 'docx'].includes(ext)) {
+      showToast('Only .pdf and .docx files are allowed.', 'danger');
+      return;
+    }
+
+    setUploadingStudentId(studentId);
+    showToast(actionType === 'replace' ? 'Replacing tracker...' : 'Uploading tracker...', 'info');
+
+    try {
+      const storageRef = ref(storage, `student_trackers/${studentId}/${file.name}`);
+      const snapshot = await uploadBytes(storageRef, file);
+      const downloadUrl = await getDownloadURL(snapshot.ref);
+
+      const studentRef = doc(db, 'users', studentId);
+      await setDoc(studentRef, {
+        trackerUrl: downloadUrl,
+        trackerFileName: file.name,
+        trackerUploadedAt: new Date().toISOString()
+      }, { merge: true });
+
+      showToast('Tracker uploaded successfully!', 'success');
+    } catch (err) {
+      console.error('[Upload Tracker Error]', err);
+      showToast('Failed to upload tracker. Please try again.', 'danger');
+    } finally {
+      setUploadingStudentId(null);
+    }
+  };
+
+  const handleDeleteTracker = async (studentId, fileName) => {
+    if (!window.confirm('Are you sure you want to delete this tracker?')) return;
+    
+    setUploadingStudentId(studentId);
+    showToast('Deleting tracker...', 'info');
+
+    try {
+      if (fileName) {
+        try {
+          const storageRef = ref(storage, `student_trackers/${studentId}/${fileName}`);
+          await deleteObject(storageRef);
+        } catch (errStorage) {
+          console.warn('File not found in storage, deleting Firestore reference...', errStorage);
+        }
+      }
+
+      const studentRef = doc(db, 'users', studentId);
+      await setDoc(studentRef, {
+        trackerUrl: null,
+        trackerFileName: null,
+        trackerUploadedAt: null
+      }, { merge: true });
+
+      showToast('Tracker deleted successfully!', 'success');
+    } catch (err) {
+      console.error('[Delete Tracker Error]', err);
+      showToast('Failed to delete tracker. Please try again.', 'danger');
+    } finally {
+      setUploadingStudentId(null);
+    }
+  };
+
+  // Student Roadmap States
+  const [roadmap, setRoadmap] = useState(null);
+  const [roadmapLoading, setRoadmapLoading] = useState(isStudent);
+  const [expandedChapters, setExpandedChapters] = useState({});
+  const [searchTopic, setSearchTopic] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all'); // all, completed, pending, today, upcoming
+  const { showToast } = useToast();
+
+  // Subscribe to student roadmap
+  useEffect(() => {
+    if (!isStudent || !user?.uid) return;
+    setRoadmapLoading(true);
+    const docRef = doc(db, 'studentClassRoadmaps', user.uid);
+    const unsub = onSnapshot(docRef, (snapshot) => {
+      if (snapshot.exists()) {
+        setRoadmap(snapshot.data());
+      } else {
+        setRoadmap(null);
+      }
+      setRoadmapLoading(false);
+    }, (err) => {
+      console.error("Roadmap subscription error:", err);
+      setRoadmapLoading(false);
+    });
+    return unsub;
+  }, [user?.uid, isStudent]);
+
+  const handleToggleStudentCheckbox = async (chapterId, topicId, currentVal) => {
+    try {
+      const docRef = doc(db, 'studentClassRoadmaps', user.uid);
+      const docSnap = await getDoc(docRef);
+      if (!docSnap.exists()) return;
+
+      const roadmapData = docSnap.data();
+      const chapters = roadmapData.chapters || [];
+      let targetTopicName = '';
+      let isFullyCompletedNow = false;
+
+      const updatedChapters = chapters.map(ch => {
+        if (ch.id !== chapterId) return ch;
+
+        const updatedTopics = ch.topics.map(t => {
+          if (t.id !== topicId) return t;
+
+          targetTopicName = t.name;
+          const newVal = !currentVal;
+          const bothChecked = newVal && t.facultyCompleted;
+          if (bothChecked) {
+            isFullyCompletedNow = true;
+          }
+
+          return {
+            ...t,
+            studentCompleted: newVal,
+            studentCompletedAt: newVal ? new Date().toISOString() : null
+          };
+        });
+
+        return { ...ch, topics: updatedTopics };
+      });
+
+      // Recalculate counts
+      let totalTopics = 0;
+      let completedTopics = 0;
+      updatedChapters.forEach(ch => {
+        ch.topics.forEach(t => {
+          totalTopics++;
+          if (t.facultyCompleted && t.studentCompleted) {
+            completedTopics++;
+          }
+        });
+      });
+
+      const progressPercent = totalTopics > 0 ? Math.round((completedTopics / totalTopics) * 100) : 0;
+
+      await setDoc(docRef, {
+        chapters: updatedChapters,
+        totalTopicsCount: totalTopics,
+        completedTopicsCount: completedTopics,
+        progressPercent: progressPercent
+      }, { merge: true });
+
+      // Notify faculty
+      try {
+        if (user.assignedFacultyIds && user.assignedFacultyIds.length > 0) {
+          await Promise.all(
+            user.assignedFacultyIds.map(facId => 
+              notificationService.send(
+                facId,
+                `${user.displayName} revised ${targetTopicName}`,
+                `${user.displayName} has marked "${targetTopicName}" as revised. Please check if this topic is fully complete.`,
+                'general'
+              )
+            )
+          );
+        }
+      } catch (errNotification) {
+        console.error("Failed to notify faculty mentors:", errNotification);
+      }
+
+      // Award XP
+      if (isFullyCompletedNow) {
+        const studentRef = doc(db, 'users', user.uid);
+        const studentSnap = await getDoc(studentRef);
+        if (studentSnap.exists()) {
+          const currentXp = Number(studentSnap.data().xp || 0);
+          await setDoc(studentRef, { xp: currentXp + 20 }, { merge: true });
+          
+          setShowConfetti(true);
+          setTimeout(() => setShowConfetti(false), 3000);
+          showToast(`🎉 Complete Study Loop! You earned +20 XP.`, 'success');
+        }
+      } else {
+        showToast("Revision checklist updated.", "success");
+      }
+    } catch (err) {
+      console.error("Error toggling checkbox:", err);
+      showToast("Failed to update revision status.", "danger");
+    }
+  };
+
   // ── Subscribe to entries
   useEffect(() => {
     if (!user?.uid) return;
@@ -248,305 +453,834 @@ const ClassTracker = () => {
     setTimeout(() => setShowConfetti(false), 3000);
   };
 
+  const getSyllabusInsights = () => {
+    if (!roadmap || !roadmap.chapters) return { todayTopic: 'N/A', lastCompleted: 'N/A', upcomingChapter: 'N/A' };
+    
+    let todayTopic = '';
+    let lastCompleted = '';
+    let upcomingChapter = '';
+    
+    let foundToday = false;
+    let foundUpcoming = false;
+
+    // Search topics
+    for (let cIdx = 0; cIdx < roadmap.chapters.length; cIdx++) {
+      const ch = roadmap.chapters[cIdx];
+      const hasPending = ch.topics.some(t => !t.facultyCompleted || !t.studentCompleted);
+      
+      if (hasPending && !foundUpcoming) {
+        upcomingChapter = ch.name;
+        foundUpcoming = true;
+      }
+
+      for (let tIdx = 0; tIdx < ch.topics.length; tIdx++) {
+        const t = ch.topics[tIdx];
+        if (t.facultyCompleted && t.studentCompleted) {
+          lastCompleted = t.name;
+        }
+        if (!foundToday && (!t.studentCompleted || !t.facultyCompleted)) {
+          todayTopic = t.name;
+          foundToday = true;
+        }
+      }
+    }
+
+    return {
+      todayTopic: todayTopic || 'All Completed!',
+      lastCompleted: lastCompleted || 'None Yet',
+      upcomingChapter: upcomingChapter || 'None'
+    };
+  };
+
+  const insights = getSyllabusInsights();
+
+  const calculateEstimatedCompletionDate = () => {
+    if (!roadmap || !roadmap.progressPercent) return 'TBD (Start learning to estimate)';
+    const pct = roadmap.progressPercent;
+    if (pct >= 100) return 'Completed';
+
+    // Fallback joining date: user.joiningDate or user.createdAt or 30 days ago
+    const joinDateStr = user?.joiningDate || user?.createdAt || new Date(Date.now() - 30 * 86400000).toISOString();
+    const joiningDate = new Date(joinDateStr);
+    const elapsedMs = Date.now() - joiningDate.getTime();
+    if (elapsedMs <= 0) return 'TBD';
+
+    const totalMs = (elapsedMs / pct) * 100;
+    const completionTime = joiningDate.getTime() + totalMs;
+    return new Date(completionTime).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+  };
+
+  const getFilteredChapters = () => {
+    if (!roadmap || !roadmap.chapters) return [];
+    
+    return roadmap.chapters.map(ch => {
+      const filteredTopics = ch.topics.filter(t => {
+        const matchesSearch = !searchTopic || t.name.toLowerCase().includes(searchTopic.toLowerCase());
+        
+        let matchesStatus = true;
+        if (statusFilter === 'completed') {
+          matchesStatus = t.facultyCompleted && t.studentCompleted;
+        } else if (statusFilter === 'pending') {
+          matchesStatus = !t.facultyCompleted || !t.studentCompleted;
+        } else if (statusFilter === 'today') {
+          matchesStatus = (t.facultyCompleted && !t.studentCompleted) || (!t.facultyCompleted && t.studentCompleted);
+        } else if (statusFilter === 'upcoming') {
+          matchesStatus = !t.facultyCompleted && !t.studentCompleted;
+        }
+        
+        return matchesSearch && matchesStatus;
+      });
+
+      return {
+        ...ch,
+        topics: filteredTopics
+      };
+    }).filter(ch => ch.topics.length > 0);
+  };
+
+  const filteredChapters = getFilteredChapters();
+
+  // Donut progress chart component
+  const ProgressDonut = ({ percent, total, completed }) => {
+    const size = 120;
+    const strokeWidth = 12;
+    const radius = (size - strokeWidth) / 2;
+    const circumference = radius * 2 * Math.PI;
+    const offset = circumference - (percent / 100) * circumference;
+
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: '16px', background: 'var(--white)', padding: '16px', borderRadius: '20px', border: '1px solid var(--border)' }}>
+        <div style={{ position: 'relative', width: size, height: size, flexShrink: 0 }}>
+          <svg width={size} height={size} style={{ transform: 'rotate(-90deg)' }}>
+            <circle cx={size / 2} cy={size / 2} r={radius} fill="transparent" stroke="rgba(99,102,241,0.04)" strokeWidth={strokeWidth} />
+            <circle cx={size / 2} cy={size / 2} r={radius} fill="transparent" stroke="var(--primary)" strokeWidth={strokeWidth} strokeDasharray={circumference} strokeDashoffset={offset} strokeLinecap="round" style={{ transition: 'stroke-dashoffset 0.8s ease-out' }} />
+          </svg>
+          <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.1rem', fontWeight: 900, color: 'var(--dark)' }}>
+            {percent}%
+          </div>
+        </div>
+        <div>
+          <div style={{ fontSize: '0.88rem', fontWeight: 800, color: 'var(--dark)' }}>Course Progress</div>
+          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px' }}>
+            {completed} of {total} topics complete
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  if (isStudent && roadmapLoading) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', padding: '100px 0' }}>
+        <Loader2 size={40} className="spinning" style={{ color: 'var(--primary)' }} />
+      </div>
+    );
+  }
+
+  if (isStudent && !roadmap) {
+    return (
+      <div style={{ padding: '24px', maxWidth: '1100px', margin: '0 auto', fontFamily: 'var(--font-body, Inter, sans-serif)' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '80px 20px', background: '#fff', borderRadius: '24px', border: '1px solid var(--border)', boxShadow: '0 4px 20px rgba(0,0,0,0.03)', textAlign: 'center' }}>
+          <div style={{ fontSize: '4rem', marginBottom: '16px' }}>🗺️</div>
+          <h2 style={{ margin: 0, fontSize: '1.4rem', fontWeight: 900, color: 'var(--dark)' }}>Roadmap Under Construction</h2>
+          <p style={{ margin: '8px 0 0', color: 'var(--text-muted)', fontSize: '0.9rem', maxWidth: '450px' }}>
+            Your interactive learning roadmap is currently being prepared by the academic team. Once uploaded, you'll be able to track your progress and earn XP!
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={{ padding: '24px', maxWidth: '1100px', margin: '0 auto', fontFamily: 'var(--font-body, Inter, sans-serif)' }}>
       <Confetti active={showConfetti} />
 
-      {/* Page header */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '24px', flexWrap: 'wrap', gap: '12px' }}>
-        <div>
-          <h1 style={{ margin: 0, fontSize: '1.6rem', fontWeight: 900, color: '#1e293b', letterSpacing: '-0.02em' }}>
-            Class Tracker
-          </h1>
-          <p style={{ margin: '4px 0 0', color: '#64748b', fontSize: '0.9rem' }}>
-            {isStudent ? 'Your learning journey — every class, every milestone.' : 'Manage class records and track student progress.'}
-          </p>
-        </div>
-        {canManage && (
-          <motion.button
-            whileHover={{ y: -2, boxShadow: '0 8px 24px rgba(99,102,241,0.35)' }}
-            whileTap={{ scale: 0.97 }}
-            onClick={() => setShowUploadModal(true)}
-            style={{
-              display: 'flex', alignItems: 'center', gap: '8px',
-              padding: '12px 20px', borderRadius: '14px', border: 'none',
-              background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
-              color: '#fff', fontWeight: 700, fontSize: '0.9rem', cursor: 'pointer',
-              boxShadow: '0 4px 16px rgba(99,102,241,0.25)',
-            }}
-          >
-            <Plus size={18} /> Upload Class
-          </motion.button>
-        )}
-      </div>
+      {isStudent ? (
+        // ==================== STUDENT DASHBOARD VIEW ====================
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+          {/* Header */}
+          <div>
+            <h1 style={{ margin: 0, fontSize: '1.6rem', fontWeight: 900, color: 'var(--dark)', letterSpacing: '-0.02em' }}>
+              Learning Journey
+            </h1>
+            <p style={{ margin: '4px 0 0', color: 'var(--text-muted)', fontSize: '0.88rem' }}>
+              Track classes taught by mentors and check off revised topics to earn rewards!
+            </p>
+          </div>
 
-      {/* ── Student: Motivation Banner ── */}
-      {isStudent && (
-        <div style={{ marginBottom: '20px' }}>
+          {/* Motivation banner */}
           <MotivationBanner studentId={user?.uid} streak={streakData?.currentStreak || 0} />
-        </div>
-      )}
 
-      {/* ── Stats Row ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '14px', marginBottom: '24px' }}>
-        <StatsCard
-          icon={<BookOpen size={20} color="#6366f1" />}
-          label="Classes Logged"
-          value={completedCount}
-          color="#6366f1"
-          sub={`${uniqueCourses.length} course${uniqueCourses.length !== 1 ? 's' : ''}`}
-        />
-        {isStudent && (
-          <>
+          {/* Metrics dashboard row */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 1fr 1fr', gap: '16px' }} className="tracker-grid">
+            <ProgressDonut percent={roadmap.progressPercent || 0} total={roadmap.totalTopicsCount || 0} completed={roadmap.completedTopicsCount || 0} />
+            
+            <div style={{ background: '#fff', padding: '20px', borderRadius: '24px', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+              <div style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '6px' }}>Today's Target</div>
+              <div style={{ fontSize: '0.88rem', fontWeight: 800, color: 'var(--dark)', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                {insights.todayTopic}
+              </div>
+            </div>
+
+            <div style={{ background: '#fff', padding: '20px', borderRadius: '24px', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+              <div style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '6px' }}>Last Completed</div>
+              <div style={{ fontSize: '0.88rem', fontWeight: 800, color: 'var(--success)', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                {insights.lastCompleted}
+              </div>
+            </div>
+
+            <div style={{ background: '#fff', padding: '20px', borderRadius: '24px', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+              <div style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '6px' }}>Upcoming Chapter</div>
+              <div style={{ fontSize: '0.88rem', fontWeight: 800, color: 'var(--primary)', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                {insights.upcomingChapter}
+              </div>
+            </div>
+          </div>
+
+          {/* Navigation Tabs */}
+          <div style={{ display: 'flex', gap: '4px', background: 'var(--surface)', padding: '4px', borderRadius: '14px', width: 'fit-content' }}>
+            {[
+              { id: 'journey', label: '🗺️ Journey' },
+              { id: 'analytics', label: '📊 Analytics' },
+              { id: 'timeline', label: '🛣️ Timeline' },
+              { id: 'xp', label: '⚡ XP & Coins' }
+            ].map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                style={{
+                  padding: '8px 18px', borderRadius: '10px', border: 'none', cursor: 'pointer',
+                  fontWeight: 700, fontSize: '0.82rem', transition: 'all 0.2s',
+                  background: activeTab === tab.id ? '#fff' : 'transparent',
+                  color: activeTab === tab.id ? 'var(--primary)' : 'var(--text-muted)',
+                  boxShadow: activeTab === tab.id ? '0 1px 4px rgba(0,0,0,0.06)' : 'none',
+                }}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Tab contents */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: '20px' }} className="tracker-grid">
+            {/* Left Content Area */}
+            <div>
+              <AnimatePresence mode="wait">
+                {activeTab === 'journey' && (
+                  <motion.div key="journey" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                    
+                    {/* Double verification banner */}
+                    <div style={{ padding: '12px 16px', borderRadius: '12px', background: 'rgba(99,102,241,0.05)', border: '1px solid rgba(99,102,241,0.15)', fontSize: '0.78rem', color: 'var(--primary)', fontWeight: 600 }}>
+                      💡 <strong>Double Verification Check:</strong> A topic is marked fully complete (100%) only when your mentor marks it taught AND you check it off as revised.
+                    </div>
+
+                    {/* Filter and Search Bar */}
+                    <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                      <div style={{ position: 'relative', flex: 1, minWidth: '200px' }}>
+                        <Search size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+                        <input
+                          value={searchTopic}
+                          onChange={e => setSearchTopic(e.target.value)}
+                          placeholder="Search topics (e.g. loops, variables)..."
+                          style={{
+                            width: '100%', padding: '10px 14px 10px 36px', borderRadius: '12px',
+                            border: '1.5px solid var(--border)', fontSize: '0.82rem',
+                            background: '#fff', outline: 'none', boxSizing: 'border-box', color: 'var(--dark)',
+                          }}
+                        />
+                      </div>
+                      <select
+                        value={statusFilter}
+                        onChange={e => setStatusFilter(e.target.value)}
+                        style={{ padding: '10px 14px', borderRadius: '12px', border: '1.5px solid var(--border)', fontSize: '0.82rem', background: '#fff', outline: 'none', color: 'var(--dark)' }}
+                      >
+                        <option value="all">All Topics</option>
+                        <option value="completed">Completed (100%)</option>
+                        <option value="pending">Incomplete / Pending</option>
+                        <option value="today">Today's Class Target</option>
+                        <option value="upcoming">Upcoming Topics</option>
+                      </select>
+                    </div>
+
+                    {/* Collapsible Accordion Chapters */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      {filteredChapters.length === 0 ? (
+                        <div style={{ textAlign: 'center', padding: '40px', background: '#fff', border: '1px solid var(--border)', borderRadius: '20px', color: 'var(--text-muted)' }}>
+                          No topics match your filters.
+                        </div>
+                      ) : (
+                        filteredChapters.map(ch => {
+                          const isExpanded = !!expandedChapters[ch.id];
+                          const chCompleted = ch.topics.filter(t => t.facultyCompleted && t.studentCompleted).length;
+                          const chTotal = ch.topics.length;
+                          const chPercent = chTotal > 0 ? Math.round((chCompleted / chTotal) * 100) : 0;
+
+                          return (
+                            <div key={ch.id} style={{ border: '1px solid var(--border)', borderRadius: '16px', overflow: 'hidden', background: '#fff', boxShadow: '0 2px 8px rgba(0,0,0,0.01)' }}>
+                              <div 
+                                onClick={() => setExpandedChapters(prev => ({ ...prev, [ch.id]: !isExpanded }))}
+                                style={{ padding: '16px', background: 'var(--surface)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', userSelect: 'none' }}
+                              >
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', flex: 1, minWidth: 0 }}>
+                                  <div style={{ fontSize: '0.85rem', fontWeight: 800, color: 'var(--dark)' }}>{ch.name}</div>
+                                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <span>{chCompleted} / {chTotal} Completed</span>
+                                    <span style={{ width: '4px', height: '4px', borderRadius: '50%', background: 'var(--text-muted)' }} />
+                                    <span style={{ fontWeight: 700, color: chPercent === 100 ? 'var(--success)' : 'var(--primary)' }}>{chPercent}%</span>
+                                  </div>
+                                </div>
+                                <ChevronDown size={18} style={{ color: 'var(--text-light)', transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
+                              </div>
+
+                              <AnimatePresence initial={false}>
+                                {isExpanded && (
+                                  <motion.div initial={{ height: 0 }} animate={{ height: 'auto' }} exit={{ height: 0 }} transition={{ duration: 0.2 }} style={{ overflow: 'hidden', borderTop: '1px solid var(--border)' }}>
+                                    <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                      {ch.topics.map(t => {
+                                        const bothChecked = t.facultyCompleted && t.studentCompleted;
+                                        return (
+                                          <div 
+                                            key={t.id} 
+                                            style={{ 
+                                              display: 'flex', justifyContent: 'space-between', alignItems: 'center', 
+                                              padding: '10px 12px', borderRadius: '12px', background: bothChecked ? 'rgba(16,185,129,0.02)' : 'var(--bg)',
+                                              border: bothChecked ? '1px dashed rgba(16,185,129,0.15)' : '1px solid transparent'
+                                            }}
+                                          >
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', flex: 1, minWidth: 0, paddingRight: '12px' }}>
+                                              <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--dark)' }}>{t.name}</span>
+                                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.68rem' }}>
+                                                <span style={{ color: t.facultyCompleted ? 'var(--success)' : 'var(--text-muted)', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                                  {t.facultyCompleted ? '✓ Taught by Faculty' : '⏳ Taught Status Pending'}
+                                                </span>
+                                              </div>
+                                            </div>
+
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                              <button
+                                                type="button"
+                                                onClick={() => handleToggleStudentCheckbox(ch.id, t.id, t.studentCompleted)}
+                                                style={{
+                                                  padding: '6px 12px',
+                                                  fontSize: '0.72rem',
+                                                  fontWeight: 700,
+                                                  borderRadius: '8px',
+                                                  border: '1px solid var(--border)',
+                                                  cursor: 'pointer',
+                                                  display: 'flex',
+                                                  alignItems: 'center',
+                                                  gap: '4px',
+                                                  background: t.studentCompleted ? 'var(--success)' : 'var(--white)',
+                                                  color: t.studentCompleted ? 'white' : 'var(--text-light)'
+                                                }}
+                                              >
+                                                {t.studentCompleted ? (
+                                                  <>
+                                                    <Check size={12} /> Revised
+                                                  </>
+                                                ) : (
+                                                  "Mark Revised"
+                                                )}
+                                              </button>
+                                            </div>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  </motion.div>
+                                )}
+                              </AnimatePresence>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  </motion.div>
+                )}
+
+                {activeTab === 'analytics' && (
+                  <motion.div key="analytics" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+                    <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: '24px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                      <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 800, color: 'var(--dark)' }}>Course Analytics Summary</h3>
+                      
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }} className="grid-2-col-mobile">
+                        <div style={{ padding: '16px', borderRadius: '16px', background: 'var(--surface)', border: '1px solid var(--border)' }}>
+                          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700 }}>Faculty Completion Rate</div>
+                          <div style={{ fontSize: '1.5rem', fontWeight: 900, color: 'var(--primary)', marginTop: '4px' }}>
+                            {(() => {
+                              let taught = 0;
+                              let total = 0;
+                              roadmap.chapters.forEach(ch => ch.topics.forEach(t => { total++; if (t.facultyCompleted) taught++; }));
+                              return total > 0 ? `${Math.round((taught / total) * 100)}%` : '0%';
+                            })()}
+                          </div>
+                        </div>
+
+                        <div style={{ padding: '16px', borderRadius: '16px', background: 'var(--surface)', border: '1px solid var(--border)' }}>
+                          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700 }}>Student Revision Rate</div>
+                          <div style={{ fontSize: '1.5rem', fontWeight: 900, color: 'var(--success)', marginTop: '4px' }}>
+                            {(() => {
+                              let revised = 0;
+                              let total = 0;
+                              roadmap.chapters.forEach(ch => ch.topics.forEach(t => { total++; if (t.studentCompleted) revised++; }));
+                              return total > 0 ? `${Math.round((revised / total) * 100)}%` : '0%';
+                            })()}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div style={{ padding: '16px', borderRadius: '16px', background: 'var(--surface)', border: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div>
+                          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700 }}>Estimated Completion Date</div>
+                          <div style={{ fontSize: '0.95rem', fontWeight: 800, color: 'var(--dark)', marginTop: '4px' }}>
+                            {calculateEstimatedCompletionDate()}
+                          </div>
+                        </div>
+                        <span style={{ fontSize: '1.5rem' }}>📅</span>
+                      </div>
+                    </div>
+
+                    <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: '24px', padding: '20px' }}>
+                      <h3 style={{ margin: '0 0 16px', fontSize: '1rem', fontWeight: 800, color: 'var(--dark)' }}>Syllabus Breakdown</h3>
+                      {roadmap.chapters.map(ch => {
+                        const chDone = ch.topics.filter(t => t.facultyCompleted && t.studentCompleted).length;
+                        const pct = ch.topics.length > 0 ? Math.round((chDone / ch.topics.length) * 100) : 0;
+                        return (
+                          <div key={ch.id} style={{ marginBottom: '14px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px', fontSize: '0.78rem', fontWeight: 700, color: 'var(--dark)' }}>
+                              <span>{ch.name}</span>
+                              <span>{pct}%</span>
+                            </div>
+                            <div style={{ height: '6px', background: 'var(--border)', borderRadius: '100px', overflow: 'hidden' }}>
+                              <div style={{ height: '100%', background: 'var(--primary)', width: `${pct}%`, borderRadius: '100px', transition: 'width 0.5s' }} />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </motion.div>
+                )}
+
+                {activeTab === 'timeline' && (
+                  <motion.div key="timeline" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                    <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: '24px', padding: '24px' }}>
+                      <h3 style={{ margin: '0 0 20px', fontSize: '1rem', fontWeight: 800, color: 'var(--dark)' }}>LMS Journey Milestones</h3>
+                      
+                      {(() => {
+                        const totalCh = roadmap.chapters.length;
+                        const progressPercent = roadmap.progressPercent || 0;
+                        
+                        const milestones = [
+                          { label: 'Student Admission', desc: 'Syllabus roadmap generated', icon: '🎉', done: true, current: false },
+                          { 
+                            label: 'Orientation & Chapter 1', 
+                            desc: roadmap.chapters[0]?.name || 'Introduction', 
+                            icon: '🏁', 
+                            done: progressPercent >= 10,
+                            current: progressPercent < 10 
+                          },
+                          { 
+                            label: 'Midterm Mark', 
+                            desc: '50% Curriculum complete', 
+                            icon: '🎯', 
+                            done: progressPercent >= 50,
+                            current: progressPercent >= 10 && progressPercent < 50 
+                          },
+                          { 
+                            label: 'Capstone Project', 
+                            desc: 'Apply learning to practical projects', 
+                            icon: '💻', 
+                            done: progressPercent >= 80,
+                            current: progressPercent >= 50 && progressPercent < 80 
+                          },
+                          { 
+                            label: 'Final Evaluation', 
+                            desc: '100% Curriculum complete', 
+                            icon: '🏆', 
+                            done: progressPercent === 100,
+                            current: progressPercent >= 80 && progressPercent < 100 
+                          }
+                        ];
+
+                        return (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', borderLeft: '2px solid var(--border)', marginLeft: '16px', paddingLeft: '24px', position: 'relative' }}>
+                            {milestones.map((m, mIdx) => (
+                              <div key={mIdx} style={{ position: 'relative' }}>
+                                <div style={{
+                                  position: 'absolute', left: '-37px', top: '2px',
+                                  width: '24px', height: '24px', borderRadius: '50%',
+                                  background: m.done ? 'var(--success)' : m.current ? 'var(--warning)' : 'var(--white)',
+                                  border: `2px solid ${m.done ? 'var(--success)' : m.current ? 'var(--warning)' : 'var(--border)'}`,
+                                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                  color: m.done ? 'white' : 'var(--text-muted)', fontSize: '0.75rem',
+                                  fontWeight: 800, boxShadow: '0 2px 8px rgba(0,0,0,0.05)'
+                                }}>
+                                  {m.done ? '✓' : mIdx + 1}
+                                </div>
+                                <div style={{ fontSize: '0.85rem', fontWeight: 800, color: m.done || m.current ? 'var(--dark)' : 'var(--text-muted)' }}>
+                                  {m.label} <span style={{ marginLeft: '6px' }}>{m.icon}</span>
+                                </div>
+                                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+                                  {m.desc}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  </motion.div>
+                )}
+
+                {activeTab === 'xp' && (
+                  <motion.div key="xp" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                    <XPProgressBar totalXP={totalXP} />
+                    <div style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: '24px', padding: '24px', boxShadow: '0 2px 12px rgba(0,0,0,0.02)' }}>
+                      <h3 style={{ margin: '0 0 16px', fontSize: '1rem', fontWeight: 800, color: 'var(--dark)' }}>🌱 Seed Coins Wallet</h3>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                        <div style={{ fontSize: '3rem' }}>🌱</div>
+                        <div>
+                          <div style={{ fontSize: '2rem', fontWeight: 900, color: 'var(--success)' }}>{totalCoins}</div>
+                          <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>Seed Coins earned from revision and attendance</div>
+                        </div>
+                      </div>
+                      <div style={{ marginTop: '16px', padding: '12px', borderRadius: '12px', background: 'rgba(34,197,94,0.04)', border: '1px solid rgba(34,197,94,0.1)', fontSize: '0.82rem', color: 'var(--success)', fontWeight: 600 }}>
+                        💡 You earn Seed Coins when you complete topic checklist tasks! Check back daily to see your wallet grow.
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+
+            {/* Right Sidebar */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <XPProgressBar totalXP={totalXP} />
+              <StreakWidget streakData={streakData} />
+              <WeeklySummary
+                summary={{ ...weeklySummary, currentStreak: streakData?.currentStreak || 0 }}
+                studentName={user?.displayName}
+              />
+            </div>
+          </div>
+        </div>
+      ) : (
+        // ==================== FACULTY/ADMIN TRACKERS DIRECTORY VIEW ====================
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          
+          {/* Stats Bar */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px' }}>
             <StatsCard
-              icon={<Zap size={20} color="#f59e0b" />}
-              label="Total XP"
-              value={totalXP.toLocaleString()}
-              color="#f59e0b"
-              sub="Experience Points"
-            />
-            <StatsCard
-              icon={<span style={{ fontSize: '1.2rem' }}>🌱</span>}
-              label="Seed Coins"
-              value={totalCoins}
-              color="#22c55e"
-              sub="Keep earning!"
-            />
-            <StatsCard
-              icon={<Flame size={20} color="#ef4444" />}
-              label="Day Streak"
-              value={`${streakData?.currentStreak || 0}🔥`}
-              color="#ef4444"
-              sub={`Best: ${streakData?.longestStreak || 0} days`}
-            />
-          </>
-        )}
-        {canManage && (
-          <>
-            <StatsCard
-              icon={<Users size={20} color="#22c55e" />}
-              label="Students Tracked"
+              icon={<Users size={20} color="#6366f1" />}
+              label="Total Students"
               value={students.length}
-              color="#22c55e"
+              color="#6366f1"
             />
             <StatsCard
-              icon={<TrendingUp size={20} color="#3b82f6" />}
-              label="Courses"
-              value={uniqueCourses.length}
+              icon={<UploadCloud size={20} color="#22c55e" />}
+              label="Trackers Uploaded"
+              value={students.filter(s => s.trackerUrl).length}
+              color="#22c55e"
+              sub={`${students.length - students.filter(s => s.trackerUrl).length} pending`}
+            />
+            <StatsCard
+              icon={<BarChart2 size={20} color="#3b82f6" />}
+              label="Avg Progress"
+              value={
+                students.length > 0 
+                  ? Math.round(students.reduce((acc, s) => acc + (s.progressPercent || 0), 0) / students.length) + '%' 
+                  : '0%'
+              }
               color="#3b82f6"
             />
-          </>
-        )}
-      </div>
-
-      {/* ── Tabs ── */}
-      <div style={{ display: 'flex', gap: '4px', marginBottom: '24px', background: 'rgba(248,250,252,1)', padding: '4px', borderRadius: '14px', width: 'fit-content' }}>
-        {(isStudent
-          ? [{ id: 'journey', label: '🗺️ Journey', icon: null }, { id: 'weekly', label: '📊 Weekly', icon: null }, { id: 'xp', label: '⚡ XP & Coins', icon: null }]
-          : [{ id: 'entries', label: '📋 Entries', icon: null }, { id: 'analytics', label: '📊 Analytics', icon: null }]
-        ).map(tab => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            style={{
-              padding: '8px 18px', borderRadius: '10px', border: 'none', cursor: 'pointer',
-              fontWeight: 700, fontSize: '0.83rem', transition: 'all 0.2s',
-              background: activeTab === tab.id ? '#fff' : 'transparent',
-              color: activeTab === tab.id ? '#6366f1' : '#64748b',
-              boxShadow: activeTab === tab.id ? '0 1px 4px rgba(0,0,0,0.08)' : 'none',
-            }}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
-
-      {/* ── Content ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: isStudent ? '1fr 300px' : '1fr', gap: '20px' }} className="tracker-grid">
-        <div>
-          <AnimatePresence mode="wait">
-
-            {/* Student: Journey Tab */}
-            {isStudent && activeTab === 'journey' && (
-              <motion.div key="journey" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                {loading ? (
-                  <div style={{ textAlign: 'center', padding: '48px', color: '#94a3b8' }}>
-                    <Loader2 size={28} style={{ animation: 'spin 1s linear infinite' }} />
-                  </div>
-                ) : (
-                  <div style={{ background: '#fff', border: '1px solid rgba(0,0,0,0.06)', borderRadius: '20px', padding: '24px', boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}>
-                    <LearningTimeline
-                      entries={timelineEntries.map((e, i) => ({
-                        ...e,
-                        status: i === 0 ? 'current' : 'completed',
-                      }))}
-                      courseName={user?.course || uniqueCourses[0] || ''}
-                    />
-                  </div>
-                )}
-              </motion.div>
-            )}
-
-            {/* Student: Weekly Tab */}
-            {isStudent && activeTab === 'weekly' && (
-              <motion.div key="weekly" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                <WeeklySummary
-                  summary={{ ...weeklySummary, currentStreak: streakData?.currentStreak || 0 }}
-                  studentName={user?.displayName}
-                />
-              </motion.div>
-            )}
-
-            {/* Student: XP Tab */}
-            {isStudent && activeTab === 'xp' && (
-              <motion.div key="xp" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}
-              >
-                <XPProgressBar totalXP={totalXP} />
-                <div style={{ background: '#fff', border: '1px solid rgba(0,0,0,0.06)', borderRadius: '20px', padding: '20px 24px', boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}>
-                  <h3 style={{ margin: '0 0 16px', fontSize: '1rem', fontWeight: 800, color: '#1e293b' }}>🌱 Seed Coins Wallet</h3>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                    <div style={{ fontSize: '3rem' }}>🌱</div>
-                    <div>
-                      <div style={{ fontSize: '2rem', fontWeight: 900, color: '#22c55e' }}>{totalCoins}</div>
-                      <div style={{ fontSize: '0.82rem', color: '#64748b' }}>Seed Coins earned from attendance & homework</div>
-                    </div>
-                  </div>
-                  <div style={{ marginTop: '16px', padding: '12px', borderRadius: '12px', background: 'rgba(34,197,94,0.04)', border: '1px solid rgba(34,197,94,0.1)', fontSize: '0.82rem', color: '#16a34a', fontWeight: 600 }}>
-                    💡 Coins are earned by attending classes, completing homework, and helping classmates.
-                  </div>
-                </div>
-              </motion.div>
-            )}
-
-            {/* Faculty/Admin: Entries Tab */}
-            {canManage && activeTab === 'entries' && (
-              <motion.div key="entries" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}
-              >
-                {/* Filter bar */}
-                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-                  <div style={{ position: 'relative', flex: 1, minWidth: '160px' }}>
-                    <Search size={15} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
-                    <input
-                      value={searchQ} onChange={e => setSearchQ(e.target.value)}
-                      placeholder="Search topics..."
-                      style={{
-                        width: '100%', padding: '10px 14px 10px 36px', borderRadius: '12px',
-                        border: '1.5px solid rgba(226,232,240,1)', fontSize: '0.86rem',
-                        background: '#fff', outline: 'none', boxSizing: 'border-box', color: '#1e293b',
-                      }}
-                    />
-                  </div>
-                  <input
-                    value={filterCourse} onChange={e => setFilterCourse(e.target.value)}
-                    placeholder="Filter by course..."
-                    style={{
-                      width: '180px', padding: '10px 14px', borderRadius: '12px',
-                      border: '1.5px solid rgba(226,232,240,1)', fontSize: '0.86rem',
-                      background: '#fff', outline: 'none', boxSizing: 'border-box', color: '#1e293b',
-                    }}
-                  />
-                </div>
-
-                {loading ? (
-                  <div style={{ textAlign: 'center', padding: '48px', color: '#94a3b8' }}>
-                    <Loader2 size={28} style={{ animation: 'spin 1s linear infinite' }} />
-                  </div>
-                ) : filteredEntries.length === 0 ? (
-                  <div style={{ textAlign: 'center', padding: '48px', color: '#94a3b8', background: '#fff', border: '1px solid rgba(226,232,240,1)', borderRadius: '20px' }}>
-                    <div style={{ fontSize: '2.5rem', marginBottom: '12px' }}>📝</div>
-                    <p style={{ margin: 0, fontWeight: 600 }}>No class entries yet.</p>
-                    <p style={{ margin: '4px 0 0', fontSize: '0.83rem' }}>Click "Upload Class" to add your first entry.</p>
-                  </div>
-                ) : (
-                  <AnimatePresence>
-                    {filteredEntries.map(entry => (
-                      <EntryRow
-                        key={entry.id}
-                        entry={entry}
-                        isAdmin={isAdmin}
-                        canDelete={isFaculty && entry.facultyId === user?.uid}
-                        onDelete={id => setDeleteConfirmId(id)}
-                      />
-                    ))}
-                  </AnimatePresence>
-                )}
-              </motion.div>
-            )}
-
-            {/* Faculty/Admin: Analytics Tab */}
-            {canManage && activeTab === 'analytics' && (
-              <motion.div key="analytics" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}
-              >
-                <div style={{ background: '#fff', border: '1px solid rgba(0,0,0,0.06)', borderRadius: '20px', padding: '24px', boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}>
-                  <h3 style={{ margin: '0 0 20px', fontSize: '1.05rem', fontWeight: 800, color: '#1e293b' }}>📊 Course Distribution</h3>
-                  {uniqueCourses.length === 0 ? (
-                    <p style={{ color: '#94a3b8', fontSize: '0.88rem' }}>No data yet.</p>
-                  ) : uniqueCourses.map(course => {
-                    const count = entries.filter(e => e.courseName === course).length;
-                    const pct = Math.round((count / entries.length) * 100);
-                    return (
-                      <div key={course} style={{ marginBottom: '14px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px', fontSize: '0.83rem', fontWeight: 600, color: '#475569' }}>
-                          <span>{course}</span>
-                          <span>{count} classes ({pct}%)</span>
-                        </div>
-                        <div style={{ height: '8px', background: 'rgba(148,163,184,0.12)', borderRadius: '100px', overflow: 'hidden' }}>
-                          <motion.div
-                            initial={{ width: 0 }}
-                            animate={{ width: `${pct}%` }}
-                            transition={{ duration: 1, ease: [0.16, 1, 0.3, 1] }}
-                            style={{ height: '100%', background: 'linear-gradient(90deg, #6366f1, #8b5cf6)', borderRadius: '100px' }}
-                          />
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                <div style={{ background: '#fff', border: '1px solid rgba(0,0,0,0.06)', borderRadius: '20px', padding: '24px', boxShadow: '0 2px 12px rgba(0,0,0,0.04)' }}>
-                  <h3 style={{ margin: '0 0 16px', fontSize: '1.05rem', fontWeight: 800, color: '#1e293b' }}>⭐ Performance Breakdown</h3>
-                  {['excellent', 'good', 'average', 'needs_practice'].map(p => {
-                    const count = entries.filter(e => e.performance === p).length;
-                    const labels = { excellent: 'Excellent', good: 'Good', average: 'Average', needs_practice: 'Needs Practice' };
-                    const colors = { excellent: '#22c55e', good: '#3b82f6', average: '#f59e0b', needs_practice: '#ef4444' };
-                    const pct = entries.length > 0 ? Math.round((count / entries.length) * 100) : 0;
-                    return (
-                      <div key={p} style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '10px' }}>
-                        <span style={{ fontSize: '0.78rem', fontWeight: 700, width: '110px', color: '#475569' }}>{labels[p]}</span>
-                        <div style={{ flex: 1, height: '8px', background: 'rgba(148,163,184,0.12)', borderRadius: '100px', overflow: 'hidden' }}>
-                          <motion.div
-                            initial={{ width: 0 }}
-                            animate={{ width: `${pct}%` }}
-                            transition={{ duration: 1, ease: [0.16, 1, 0.3, 1] }}
-                            style={{ height: '100%', background: colors[p], borderRadius: '100px' }}
-                          />
-                        </div>
-                        <span style={{ fontSize: '0.78rem', color: '#94a3b8', width: '32px', textAlign: 'right' }}>{count}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </motion.div>
-            )}
-
-          </AnimatePresence>
-        </div>
-
-        {/* ── Student: Right Sidebar ── */}
-        {isStudent && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            <XPProgressBar totalXP={totalXP} />
-            <StreakWidget streakData={streakData} />
-            <WeeklySummary
-              summary={{ ...weeklySummary, currentStreak: streakData?.currentStreak || 0 }}
-              studentName={user?.displayName}
-            />
           </div>
-        )}
-      </div>
+
+          {/* Search bar */}
+          <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+            <div style={{ position: 'relative', flex: 1 }}>
+              <Search size={16} style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+              <input
+                value={searchQ}
+                onChange={e => setSearchQ(e.target.value)}
+                placeholder="Search students by name, email, or class..."
+                style={{
+                  width: '100%',
+                  padding: '12px 16px 12px 40px',
+                  borderRadius: '14px',
+                  border: '1.5px solid var(--border)',
+                  fontSize: '0.88rem',
+                  background: 'var(--surface-elevated, #ffffff)',
+                  outline: 'none',
+                  boxSizing: 'border-box',
+                  color: 'var(--text-primary)'
+                }}
+              />
+            </div>
+          </div>
+
+          {/* Student roster */}
+          <div style={{ background: 'var(--surface-elevated, #ffffff)', border: '1px solid var(--border)', borderRadius: '20px', padding: '16px', boxShadow: 'var(--shadow-sm)' }}>
+            
+            {/* Desktop Table View */}
+            <div className="table-responsive" style={{ display: 'block', width: '100%', overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '800px' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                    <th style={{ padding: '12px 16px', fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Student</th>
+                    <th style={{ padding: '12px 16px', fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Class & Semester</th>
+                    <th style={{ padding: '12px 16px', fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Assigned Faculty</th>
+                    <th style={{ padding: '12px 16px', fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Tracker Status</th>
+                    <th style={{ padding: '12px 16px', fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Last Updated</th>
+                    <th style={{ padding: '12px 16px', fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Syllabus Progress</th>
+                    <th style={{ padding: '12px 16px', fontSize: '0.78rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', textAlign: 'right' }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {students
+                    .filter(s => {
+                      const q = searchQ.toLowerCase();
+                      return (
+                        s.displayName?.toLowerCase().includes(q) ||
+                        s.email?.toLowerCase().includes(q) ||
+                        s.class?.toLowerCase().includes(q)
+                      );
+                    })
+                    .map(student => {
+                      const assignedNames = (student.assignedFacultyIds || [])
+                        .map(id => faculties.find(f => f.id === id)?.displayName || 'None')
+                        .filter(n => n !== 'None')
+                        .join(', ') || 'Unassigned';
+
+                      const isUploading = uploadingStudentId === student.id;
+
+                      return (
+                        <tr key={student.id} style={{ borderBottom: '1px solid var(--border)', fontSize: '0.88rem' }}>
+                          <td style={{ padding: '16px' }}>
+                            <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{student.displayName || student.name || 'Anonymous'}</div>
+                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>{student.email}</div>
+                          </td>
+                          <td style={{ padding: '16px' }}>
+                            <div style={{ fontWeight: 600 }}>{student.class || 'N/A'}</div>
+                            {student.semester && (
+                              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>{student.semester}</div>
+                            )}
+                          </td>
+                          <td style={{ padding: '16px', color: 'var(--text-secondary)' }}>
+                            {assignedNames}
+                          </td>
+                          <td style={{ padding: '16px' }}>
+                            {student.trackerUrl ? (
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '4px 8px', borderRadius: '6px', background: 'rgba(34,197,94,0.1)', color: '#22c55e', fontSize: '0.75rem', fontWeight: 700 }}>
+                                <Check size={12} /> Uploaded
+                              </span>
+                            ) : (
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '4px 8px', borderRadius: '6px', background: 'rgba(100,116,139,0.1)', color: '#64748b', fontSize: '0.75rem', fontWeight: 700 }}>
+                                <Clock size={12} /> Not Uploaded
+                              </span>
+                            )}
+                          </td>
+                          <td style={{ padding: '16px', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+                            {student.trackerUploadedAt 
+                              ? new Date(student.trackerUploadedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+                              : 'N/A'}
+                          </td>
+                          <td style={{ padding: '16px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '120px' }}>
+                              <div style={{ flex: 1, height: '6px', background: 'var(--border)', borderRadius: '100px', overflow: 'hidden' }}>
+                                <div style={{ height: '100%', background: 'var(--primary)', width: `${student.progressPercent || 0}%` }} />
+                              </div>
+                              <span style={{ fontSize: '0.78rem', fontWeight: 700 }}>{student.progressPercent || 0}%</span>
+                            </div>
+                          </td>
+                          <td style={{ padding: '16px', textAlign: 'right' }}>
+                            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', alignItems: 'center' }}>
+                              {isUploading ? (
+                                <Loader2 size={16} className="spinning" style={{ color: 'var(--primary)' }} />
+                              ) : student.trackerUrl ? (
+                                <>
+                                  <a
+                                    href={student.trackerUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="btn btn-secondary"
+                                    style={{ padding: '6px 12px', fontSize: '0.78rem', borderRadius: '8px', background: 'rgba(0,0,0,0.05)', color: 'var(--text-primary)', display: 'inline-flex', alignItems: 'center', gap: '4px', textDecoration: 'none' }}
+                                  >
+                                    <FileText size={12} /> Preview
+                                  </a>
+                                  
+                                  <label 
+                                    htmlFor={`replace-${student.id}`} 
+                                    className="btn btn-secondary"
+                                    style={{ padding: '6px 12px', fontSize: '0.78rem', borderRadius: '8px', background: 'rgba(0,0,0,0.05)', color: 'var(--text-primary)', display: 'inline-flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}
+                                  >
+                                    Replace
+                                  </label>
+                                  <input
+                                    type="file"
+                                    id={`replace-${student.id}`}
+                                    style={{ display: 'none' }}
+                                    accept=".pdf,.docx"
+                                    onChange={(e) => handleUploadFile(e, student.id, 'replace')}
+                                  />
+
+                                  <button
+                                    onClick={() => handleDeleteTracker(student.id, student.trackerFileName)}
+                                    className="btn btn-danger"
+                                    style={{ padding: '6px 10px', fontSize: '0.78rem', borderRadius: '8px', background: 'rgba(239,68,68,0.1)', color: '#ef4444', border: 'none', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+                                  >
+                                    <Trash2 size={12} />
+                                  </button>
+                                </>
+                              ) : (
+                                <>
+                                  <label 
+                                    htmlFor={`upload-${student.id}`} 
+                                    className="btn btn-primary"
+                                    style={{ padding: '6px 12px', fontSize: '0.78rem', borderRadius: '8px', display: 'inline-flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}
+                                  >
+                                    <UploadCloud size={12} /> Upload Tracker
+                                  </label>
+                                  <input
+                                    type="file"
+                                    id={`upload-${student.id}`}
+                                    style={{ display: 'none' }}
+                                    accept=".pdf,.docx"
+                                    onChange={(e) => handleUploadFile(e, student.id, 'upload')}
+                                  />
+                                </>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobile Card Roster View */}
+            <div className="mobile-only-cards" style={{ display: 'none', flexDirection: 'column', gap: '12px' }}>
+              {students
+                .filter(s => {
+                  const q = searchQ.toLowerCase();
+                  return (
+                    s.displayName?.toLowerCase().includes(q) ||
+                    s.email?.toLowerCase().includes(q) ||
+                    s.class?.toLowerCase().includes(q)
+                  );
+                })
+                .map(student => {
+                  const assignedNames = (student.assignedFacultyIds || [])
+                    .map(id => faculties.find(f => f.id === id)?.displayName || 'None')
+                    .filter(n => n !== 'None')
+                    .join(', ') || 'Unassigned';
+
+                  const isUploading = uploadingStudentId === student.id;
+
+                  return (
+                    <div key={student.id} style={{ padding: '16px', border: '1px solid var(--border)', borderRadius: '14px', background: 'var(--surface)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                        <div>
+                          <div style={{ fontWeight: 800, fontSize: '0.95rem' }}>{student.displayName || student.name}</div>
+                          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>{student.email}</div>
+                        </div>
+                        {student.trackerUrl ? (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', padding: '3px 6px', borderRadius: '6px', background: 'rgba(34,197,94,0.1)', color: '#22c55e', fontSize: '0.72rem', fontWeight: 700 }}>
+                            <Check size={10} /> Uploaded
+                          </span>
+                        ) : (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', padding: '3px 6px', borderRadius: '6px', background: 'rgba(100,116,139,0.1)', color: '#64748b', fontSize: '0.72rem', fontWeight: 700 }}>
+                            <Clock size={10} /> Pending
+                          </span>
+                        )}
+                      </div>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', fontSize: '0.78rem' }}>
+                        <div>
+                          <div style={{ color: 'var(--text-muted)', fontWeight: 600 }}>Class & Semester</div>
+                          <div style={{ fontWeight: 700, marginTop: '2px' }}>{student.class || 'N/A'} {student.semester && `(${student.semester})`}</div>
+                        </div>
+                        <div>
+                          <div style={{ color: 'var(--text-muted)', fontWeight: 600 }}>Mentor</div>
+                          <div style={{ fontWeight: 700, marginTop: '2px' }}>{assignedNames}</div>
+                        </div>
+                      </div>
+
+                      <div style={{ fontSize: '0.78rem' }}>
+                        <div style={{ color: 'var(--text-muted)', fontWeight: 600, marginBottom: '4px' }}>Syllabus Progress</div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <div style={{ flex: 1, height: '6px', background: 'var(--border)', borderRadius: '100px', overflow: 'hidden' }}>
+                            <div style={{ height: '100%', background: 'var(--primary)', width: `${student.progressPercent || 0}%` }} />
+                          </div>
+                          <span style={{ fontWeight: 800 }}>{student.progressPercent || 0}%</span>
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '4px', borderTop: '1px solid var(--border)', paddingTop: '10px' }}>
+                        {isUploading ? (
+                          <Loader2 size={16} className="spinning" style={{ color: 'var(--primary)' }} />
+                        ) : student.trackerUrl ? (
+                          <>
+                            <a
+                              href={student.trackerUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="btn btn-secondary"
+                              style={{ padding: '8px 12px', fontSize: '0.8rem', borderRadius: '10px', background: 'rgba(0,0,0,0.05)', color: 'var(--text-primary)', display: 'inline-flex', alignItems: 'center', gap: '4px', textDecoration: 'none' }}
+                            >
+                              <FileText size={12} /> Preview
+                            </a>
+                            
+                            <label 
+                              htmlFor={`replace-mob-${student.id}`} 
+                              className="btn btn-secondary"
+                              style={{ padding: '8px 12px', fontSize: '0.8rem', borderRadius: '10px', background: 'rgba(0,0,0,0.05)', color: 'var(--text-primary)', display: 'inline-flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}
+                            >
+                              Replace
+                            </label>
+                            <input
+                              type="file"
+                              id={`replace-mob-${student.id}`}
+                              style={{ display: 'none' }}
+                              accept=".pdf,.docx"
+                              onChange={(e) => handleUploadFile(e, student.id, 'replace')}
+                            />
+
+                            <button
+                              onClick={() => handleDeleteTracker(student.id, student.trackerFileName)}
+                              className="btn btn-danger"
+                              style={{ padding: '8px 12px', fontSize: '0.8rem', borderRadius: '10px', background: 'rgba(239,68,68,0.1)', color: '#ef4444', border: 'none', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                            >
+                              <Trash2 size={12} /> Delete
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <label 
+                              htmlFor={`upload-mob-${student.id}`} 
+                              className="btn btn-primary"
+                              style={{ padding: '8px 16px', fontSize: '0.8rem', borderRadius: '10px', display: 'inline-flex', alignItems: 'center', gap: '4px', cursor: 'pointer', width: '100%', justifyContent: 'center' }}
+                            >
+                              <UploadCloud size={14} /> Upload Tracker
+                            </label>
+                            <input
+                              type="file"
+                              id={`upload-mob-${student.id}`}
+                              style={{ display: 'none' }}
+                              accept=".pdf,.docx"
+                              onChange={(e) => handleUploadFile(e, student.id, 'upload')}
+                            />
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
+
+          </div>
+        </div>
+      )}
 
       {/* ── Upload Modal ── */}
       <AnimatePresence>
@@ -585,6 +1319,8 @@ const ClassTracker = () => {
       <style>{`
         @media (max-width: 768px) {
           .tracker-grid { grid-template-columns: 1fr !important; }
+          .table-responsive { display: none !important; }
+          .mobile-only-cards { display: flex !important; }
         }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
       `}</style>

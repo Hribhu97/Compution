@@ -12,7 +12,8 @@ import {
   sendPasswordResetEmail,
   PhoneAuthProvider,
   EmailAuthProvider,
-  linkWithCredential
+  linkWithCredential,
+  updateEmail
 } from 'firebase/auth';
 import { collection, query, where, getDocs, doc, serverTimestamp } from 'firebase/firestore';
 import { auth, googleProvider, db, updateDoc } from '../../firebase';
@@ -96,7 +97,8 @@ const Login = () => {
     course: '',
     guardianName: '',
     guardianPhone: '',
-    aadhaarNumber: ''
+    aadhaarNumber: '',
+    semester: ''
   });
   const [phoneNumber, setPhoneNumber] = useState('');
   const [countryCode, setCountryCode] = useState('+91');
@@ -489,15 +491,11 @@ const Login = () => {
           return;
         }
       } else {
-        // Phone number is NOT registered to any profile in Firestore
-        console.log('[Phone Auth Flow] Phone number not found in Firestore. Prompting for registered email...');
-        setPendingLinkEmail('');
-        
-        // Sign out of temp account
-        await signOut(auth);
-        
-        // Show prompt email screen
-        setView('prompt-link-email');
+        // Phone number is NOT registered to any profile in Firestore.
+        // Keep them signed in as they are a new phone-first signup!
+        console.log('[Phone Auth Flow] Phone number not found in Firestore. Directing to profile registration...');
+        setForm(f => ({ ...f, phone: fullPhone }));
+        setView('register-profile');
         setMobileStatus('');
         setLoading(false);
         return;
@@ -771,6 +769,46 @@ const Login = () => {
     }
   };
 
+  const handleSendPhoneSignupEmailVerification = async (e) => {
+    if (e) e.preventDefault();
+    const trimmedEmail = linkEmail.trim().toLowerCase();
+    if (!trimmedEmail) { setError('Please enter your email address'); return; }
+    
+    setLinkLoading(true);
+    setLinkStatus('Saving email and sending verification link...');
+    setError('');
+    
+    try {
+      const usersRef = collection(db, 'users');
+      const qEmail = query(usersRef, where('email', '==', trimmedEmail));
+      const snapEmail = await getDocs(qEmail);
+      if (!snapEmail.empty) {
+        let duplicateUid = '';
+        snapEmail.forEach(d => { duplicateUid = d.id; });
+        if (duplicateUid !== auth.currentUser?.uid) {
+          setError('This email address is already registered under another account.');
+          setLinkLoading(false);
+          setLinkStatus('');
+          return;
+        }
+      }
+      
+      await updateEmail(auth.currentUser, trimmedEmail);
+      await sendEmailVerification(auth.currentUser);
+      
+      setEmailLinked(true);
+      setLinkStatus('Verification email sent! Check your inbox.');
+      setEmailVerifySent(true);
+      setForm(f => ({ ...f, email: trimmedEmail }));
+    } catch (err) {
+      console.error('[Phone Signup Email Verification Error]', err);
+      setError(err.message || 'Failed to send verification link.');
+      setLinkStatus('');
+    } finally {
+      setLinkLoading(false);
+    }
+  };
+
   const handleLinkOtpChange = (element, index) => {
     if (isNaN(element.value)) return false;
 
@@ -841,7 +879,7 @@ const Login = () => {
       setError('Guardian phone must be a valid 10-digit number');
       return;
     }
-    if (!/^\d{12}$/.test(form.aadhaarNumber)) {
+    if (form.aadhaarNumber && !/^\d{12}$/.test(form.aadhaarNumber)) {
       setError('Aadhaar number must be exactly 12 digits');
       return;
     }
@@ -1793,43 +1831,42 @@ const Login = () => {
                               <CheckCircle size={14} /> Verified
                             </span>
                           ) : isPhone && !emailLinked ? (
-                            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', flex: 1, justifyContent: 'flex-end', marginLeft: '16px' }}>
-                              <input
-                                type="email"
-                                placeholder="Link Email"
-                                value={linkEmail}
-                                onChange={(e) => setLinkEmail(e.target.value)}
-                                style={{ padding: '6px 12px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.8rem', width: '150px' }}
-                              />
-                              <input
-                                type="password"
-                                placeholder="Set Password"
-                                value={linkEmailPassword}
-                                onChange={(e) => setLinkEmailPassword(e.target.value)}
-                                style={{ padding: '6px 12px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.8rem', width: '110px' }}
-                              />
-                              <button
-                                type="button"
-                                onClick={handleLinkEmail}
-                                disabled={linkLoading}
-                                className="btn btn-primary"
-                                style={{ padding: '6px 12px', fontSize: '0.78rem', borderRadius: '6px' }}
-                              >
-                                {linkLoading ? 'Link...' : 'Link'}
-                              </button>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1, marginLeft: '16px', alignItems: 'stretch' }}>
+                              <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>Almost done! Add your Email Address</span>
+                              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', width: '100%' }}>
+                                <input
+                                  type="email"
+                                  placeholder="you@example.com"
+                                  value={linkEmail}
+                                  onChange={(e) => setLinkEmail(e.target.value)}
+                                  style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border)', fontSize: '0.85rem', flex: 1 }}
+                                />
+                                <button
+                                  type="button"
+                                  onClick={handleSendPhoneSignupEmailVerification}
+                                  disabled={linkLoading}
+                                  className="btn btn-primary"
+                                  style={{ padding: '8px 14px', fontSize: '0.8rem', borderRadius: '8px', whiteSpace: 'nowrap' }}
+                                >
+                                  {linkLoading ? 'Sending...' : 'Send Verification Link'}
+                                </button>
+                              </div>
                             </div>
                           ) : isPhone && emailLinked && !emailVerifiedLocal ? (
-                            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                              <span style={{ fontSize: '0.78rem', color: 'var(--warning)', fontWeight: 600 }}>Verification Pending</span>
-                              <button
-                                type="button"
-                                onClick={handleConfirmEmailVerification}
-                                disabled={linkLoading}
-                                className="btn btn-primary"
-                                style={{ padding: '6px 12px', fontSize: '0.78rem', borderRadius: '6px' }}
-                              >
-                                {linkLoading ? 'Confirming...' : 'I Have Verified'}
-                              </button>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1, marginLeft: '16px', alignItems: 'stretch' }}>
+                              <span style={{ fontSize: '0.8rem', color: 'var(--warning)', fontWeight: 700 }}>Email Pending Verification</span>
+                              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>We sent a link to {form.email}.</span>
+                                <button
+                                  type="button"
+                                  onClick={handleConfirmEmailVerification}
+                                  disabled={linkLoading}
+                                  className="btn btn-primary"
+                                  style={{ padding: '6px 12px', fontSize: '0.78rem', borderRadius: '6px', whiteSpace: 'nowrap', marginLeft: 'auto' }}
+                                >
+                                  {linkLoading ? 'Checking...' : 'I Have Verified'}
+                                </button>
+                              </div>
                             </div>
                           ) : null}
                         </div>
@@ -1936,15 +1973,14 @@ const Login = () => {
                           </select>
                         </div>
                         <div>
-                          <label className="form-label">Aadhaar Number (12-digit)</label>
+                          <label className="form-label">Aadhaar Number (Optional)</label>
                           <input
                             type="text"
                             name="aadhaarNumber" value={form.aadhaarNumber}
                             onChange={(e) => setForm({ ...form, aadhaarNumber: e.target.value.replace(/\D/g, '') })}
                             maxLength={12}
-                            placeholder="Enter 12 digits"
+                            placeholder="Enter 12 digits (Optional)"
                             className="form-input"
-                            required
                           />
                         </div>
                       </div>
@@ -1961,20 +1997,116 @@ const Login = () => {
                           />
                         </div>
                         <div>
-                          <label className="form-label">District</label>
-                          <input
-                            name="district" value={form.district} onChange={handleChange}
-                            className="form-input" placeholder="District name"
+                          <label className="form-label">State</label>
+                          <select
+                            name="state"
+                            value={form.state}
+                            onChange={(e) => {
+                              setForm(prev => ({ ...prev, state: e.target.value, district: '' }));
+                              setError('');
+                            }}
+                            className="form-input"
+                            style={{ background: 'var(--white)' }}
                             required
-                          />
+                          >
+                            <option value="">Select State</option>
+                            {[
+                              "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh", "Goa", "Gujarat", 
+                              "Haryana", "Himachal Pradesh", "Jharkhand", "Karnataka", "Kerala", "Madhya Pradesh", 
+                              "Maharashtra", "Manipur", "Meghalaya", "Mizoram", "Nagaland", "Odisha", "Punjab", 
+                              "Rajasthan", "Sikkim", "Tamil Nadu", "Telangana", "Tripura", "Uttar Pradesh", "Uttarakhand", 
+                              "West Bengal", "Andaman and Nicobar Islands", "Chandigarh", "Dadra and Nagar Haveli and Daman and Diu", 
+                              "Delhi", "Jammu and Kashmir", "Ladakh", "Lakshadweep", "Puducherry"
+                            ].map(st => (
+                              <option key={st} value={st}>{st}</option>
+                            ))}
+                          </select>
                         </div>
                         <div>
-                          <label className="form-label">State</label>
-                          <input
-                            name="state" value={form.state} onChange={handleChange}
-                            className="form-input" placeholder="State"
-                            required
-                          />
+                          <label className="form-label">District</label>
+                          {form.state === 'West Bengal' ? (
+                            <select
+                              name="district"
+                              value={form.district}
+                              onChange={handleChange}
+                              className="form-input"
+                              style={{ background: 'var(--white)' }}
+                              required
+                            >
+                              <option value="">Select District</option>
+                              {[
+                                "Alipurduar", "Bankura", "Birbhum", "Cooch Behar", "Dakshin Dinajpur", "Darjeeling", 
+                                "Hooghly", "Howrah", "Jalpaiguri", "Jhargram", "Kalimpong", "Kolkata", "Malda", 
+                                "Murshidabad", "Nadia", "North 24 Parganas", "Paschim Bardhaman", "Paschim Medinipur", 
+                                "Purba Bardhaman", "Purba Medinipur", "Purulia", "South 24 Parganas", "Uttar Dinajpur"
+                              ].map(dt => (
+                                <option key={dt} value={dt}>{dt}</option>
+                              ))}
+                            </select>
+                          ) : ['Delhi', 'Bihar', 'Jharkhand', 'Odisha'].includes(form.state) ? (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                              <select
+                                name="district"
+                                value={
+                                  ['Delhi', 'Bihar', 'Jharkhand', 'Odisha'].includes(form.state) && 
+                                  !{
+                                    "Delhi": ["Central Delhi", "East Delhi", "New Delhi", "North Delhi", "North East Delhi", "North West Delhi", "Shahdara", "South Delhi", "South East Delhi", "South West Delhi", "West Delhi"],
+                                    "Bihar": ["Patna", "Gaya", "Bhagalpur", "Muzaffarpur", "Purnia", "Darbhanga", "Arrah", "Begusarai"],
+                                    "Jharkhand": ["Ranchi", "Jamshedpur", "Dhanbad", "Bokaro", "Deoghar", "Hazaribagh"],
+                                    "Odisha": ["Bhubaneswar", "Cuttack", "Rourkela", "Berhampur", "Sambalpur", "Puri"]
+                                  }[form.state].includes(form.district) && form.district !== ''
+                                    ? 'Other'
+                                    : form.district
+                                }
+                                onChange={(e) => {
+                                  if (e.target.value === 'Other') {
+                                    setForm(prev => ({ ...prev, district: 'Other_District' }));
+                                  } else {
+                                    setForm(prev => ({ ...prev, district: e.target.value }));
+                                  }
+                                }}
+                                className="form-input"
+                                style={{ background: 'var(--white)' }}
+                                required
+                              >
+                                <option value="">Select District</option>
+                                {({
+                                  "Delhi": ["Central Delhi", "East Delhi", "New Delhi", "North Delhi", "North East Delhi", "North West Delhi", "Shahdara", "South Delhi", "South East Delhi", "South West Delhi", "West Delhi"],
+                                  "Bihar": ["Patna", "Gaya", "Bhagalpur", "Muzaffarpur", "Purnia", "Darbhanga", "Arrah", "Begusarai"],
+                                  "Jharkhand": ["Ranchi", "Jamshedpur", "Dhanbad", "Bokaro", "Deoghar", "Hazaribagh"],
+                                  "Odisha": ["Bhubaneswar", "Cuttack", "Rourkela", "Berhampur", "Sambalpur", "Puri"]
+                                }[form.state] || []).map(dt => (
+                                  <option key={dt} value={dt}>{dt}</option>
+                                ))}
+                                <option value="Other">Other...</option>
+                              </select>
+                              {(form.district === 'Other_District' || 
+                                (form.district !== '' && !({
+                                  "Delhi": ["Central Delhi", "East Delhi", "New Delhi", "North Delhi", "North East Delhi", "North West Delhi", "Shahdara", "South Delhi", "South East Delhi", "South West Delhi", "West Delhi"],
+                                  "Bihar": ["Patna", "Gaya", "Bhagalpur", "Muzaffarpur", "Purnia", "Darbhanga", "Arrah", "Begusarai"],
+                                  "Jharkhand": ["Ranchi", "Jamshedpur", "Dhanbad", "Bokaro", "Deoghar", "Hazaribagh"],
+                                  "Odisha": ["Bhubaneswar", "Cuttack", "Rourkela", "Berhampur", "Sambalpur", "Puri"]
+                                }[form.state] || []).includes(form.district))) && (
+                                <input
+                                  type="text"
+                                  placeholder="Enter District Name"
+                                  value={form.district === 'Other_District' ? '' : form.district}
+                                  onChange={(e) => setForm(prev => ({ ...prev, district: e.target.value }))}
+                                  className="form-input"
+                                  required
+                                />
+                              )}
+                            </div>
+                          ) : (
+                            <input
+                              name="district"
+                              value={form.district}
+                              onChange={handleChange}
+                              className="form-input"
+                              placeholder="District name"
+                              required
+                            />
+                          )}
                         </div>
                         <div>
                           <label className="form-label">PIN Code (6-digit)</label>
@@ -2016,18 +2148,63 @@ const Login = () => {
                         <div>
                           <label className="form-label">Class</label>
                           <select
-                            name="class" value={form.class} onChange={handleChange}
+                            name="class" value={form.class} onChange={(e) => setForm(prev => ({ ...prev, class: e.target.value, semester: '' }))}
                             className="form-input"
                             style={{ background: 'var(--white)' }}
                             required
                           >
                             <option value="">Select Class</option>
-                            <option value="2">Class 2-5</option>
-                            <option value="6">Class 6-8</option>
-                            <option value="9">Class 9-10</option>
-                            <option value="11">Class 11</option>
-                            <option value="12">Class 12</option>
+                            <option value="Class 2">Class 2</option>
+                            <option value="Class 3">Class 3</option>
+                            <option value="Class 4">Class 4</option>
+                            <option value="Class 5">Class 5</option>
+                            <option value="Class 6">Class 6</option>
+                            <option value="Class 7">Class 7</option>
+                            <option value="Class 8">Class 8</option>
+                            <option value="Class 9">Class 9</option>
+                            <option value="Class 10">Class 10</option>
+                            <option value="Class 11">Class 11</option>
+                            <option value="Class 12">Class 12</option>
+                            <option value="Basic Computer">Basic Computer</option>
+                            <option value="Basic with AI">Basic with AI</option>
+                            <option value="Tally">Tally</option>
+                            <option value="B.Sc">B.Sc</option>
+                            <option value="BCA">BCA</option>
+                            <option value="B.Tech">B.Tech</option>
                           </select>
+                        </div>
+                        
+                        {/* Dynamic Semester Field */}
+                        <div style={{ gridColumn: ['Class 11', 'Class 12', 'B.Sc', 'BCA', 'B.Tech'].includes(form.class) ? 'span 1' : 'none' }}>
+                          <AnimatePresence>
+                            {['Class 11', 'Class 12', 'B.Sc', 'BCA', 'B.Tech'].includes(form.class) && (
+                              <motion.div
+                                initial={{ height: 0, opacity: 0 }}
+                                animate={{ height: 'auto', opacity: 1 }}
+                                exit={{ height: 0, opacity: 0 }}
+                                transition={{ duration: 0.3 }}
+                                style={{ overflow: 'hidden' }}
+                              >
+                                <label className="form-label">Semester</label>
+                                <select
+                                  name="semester"
+                                  value={form.semester || ''}
+                                  onChange={handleChange}
+                                  className="form-input"
+                                  style={{ background: 'var(--white)' }}
+                                  required
+                                >
+                                  <option value="">Select Semester</option>
+                                  {(['Class 11', 'Class 12'].includes(form.class)
+                                    ? ['Semester 1', 'Semester 2', 'Semester 3', 'Semester 4']
+                                    : ['Semester 1', 'Semester 2', 'Semester 3', 'Semester 4', 'Semester 5', 'Semester 6']
+                                  ).map(opt => (
+                                    <option key={opt} value={opt}>{opt}</option>
+                                  ))}
+                                </select>
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
                         </div>
                         <div>
                           <label className="form-label">Course Registered</label>
@@ -2071,8 +2248,8 @@ const Login = () => {
 
                       {/* Submit */}
                       <motion.button type="submit" className="btn btn-primary" whileTap={{ scale: 0.97 }}
-                        disabled={loading || (isEmail && !phoneLinked) || (isPhone && !emailVerifiedLocal)}
-                        style={{ padding: '16px', fontSize: '1.05rem', marginTop: '10px', width: '100%', justifyContent: 'center', cursor: (loading || (isEmail && !phoneLinked) || (isPhone && !emailVerifiedLocal)) ? 'not-allowed' : 'pointer' }}>
+                        disabled={loading || (isEmail && !phoneLinked) || (isPhone && !emailLinked)}
+                        style={{ padding: '16px', fontSize: '1.05rem', marginTop: '10px', width: '100%', justifyContent: 'center', cursor: (loading || (isEmail && !phoneLinked) || (isPhone && !emailLinked)) ? 'not-allowed' : 'pointer' }}>
                         {loading ? <Spinner /> : <><UserPlus size={20} /> Complete Registration</>}
                       </motion.button>
                     </form>
