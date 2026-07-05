@@ -510,7 +510,55 @@ const QUESTIONS_POOL = {
  { q: "Which of these is a temporary storage memory?", a: "Option B", options: ["Option A: ROM", "Option B: RAM", "Option C: Hard Disk", "Option D: Pen Drive"] },
  { q: "What does URL stand for?", a: "Option A", options: ["Option A: Uniform Resource Locator", "Option B: Unique Resource Link", "Option C: Universal Radio Light", "Option D: United Route Link"] },
  { q: "Which protocol is used to secure web pages?", a: "Option B", options: ["Option A: HTTP", "Option B: HTTPS", "Option C: FTP", "Option D: SMTP"] }
+ ],
+ football: [
+    { q: "Which nation won the first FIFA World Cup in 1930?", a: "Option B", options: ["Option A: Brazil", "Option B: Uruguay", "Option C: Argentina", "Option D: Italy"] },
+    { q: "Who is the all-time top goalscorer in FIFA World Cup history?", a: "Option C", options: ["Option A: Pelé", "Option B: Ronaldo Nazário", "Option C: Miroslav Klose", "Option D: Lionel Messi"] },
+    { q: "Which country has won the most FIFA World Cup titles?", a: "Option A", options: ["Option A: Brazil", "Option B: Germany", "Option C: Italy", "Option D: Argentina"] },
+    { q: "What does VAR stand for in football?", a: "Option B", options: ["Option A: Video Associate Referee", "Option B: Video Assistant Referee", "Option C: Virtual Assistant Referee", "Option D: Video Analysis Review"] },
+    { q: "Which player won the Golden Boot at the 2022 FIFA World Cup in Qatar?", a: "Option C", options: ["Option A: Lionel Messi", "Option B: Olivier Giroud", "Option C: Kylian Mbappé", "Option D: Neymar Jr"] },
+    { q: "How long is a standard professional football match, excluding extra time?", a: "Option D", options: ["Option A: 80 minutes", "Option B: 100 minutes", "Option C: 75 minutes", "Option D: 90 minutes"] },
+    { q: "What is the maximum number of players on the field for one team during a match?", a: "Option A", options: ["Option A: 11 players", "Option B: 10 players", "Option C: 12 players", "Option D: 9 players"] },
+    { q: "Which legendary player scored the famous 'Hand of God' goal in 1986?", a: "Option B", options: ["Option A: Pelé", "Option B: Diego Maradona", "Option C: Michel Platini", "Option D: Zico"] },
+    { q: "Who won the Golden Ball as the best player at the 2014 FIFA World Cup?", a: "Option A", options: ["Option A: Lionel Messi", "Option B: Thomas Müller", "Option C: James Rodríguez", "Option D: Arjen Robben"] },
+    { q: "In which country was the 2018 FIFA World Cup hosted?", a: "Option C", options: ["Option A: Brazil", "Option B: Germany", "Option C: Russia", "Option D: Qatar"] },
+    { q: "How many yellow cards in a single match result in a player receiving a red card?", a: "Option B", options: ["Option A: 3", "Option B: 2", "Option C: 1", "Option D: 4"] },
+    { q: "What is the distance of the penalty spot from the goal line in football?", a: "Option A", options: ["Option A: 12 yards", "Option B: 10 yards", "Option C: 15 yards", "Option D: 8 yards"] },
+    { q: "Which team won the 2006 FIFA World Cup after a penalty shootout?", a: "Option C", options: ["Option A: France", "Option B: Germany", "Option C: Italy", "Option D: Portugal"] },
+    { q: "Who was the coach of the French national team that won the 2018 World Cup?", a: "Option D", options: ["Option A: Zinedine Zidane", "Option B: Laurent Blanc", "Option C: Arsène Wenger", "Option D: Didier Deschamps"] },
+    { q: "Which country hosted the first FIFA World Cup in Africa in 2010?", a: "Option B", options: ["Option A: Egypt", "Option B: South Africa", "Option C: Nigeria", "Option D: Morocco"] },
+    { q: "Who scored the winning goal for Germany in the 2014 World Cup Final?", a: "Option A", options: ["Option A: Mario Götze", "Option B: Thomas Müller", "Option C: Miroslav Klose", "Option D: Toni Kroos"] },
+    { q: "What happens if a knockout stage match remains a draw after 30 minutes of extra time?", a: "Option D", options: ["Option A: Golden goal", "Option B: Replay match", "Option C: Coin toss", "Option D: Penalty Shootout"] },
+    { q: "Which country won its first World Cup title in 2010 in South Africa?", a: "Option C", options: ["Option A: Netherlands", "Option B: Germany", "Option C: Spain", "Option D: Portugal"] },
+    { q: "Which player has played in the most World Cup matches in history?", a: "Option A", options: ["Option A: Lionel Messi", "Option B: Lothar Matthäus", "Option C: Miroslav Klose", "Option D: Paolo Maldini"] },
+    { q: "Which city hosted the final of the 1994 FIFA World Cup in the United States?", a: "Option B", options: ["Option A: New York", "Option B: Pasadena", "Option C: Miami", "Option D: Chicago"] },
+    { q: "What is the official height of a professional football goalpost?", a: "Option C", options: ["Option A: 10 feet", "Option B: 6 feet", "Option C: 8 feet", "Option D: 9 feet"] },
+    { q: "Which team won the 1966 FIFA World Cup on home soil?", a: "Option A", options: ["Option A: England", "Option B: Germany", "Option C: Portugal", "Option D: France"] },
+    { q: "Who won the Best Young Player award at the 2018 FIFA World Cup?", a: "Option B", options: ["Option A: Luka Modrić", "Option B: Kylian Mbappé", "Option C: Antoine Griezmann", "Option D: Paul Pogba"] },
+    { q: "Which goalkeeper made the famous save in the 2022 World Cup Final shootout?", a: "Option A", options: ["Option A: Emiliano Martínez", "Option B: Hugo Lloris", "Option C: Dominik Livaković", "Option D: Yassine Bounou"] },
+    { q: "Who scored a hat-trick in the 1966 World Cup Final for England?", a: "Option B", options: ["Option A: Bobby Charlton", "Option B: Geoff Hurst", "Option C: Bobby Moore", "Option D: Jimmy Greaves"] }
  ]
+};
+
+const validateQuestion = (q) => {
+  if (!q) return false;
+  if (typeof q.q !== 'string' || !q.q.trim()) return false;
+  if (!Array.isArray(q.options) || q.options.length !== 4) return false;
+  
+  // check no empty options
+  if (q.options.some(opt => typeof opt !== 'string' || !opt.trim())) return false;
+  
+  // check no duplicate options
+  const uniqueOptions = new Set(q.options.map(o => o.trim()));
+  if (uniqueOptions.size !== 4) return false;
+  
+  // check exactly 1 correct answer
+  if (typeof q.a !== 'string') return false;
+  const correctLetter = q.a.trim();
+  const validLetters = ['Option A', 'Option B', 'Option C', 'Option D', 'A', 'B', 'C', 'D'];
+  if (!validLetters.some(letter => correctLetter.includes(letter))) return false;
+  
+  return true;
 };
 
 const WorldCupPage = () => {
@@ -816,8 +864,8 @@ const WorldCupPage = () => {
  // Conclude match or tie sudden death
  if (studentScore === botScore) {
  setIsSuddenDeath(true);
- const category = user?.course?.toLowerCase().includes('python') ? 'python' : user?.course?.toLowerCase().includes('web') ? 'webdev' : 'general';
- const pool = QUESTIONS_POOL[category];
+ const category = 'football';
+ const pool = (QUESTIONS_POOL[category] || []).filter(validateQuestion);
  const sdQ = pool[Math.floor(Math.random() * pool.length)];
  setActiveQuestion(sdQ);
  showToast('⚽ Sudden Death Penalty Shootout!', 'info');
@@ -849,8 +897,8 @@ const WorldCupPage = () => {
  return;
  }
 
- const category = user?.course?.toLowerCase().includes('python') ? 'python' : user?.course?.toLowerCase().includes('web') ? 'webdev' : 'general';
- const pool = QUESTIONS_POOL[category];
+ const category = 'football';
+ const pool = (QUESTIONS_POOL[category] || []).filter(validateQuestion);
  const shuffled = [...pool].sort(() => 0.5 - Math.random());
  setMatchQuestions(shuffled);
  setQIndex(0);
@@ -1519,7 +1567,7 @@ const WorldCupPage = () => {
  return (
  <div style={{
  background: 'radial-gradient(circle at center, #0b0f19 0%, #020617 100%)',
- height: '100%', minHeight: 0, maxHeight: '100%', overflow: 'hidden', display: 'flex', flexDirection: 'column',
+ height: '100%', minHeight: 0, maxHeight: '100%', overflowY: 'auto', overflowX: 'hidden', display: 'flex', flexDirection: 'column',
  color: 'white', padding: isMobile ? '12px' : '20px', borderRadius: '32px', boxSizing: 'border-box'
  }}>
  {/* TV Style Scoreboard & Broadcast Banner */}
@@ -1665,7 +1713,7 @@ const WorldCupPage = () => {
  </h2>
 
  {/* Split options buttons mapping to corners */}
- <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }} className="grid-2-col-mobile">
+ <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: isMobile ? '8px' : '12px' }}>
  {activeQuestion.options.map((opt, idx) => {
  const isSelected = selectedAnswer === opt;
  const optLetter = opt.split(':')[0]; // "Option A"
@@ -1699,8 +1747,8 @@ const WorldCupPage = () => {
  onClick={() => handleSelectAnswer(opt)}
  disabled={selectedAnswer !== null}
  style={{
- padding: '16px', borderRadius: '20px', border: `1.5px solid ${border}`,
- background: bg, color, fontWeight: 800, fontSize: '0.85rem',
+ padding: isMobile ? '10px 12px' : '16px', borderRadius: '16px', border: `1.5px solid ${border}`,
+ background: bg, color, fontWeight: 800, fontSize: isMobile ? '0.78rem' : '0.85rem',
  cursor: selectedAnswer !== null ? 'default' : 'pointer',
  display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px',
  transition: 'all 0.2s'
