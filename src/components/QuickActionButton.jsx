@@ -7,7 +7,7 @@ import {
   ClipboardList, Calendar, MessageSquare, CreditCard, Play 
 } from 'lucide-react';
 
-const QuickActionButton = () => {
+const QuickActionButton = ({ isMoreMenuOpen }) => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
@@ -75,8 +75,8 @@ const QuickActionButton = () => {
         position: 'fixed',
         bottom: 'calc(96px + env(safe-area-inset-bottom, 0px))',
         right: '20px',
-        zIndex: 1050,
-        display: 'flex',
+        zIndex: isMoreMenuOpen ? 950 : 1050,
+        display: isMoreMenuOpen ? 'none' : 'flex',
         flexDirection: 'column',
         alignItems: 'flex-end',
         gap: '12px'

@@ -1255,7 +1255,7 @@ const DashboardLayout = () => {
         isOpen={isCommandPaletteOpen} 
         onClose={() => setIsCommandPaletteOpen(false)} 
       />
-      <QuickActionButton />
+      <QuickActionButton isMoreMenuOpen={isMoreMenuOpen} />
       <NotificationDrawer 
         isOpen={isNotificationDrawerOpen} 
         onClose={() => setIsNotificationDrawerOpen(false)} 

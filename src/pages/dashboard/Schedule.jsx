@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../../contexts/AuthContext';
+import { useIsMobile } from '../../hooks/useIsMobile';
 import { db } from '../../firebase';
 import { collection, onSnapshot, query, where, doc, serverTimestamp, getDocs } from 'firebase/firestore';
 import { addDoc, deleteDoc, updateDoc } from '../../firebase';
@@ -32,6 +33,7 @@ const computeEndTime = (startTimeStr) => {
 
 const Schedule = () => {
   const { user } = useAuth();
+  const isMobile = useIsMobile();
   const [schedules, setSchedules] = useState([]);
   const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -317,7 +319,7 @@ const Schedule = () => {
           </p>
         </div>
 
-        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
           {/* View toggle */}
           <div style={{ display: 'flex', background: 'var(--surface)', borderRadius: '100px', padding: '3px' }}>
             <button onClick={() => setViewMode('calendar')} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 16px', borderRadius: '100px', fontSize: '0.82rem', fontWeight: 700, background: viewMode === 'calendar' ? 'white' : 'transparent', color: viewMode === 'calendar' ? 'var(--primary)' : 'var(--text-muted)', border: 'none', cursor: 'pointer', transition: 'var(--transition)' }}>
@@ -481,8 +483,8 @@ const Schedule = () => {
 
           {/* 2. WEEK VIEW GRID */}
           {viewMode === 'week' && (
-            <motion.div variants={fadeItem} className="card card-p" style={{ background: 'var(--white)', display: 'flex', flexDirection: 'column', gap: '20px', overflowX: 'auto' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minWidth: '700px' }}>
+            <motion.div variants={fadeItem} className="card card-p" style={{ background: 'var(--white)', display: 'flex', flexDirection: 'column', gap: '20px', overflowX: isMobile ? 'visible' : 'auto' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', minWidth: isMobile ? 'auto' : '700px', flexWrap: isMobile ? 'wrap' : 'nowrap', gap: '10px' }}>
                 <button onClick={() => setCurrentWeekStart(prev => addDays(prev, -7))} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 700, fontSize: '0.85rem', color: 'var(--primary)', background: 'none', border: 'none', cursor: 'pointer' }}>
                   <ArrowLeft size={16} /> Previous Week
                 </button>
@@ -494,15 +496,23 @@ const Schedule = () => {
                 </button>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '12px', minWidth: '700px', marginTop: '10px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(7, 1fr)', gap: '12px', minWidth: isMobile ? 'auto' : '700px', marginTop: '10px' }}>
                 {weekDays.map((day, idx) => {
                   const dayName = getDayName(day);
                   const daySchedules = displayedSchedules.filter(item => item.day === dayName);
                   const isToday = isSameDay(new Date(), day);
 
                   return (
-                    <div key={idx} style={{ display: 'flex', flexDirection: 'column', gap: '10px', background: isToday ? 'rgba(83,109,254,0.02)' : 'transparent', border: isToday ? '1px solid rgba(83,109,254,0.2)' : '1px solid var(--border)', borderRadius: '16px', padding: '12px', minHeight: '280px' }}>
-                      <div style={{ textAlign: 'center', paddingBottom: '8px', borderBottom: '1px solid var(--border)' }}>
+                    <div key={idx} style={{ display: 'flex', flexDirection: 'column', gap: '10px', background: isToday ? 'rgba(83,109,254,0.02)' : 'transparent', border: isToday ? '1px solid rgba(83,109,254,0.2)' : '1px solid var(--border)', borderRadius: '16px', padding: '12px', minHeight: isMobile ? 'auto' : '280px' }}>
+                      <div style={{
+                        paddingBottom: '8px',
+                        borderBottom: '1px solid var(--border)',
+                        display: 'flex',
+                        flexDirection: isMobile ? 'row' : 'column',
+                        justifyContent: isMobile ? 'space-between' : 'center',
+                        alignItems: 'center',
+                        gap: '6px'
+                      }}>
                         <div style={{ fontSize: '0.75rem', fontWeight: 700, color: isToday ? 'var(--primary)' : 'var(--text-light)', textTransform: 'uppercase' }}>{format(day, 'eee')}</div>
                         <div style={{ fontSize: '1.25rem', fontWeight: 900, color: isToday ? 'var(--primary)' : 'var(--dark)' }}>{format(day, 'd')}</div>
                       </div>

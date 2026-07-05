@@ -556,6 +556,75 @@ const WorldCupPage = () => {
  const theme = TEAM_THEMES[user?.chosenTeam] || { primary: '#60A5FA', secondary: '#1E3A8A', gradient: 'linear-gradient(135deg, #1e1b4b, #09090b)', confetti: ['#60A5FA', '#1E3A8A'], flag: '' };
  const legendsList = LEGENDS[user?.chosenTeam] || ['Pele', 'Neymar Jr'];
 
+  // Temporary global styling for World Cup event
+  useEffect(() => {
+    // 1. Save original html/body classes and styles
+    const originalBodyClasses = Array.from(document.body.classList);
+    const originalHtmlClasses = Array.from(document.documentElement.classList);
+    const originalBodyBg = document.body.style.background;
+    const originalBodyColor = document.body.style.color;
+    const originalHtmlBg = document.documentElement.style.background;
+    const originalDataTheme = document.documentElement.getAttribute('data-theme');
+
+    // Save original CSS variables from document element
+    const rootStyle = document.documentElement.style;
+    const originalBgVar = rootStyle.getPropertyValue('--bg');
+    const originalTextPrimaryVar = rootStyle.getPropertyValue('--text-primary');
+    const originalTextSecondaryVar = rootStyle.getPropertyValue('--text-secondary');
+    const originalTextMutedVar = rootStyle.getPropertyValue('--text-muted');
+    const originalSurfaceCardVar = rootStyle.getPropertyValue('--surface-card');
+    const originalBorderVar = rootStyle.getPropertyValue('--border');
+
+    // 2. Apply World Cup dark theme classes & style properties
+    document.body.classList.add('worldcup-theme', 'dark-theme');
+    document.documentElement.classList.add('worldcup-theme', 'dark-theme');
+    document.documentElement.setAttribute('data-theme', 'dark');
+    
+    // Set variables to match the World Cup dark theme
+    rootStyle.setProperty('--bg', '#09090b');
+    rootStyle.setProperty('--text-primary', '#ffffff');
+    rootStyle.setProperty('--text-secondary', '#a1a1aa');
+    rootStyle.setProperty('--text-muted', '#71717a');
+    rootStyle.setProperty('--surface-card', '#18181b');
+    rootStyle.setProperty('--border', '#27272a');
+    
+    // Also style document.body directly
+    document.body.style.background = '#09090b';
+    document.body.style.color = '#ffffff';
+
+    return () => {
+      // 3. Restore all original styles & classes when leaving
+      document.body.classList.remove('worldcup-theme', 'dark-theme');
+      document.documentElement.classList.remove('worldcup-theme', 'dark-theme');
+      
+      // Restore classes
+      document.body.className = '';
+      originalBodyClasses.forEach(cls => document.body.classList.add(cls));
+      document.documentElement.className = '';
+      originalHtmlClasses.forEach(cls => document.documentElement.classList.add(cls));
+
+      // Restore data-theme
+      if (originalDataTheme) {
+        document.documentElement.setAttribute('data-theme', originalDataTheme);
+      } else {
+        document.documentElement.setAttribute('data-theme', 'light');
+      }
+
+      // Restore direct body/html styles
+      document.body.style.background = originalBodyBg;
+      document.body.style.color = originalBodyColor;
+      document.documentElement.style.background = originalHtmlBg;
+
+      // Restore CSS variables
+      if (originalBgVar) rootStyle.setProperty('--bg', originalBgVar); else rootStyle.removeProperty('--bg');
+      if (originalTextPrimaryVar) rootStyle.setProperty('--text-primary', originalTextPrimaryVar); else rootStyle.removeProperty('--text-primary');
+      if (originalTextSecondaryVar) rootStyle.setProperty('--text-secondary', originalTextSecondaryVar); else rootStyle.removeProperty('--text-secondary');
+      if (originalTextMutedVar) rootStyle.setProperty('--text-muted', originalTextMutedVar); else rootStyle.removeProperty('--text-muted');
+      if (originalSurfaceCardVar) rootStyle.setProperty('--surface-card', originalSurfaceCardVar); else rootStyle.removeProperty('--surface-card');
+      if (originalBorderVar) rootStyle.setProperty('--border', originalBorderVar); else rootStyle.removeProperty('--border');
+    };
+  }, []);
+
  // Welcome Screen checklist animation
  useEffect(() => {
  if (screen === 'welcome') {
