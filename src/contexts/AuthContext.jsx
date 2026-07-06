@@ -20,6 +20,9 @@ export const AuthProvider = ({ children }) => {
     const uid = auth.currentUser.uid;
     const userRef = doc(db, 'users', uid);
     
+    const userSnap = await getDoc(userRef);
+    const existingData = userSnap.exists() ? userSnap.data() : {};
+    
     const emailLower = profileData.email.trim().toLowerCase();
     let targetRole = 'student';
     let permissions = [];
@@ -68,10 +71,20 @@ export const AuthProvider = ({ children }) => {
       role: targetRole,
       permissions: permissions,
       profileCompleted: true,
+      notificationPreferences: existingData.notificationPreferences || {
+        email: true,
+        sms: true,
+        push: true,
+        billing: true,
+        classReminders: true
+      },
+      settings: existingData.settings || {
+        theme: 'light',
+        language: 'en',
+        soundEnabled: true
+      },
       updatedAt: serverTimestamp()
     };
-
-    const userSnap = await getDoc(userRef);
     if (targetRole === 'student') {
       let regFee = 300;
       let admFee = 0;
@@ -142,8 +155,6 @@ export const AuthProvider = ({ children }) => {
       } catch (e) {
         console.error("Error fetching fee structure in completeUserProfile:", e);
       }
-
-      const existingData = userSnap.exists() ? userSnap.data() : {};
 
       baseProfile = {
         ...baseProfile,

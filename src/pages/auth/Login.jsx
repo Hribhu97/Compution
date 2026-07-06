@@ -19,6 +19,7 @@ import { collection, query, where, getDocs, doc, serverTimestamp } from 'firebas
 import { auth, googleProvider, db, updateDoc } from '../../firebase';
 import { useAuth } from '../../contexts/AuthContext';
 import { authService } from '../../services/authService';
+import { normalizePhoneNumber, validatePhoneNumber, normalizeIndianNationalNumber } from '../../utils/phoneUtils';
 
 /* ── Friendly error messages ── */
 const friendlyError = (code) => {
@@ -214,6 +215,13 @@ const Login = () => {
     }
   }, [timer]);
 
+  // Cleanup reCAPTCHA on unmount
+  useEffect(() => {
+    return () => {
+      authService.clearRecaptchaVerifier();
+    };
+  }, []);
+
   // Auto-focus OTP inputs when view changes
   useEffect(() => {
     if (view === 'otp-verify') {
@@ -359,19 +367,20 @@ const Login = () => {
   const handleSendOTP = async (e) => {
     if (e) e.preventDefault();
     
-    const trimmedPhone = phoneNumber.trim();
-    if (!trimmedPhone) { setError('Please enter your phone number'); return; }
-    if (countryCode === '+91' && trimmedPhone.length !== 10) {
-      setError('Please enter a valid 10-digit mobile number');
+    const nationalNumber = normalizePhoneNumber(phoneNumber, countryCode);
+    setPhoneNumber(nationalNumber);
+    
+    const validation = validatePhoneNumber(nationalNumber, countryCode);
+    if (!validation.isValid) {
+      setError(validation.error);
       return;
     }
-    if (trimmedPhone.length < 8) { setError('Please enter a valid phone number'); return; }
 
     setLoading(true);
     setMobileStatus('Sending OTP...');
     setError('');
 
-    const fullPhone = `${countryCode}${trimmedPhone}`;
+    const fullPhone = `${countryCode}${nationalNumber}`;
 
     console.log('[Phone Auth Flow] ── handleSendOTP START ──');
     console.log('[Phone Auth Flow] Full phone number:', fullPhone);
@@ -402,7 +411,8 @@ const Login = () => {
     setMobileStatus('Sending OTP...');
     setError('');
 
-    const fullPhone = `${countryCode}${phoneNumber.trim()}`;
+    const nationalNumber = normalizePhoneNumber(phoneNumber, countryCode);
+    const fullPhone = `${countryCode}${nationalNumber}`;
 
     console.log('[Phone Auth Flow] ── handleResendOTP START ──');
     console.log('[Phone Auth Flow] Resending OTP to:', fullPhone);
@@ -452,7 +462,8 @@ const Login = () => {
       console.log('[Phone Auth Debug] OTP verified');
 
       // Check if this phone number is already registered under another account in Firestore
-      const fullPhone = `${countryCode}${phoneNumber.trim()}`;
+      const nationalNumber = normalizePhoneNumber(phoneNumber, countryCode);
+      const fullPhone = `${countryCode}${nationalNumber}`;
       const usersRef = collection(db, 'users');
       
       const qPhone = query(usersRef, where('phone', '==', fullPhone));
@@ -572,7 +583,8 @@ const Login = () => {
 
       // Update the existing profile to store the linked phone number and extended schema
       const userRef = doc(db, 'users', emailCredential.user.uid);
-      const fullPhone = `${countryCode}${phoneNumber.trim()}`;
+      const nationalNumber = normalizePhoneNumber(phoneNumber, countryCode);
+      const fullPhone = `${countryCode}${nationalNumber}`;
       const providers = emailCredential.user.providerData.map(p => p.providerId);
       
       await setDoc(userRef, {
@@ -610,7 +622,8 @@ const Login = () => {
       console.log('[Phone Auth Flow] Google Account linking SUCCESS!');
 
       const userRef = doc(db, 'users', googleResult.user.uid);
-      const fullPhone = `${countryCode}${phoneNumber.trim()}`;
+      const nationalNumber = normalizePhoneNumber(phoneNumber, countryCode);
+      const fullPhone = `${countryCode}${nationalNumber}`;
       const providers = googleResult.user.providerData.map(p => p.providerId);
       
       await setDoc(userRef, {
@@ -638,10 +651,12 @@ const Login = () => {
   // ── LINKING & VERIFY HANDLERS FOR COMPLETE PROFILE ──
   const handleSendLinkOTP = async (e) => {
     if (e) e.preventDefault();
-    const trimmedPhone = linkPhone.trim();
-    if (!trimmedPhone) { setError('Please enter your phone number'); return; }
-    if (trimmedPhone.length !== 10) {
-      setError('Please enter a valid 10-digit mobile number');
+    const nationalNumber = normalizePhoneNumber(linkPhone, countryCode);
+    setLinkPhone(nationalNumber); // Update the input field display
+    
+    const validation = validatePhoneNumber(nationalNumber, countryCode);
+    if (!validation.isValid) {
+      setError(validation.error);
       return;
     }
     
@@ -649,7 +664,7 @@ const Login = () => {
     setLinkStatus('Sending OTP...');
     setError('');
     
-    const fullPhone = `${countryCode}${trimmedPhone}`;
+    const fullPhone = `${countryCode}${nationalNumber}`;
     
     try {
       const isDuplicate = await authService.checkDuplicatePhoneNumber(fullPhone, auth.currentUser?.uid);
@@ -690,7 +705,7 @@ const Login = () => {
       setPhoneLinked(true);
       setLinkStatus('Phone Linked Successfully!');
       setLinkOTPSent(false);
-      setForm(f => ({ ...f, phone: `${countryCode}${linkPhone.trim()}` }));
+      setForm(f => ({ ...f, phone: `${countryCode}${normalizePhoneNumber(linkPhone, countryCode)}` }));
     } catch (err) {
       console.error(err);
       setError(friendlyPhoneError(err.code, err.message));
@@ -866,19 +881,24 @@ const Login = () => {
       setError('PIN code must be exactly 6 digits');
       return;
     }
-    if (!/^\d{10}$/.test(form.emergencyContact)) {
+    
+    const normalizedEmergency = normalizeIndianNationalNumber(form.emergencyContact);
+    if (normalizedEmergency.length !== 10) {
       setError('Emergency contact must be a valid 10-digit number');
       return;
     }
+    
     if (!form.school?.trim()) { setError('Please enter your School'); return; }
     if (!form.class) { setError('Please select your Class'); return; }
     if (!form.course?.trim()) { setError('Please enter your Course'); return; }
     if (!form.guardianName?.trim()) { setError('Please enter your Guardian\'s Name'); return; }
     
-    if (!/^\d{10}$/.test(form.guardianPhone)) {
+    const normalizedGuardian = normalizeIndianNationalNumber(form.guardianPhone);
+    if (normalizedGuardian.length !== 10) {
       setError('Guardian phone must be a valid 10-digit number');
       return;
     }
+    
     if (form.aadhaarNumber && !/^\d{12}$/.test(form.aadhaarNumber)) {
       setError('Aadhaar number must be exactly 12 digits');
       return;
@@ -897,12 +917,12 @@ const Login = () => {
         district: form.district,
         state: form.state,
         pin: form.pin,
-        emergencyContact: form.emergencyContact,
+        emergencyContact: normalizedEmergency,
         school: form.school,
         class: form.class,
         course: form.course,
         guardianName: form.guardianName,
-        guardianPhone: form.guardianPhone,
+        guardianPhone: normalizedGuardian,
         aadhaarNumber: form.aadhaarNumber,
         phoneVerified: isEmail ? phoneLinked : true,
         emailVerified: isPhone ? emailVerifiedLocal : true
@@ -1295,10 +1315,10 @@ const Login = () => {
                           <input
                             type="tel"
                             value={phoneNumber}
-                            onChange={(e) => { setPhoneNumber(e.target.value.replace(/\D/g, '')); setError(''); }}
+                            onChange={(e) => { setPhoneNumber(e.target.value.replace(/[^0-9\s\-\+\(\)\.]/g, '')); setError(''); }}
                             className="form-input"
-                            placeholder="Enter 10-digit number"
-                            maxLength={10}
+                            placeholder="Enter mobile number"
+                            maxLength={20}
                             style={{
                               borderRadius: '0 var(--radius-md) var(--radius-md) 0',
                               flex: 1
@@ -1885,10 +1905,10 @@ const Login = () => {
                             <div style={{ display: 'flex', gap: '8px', flex: 1, justifyContent: 'flex-end', marginLeft: '16px' }}>
                               <input
                                 type="tel"
-                                placeholder="10-digit Mobile"
+                                placeholder="Mobile number"
                                 value={linkPhone}
-                                onChange={(e) => setLinkPhone(e.target.value.replace(/\D/g, ''))}
-                                maxLength={10}
+                                onChange={(e) => { setLinkPhone(e.target.value.replace(/[^0-9\s\-\+\(\)\.]/g, '')); setError(''); }}
+                                maxLength={20}
                                 style={{ padding: '6px 12px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.8rem', width: '160px' }}
                               />
                               <button
@@ -2125,8 +2145,8 @@ const Login = () => {
                           <input
                             type="tel"
                             name="emergencyContact" value={form.emergencyContact}
-                            onChange={(e) => setForm({ ...form, emergencyContact: e.target.value.replace(/\D/g, '') })}
-                            maxLength={10}
+                            onChange={(e) => setForm({ ...form, emergencyContact: e.target.value.replace(/[^0-9\s\-\+\(\)\.]/g, '') })}
+                            maxLength={20}
                             placeholder="Emergency contact"
                             className="form-input"
                             required
@@ -2227,8 +2247,8 @@ const Login = () => {
                           <input
                             type="tel"
                             name="guardianPhone" value={form.guardianPhone}
-                            onChange={(e) => setForm({ ...form, guardianPhone: e.target.value.replace(/\D/g, '') })}
-                            maxLength={10}
+                            onChange={(e) => setForm({ ...form, guardianPhone: e.target.value.replace(/[^0-9\s\-\+\(\)\.]/g, '') })}
+                            maxLength={20}
                             placeholder="Guardian phone"
                             className="form-input"
                             required
