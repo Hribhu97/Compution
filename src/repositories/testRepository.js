@@ -75,6 +75,11 @@ export const testRepository = {
     await setDoc(attemptRef, { rank }, { merge: true });
   },
 
+  async updateTestAttemptScore(attemptId, score, percentage) {
+    const attemptRef = doc(db, 'testAttempts', attemptId);
+    await setDoc(attemptRef, { score, percentage }, { merge: true });
+  },
+
   async saveLeaderboard(testId, leaderboardData) {
     const leaderboardRef = doc(db, 'leaderboards', testId);
     await setDoc(leaderboardRef, leaderboardData, { merge: true });

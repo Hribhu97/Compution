@@ -1,15 +1,18 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useToast } from '../../../contexts/ToastContext';
 import { useTests } from '../../../hooks/useTests';
 import { testRepository } from '../../../repositories/testRepository';
+import { testService } from '../../../services/testService';
 import { 
   Play, Clock, Trophy, BarChart2, Plus, Trash2, Search, 
   ChevronRight, CheckCircle2, FileText, ArrowLeft, Award, HelpCircle
 } from 'lucide-react';
 import Modal from '../../../components/Modal';
 import { TestsSkeleton } from '../../../components/SkeletonLoader';
+import { db } from '../../../firebase';
+import { collection, query, where, getDocs } from 'firebase/firestore';
 
 // Dynamically load local files added in /Test folder
 const localTestFiles = import.meta.glob('../../../../Test/*.json', { eager: true });
@@ -50,6 +53,7 @@ const Tests = () => {
     duration: 30,
     difficulty: 'Medium',
     status: 'Published',
+    assignedStudentId: '',
     questions: []
   });
   const [newQuestion, setNewQuestion] = useState({
@@ -57,6 +61,9 @@ const Tests = () => {
     options: ['', '', '', ''],
     correctAnswerIndex: 0
   });
+
+  const [students, setStudents] = useState([]);
+  const [selectedTestAttempts, setSelectedTestAttempts] = useState([]);
 
   // DOCX Import States
   const [importDocxQuestions, setImportDocxQuestions] = useState([]);
@@ -257,6 +264,30 @@ const Tests = () => {
     }
   }, []);
 
+  useEffect(() => {
+    if (user?.role === 'admin' || user?.role === 'faculty' || user?.role === 'member') {
+      const q = query(collection(db, 'users'), where('role', '==', 'student'));
+      getDocs(q).then((snap) => {
+        const list = [];
+        snap.forEach(d => {
+          list.push({ uid: d.id, ...d.data() });
+        });
+        setStudents(list);
+      }).catch(err => console.error("Error fetching students:", err));
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (!selectedLeaderboardTestId) {
+      setSelectedTestAttempts([]);
+      return;
+    }
+    const unsub = testRepository.subscribeToTestAttemptsForTest(selectedLeaderboardTestId, (data) => {
+      setSelectedTestAttempts(data || []);
+    });
+    return () => unsub();
+  }, [selectedLeaderboardTestId]);
+
   const mergedTests = [...tests, ...localTests];
 
   // Listen to leaderboard of selected test
@@ -375,6 +406,7 @@ const Tests = () => {
         difficulty: testForm.difficulty,
         questionsCount: testForm.questions.length,
         status: testForm.status,
+        assignedStudentId: testForm.assignedStudentId || null,
         questions: testForm.questions
       });
 
@@ -388,11 +420,53 @@ const Tests = () => {
         duration: 30,
         difficulty: 'Medium',
         status: 'Published',
+        assignedStudentId: '',
         questions: []
       });
     } catch (err) {
       console.error(err);
       showToast("Failed to publish test", "error");
+    }
+  };
+
+  const handleAllotMarks = async (testId, testTitle, totalMarks, studentId, studentName, existingAttemptId = null) => {
+    const rawScore = window.prompt(`Allot Marks for ${studentName} (out of ${totalMarks}):`);
+    if (rawScore === null) return; // cancelled
+    
+    const score = Number(rawScore);
+    if (isNaN(score) || score < 0 || score > totalMarks) {
+      showToast(`Please enter a valid score between 0 and ${totalMarks}`, "warning");
+      return;
+    }
+
+    try {
+      const percentage = Math.round((score / totalMarks) * 100);
+      if (existingAttemptId) {
+        // Update existing attempt
+        await testRepository.updateTestAttemptScore(existingAttemptId, score, percentage);
+        showToast("Marks updated successfully!", "success");
+      } else {
+        // Create new attempt
+        const attemptData = {
+          studentId,
+          studentName,
+          testId,
+          testTitle,
+          score,
+          percentage,
+          timeTaken: 0,
+          rank: null,
+          allottedBy: user.displayName || user.name || 'Admin/Faculty'
+        };
+        await testRepository.saveTestAttempt(attemptData);
+        showToast("Marks allotted successfully!", "success");
+      }
+      
+      // Recalculate leaderboard
+      await testService.recalculateRanksAndLeaderboard(testId, testTitle, totalMarks);
+    } catch (err) {
+      console.error(err);
+      showToast("Failed to allot marks", "error");
     }
   };
 
@@ -557,10 +631,14 @@ const Tests = () => {
   // -----------------------------------------------------------------
   // MAIN PANEL RENDER (Student / Admin / Faculty View)
   // -----------------------------------------------------------------
-  const filteredTests = mergedTests.filter(t => 
-    t.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
-    t.subject.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const isStaff = user?.role === 'admin' || user?.role === 'faculty' || user?.role === 'member';
+  const filteredTests = mergedTests.filter(t => {
+    if (!isStaff && t.assignedStudentId && t.assignedStudentId !== user?.uid) {
+      return false;
+    }
+    return t.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
+           t.subject.toLowerCase().includes(searchQuery.toLowerCase());
+  });
 
   const avgScore = attempts.length > 0 ? Math.round(attempts.reduce((acc, a) => acc + a.percentage, 0) / attempts.length) : 0;
   const bestRank = attempts.length > 0 ? Math.min(...attempts.map(a => Number(a.rank) || 99)) : null;
@@ -644,7 +722,13 @@ const Tests = () => {
                       </div>
                       <div style={{ display: 'flex', gap: '12px', fontSize: '0.8rem', color: 'var(--text-muted)', flexWrap: 'wrap' }}>
                         <span>🎯 {test.subject}</span>
-                        <span>👥 {test.classGroup}</span>
+                        {test.assignedStudentId ? (
+                          <span style={{ color: '#E11D48', fontWeight: 700 }}>
+                            👤 {test.assignedStudentId === user?.uid ? "Assigned to You" : `Assigned Student`}
+                          </span>
+                        ) : (
+                          <span>👥 {test.classGroup}</span>
+                        )}
                         <span>⏱️ {test.duration} mins</span>
                         <span>📝 {test.questionsCount} Questions</span>
                       </div>
@@ -680,33 +764,109 @@ const Tests = () => {
         {/* Right Side: Leaderboard Panel */}
         <div style={{ background: 'var(--surface-card)', padding: '24px', borderRadius: '20px', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: '20px' }}>
           <h3 style={{ fontSize: '1.05rem', fontWeight: 800, margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <Trophy size={18} style={{ color: '#F59E0B' }} /> Test Leaderboard
+            <Trophy size={18} style={{ color: '#F59E0B' }} /> Test Grading & Leaderboard
           </h3>
 
-          {leaderboardData ? (
+          {selectedLeaderboardTestId ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', borderBottom: '1px solid var(--border)', paddingBottom: '8px' }}>
-                Showing rankings for: <strong>{leaderboardData.testTitle}</strong>
+                Showing grading for: <strong>{mergedTests.find(t => t.id === selectedLeaderboardTestId)?.title}</strong>
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {leaderboardData.topStudents && leaderboardData.topStudents.length > 0 ? (
-                  leaderboardData.topStudents.map((stud) => (
-                    <div key={stud.studentId} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 14px', background: stud.studentId === user?.uid ? 'rgba(37,99,235,0.06)' : '#F8F7F4', borderRadius: '8px', border: stud.studentId === user?.uid ? '1.5px solid rgba(37,99,235,0.2)' : '1px solid var(--border)' }}>
-                      <span style={{ width: '24px', fontWeight: 800, color: 'var(--text-muted)', fontSize: '0.88rem' }}>#{stud.rank}</span>
-                      <span style={{ flex: 1, fontWeight: 600, fontSize: '0.88rem' }}>{stud.name}</span>
-                      <strong style={{ color: '#2563EB', fontSize: '0.88rem' }}>{stud.score} pts</strong>
+              
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '300px', overflowY: 'auto' }}>
+                <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)' }}>Student Submissions:</span>
+                {selectedTestAttempts && selectedTestAttempts.length > 0 ? (
+                  selectedTestAttempts.map((stud) => (
+                    <div key={stud.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', padding: '10px 14px', background: stud.studentId === user?.uid ? 'rgba(37,99,235,0.06)' : '#F8F7F4', borderRadius: '8px', border: stud.studentId === user?.uid ? '1.5px solid rgba(37,99,235,0.2)' : '1px solid var(--border)' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column' }}>
+                        <span style={{ fontWeight: 600, fontSize: '0.88rem' }}>{stud.studentName}</span>
+                        {stud.allottedBy && <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Graded by {stud.allottedBy}</span>}
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <strong style={{ color: '#2563EB', fontSize: '0.88rem' }}>{stud.score} pts</strong>
+                        {(user?.role === 'admin' || user?.role === 'faculty') && (
+                          <button
+                            onClick={() => {
+                              const testObj = mergedTests.find(t => t.id === selectedLeaderboardTestId);
+                              if (testObj) {
+                                handleAllotMarks(
+                                  selectedLeaderboardTestId,
+                                  testObj.title,
+                                  testObj.totalMarks,
+                                  stud.studentId,
+                                  stud.studentName,
+                                  stud.id
+                                );
+                              }
+                            }}
+                            className="btn btn-ghost"
+                            style={{ padding: '4px 8px', fontSize: '0.72rem', borderRadius: '4px', border: '1px solid var(--border)' }}
+                          >
+                            Grade
+                          </button>
+                        )}
+                      </div>
                     </div>
                   ))
                 ) : (
                   <div style={{ color: 'var(--text-light)', fontStyle: 'italic', fontSize: '0.85rem', padding: '10px 0' }}>No submissions yet.</div>
                 )}
               </div>
-              
-              <div style={{ borderTop: '1px solid var(--border)', paddingTop: '12px', fontSize: '0.8rem', color: 'var(--text-muted)', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                <div>Avg Score: <strong>{leaderboardData.averageScore}</strong></div>
-                <div>Top Score: <strong>{leaderboardData.highestScore}</strong></div>
-                <div style={{ gridColumn: '1 / -1' }}>Participants: <strong>{leaderboardData.totalParticipants} students</strong></div>
-              </div>
+
+              {/* Direct grading dropdown for Admin & Faculty */}
+              {(user?.role === 'admin' || user?.role === 'faculty') && (
+                <div style={{ borderTop: '1px solid var(--border)', paddingTop: '16px', marginTop: '8px' }}>
+                  <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', display: 'block', marginBottom: '8px' }}>Grade Student Directly:</span>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <select
+                      id="direct-grade-student-select"
+                      className="form-input"
+                      style={{ fontSize: '0.82rem', padding: '8px', background: 'var(--surface-elevated)', flex: 1 }}
+                    >
+                      <option value="">Select Student...</option>
+                      {students.map(s => (
+                        <option key={s.uid} value={`${s.uid}|${s.name || s.displayName || 'Student'}`}>
+                          {s.name || s.displayName || 'Student'}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={() => {
+                        const selectEl = document.getElementById('direct-grade-student-select');
+                        if (!selectEl?.value) {
+                          showToast("Please select a student", "warning");
+                          return;
+                        }
+                        const [studentId, studentName] = selectEl.value.split('|');
+                        const testObj = mergedTests.find(t => t.id === selectedLeaderboardTestId);
+                        if (testObj) {
+                          const existingAttempt = selectedTestAttempts.find(a => a.studentId === studentId);
+                          handleAllotMarks(
+                            selectedLeaderboardTestId,
+                            testObj.title,
+                            testObj.totalMarks,
+                            studentId,
+                            studentName,
+                            existingAttempt?.id
+                          );
+                        }
+                      }}
+                      className="btn btn-primary"
+                      style={{ padding: '8px 12px', fontSize: '0.82rem', borderRadius: '8px' }}
+                    >
+                      Grade
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {leaderboardData && (
+                <div style={{ borderTop: '1px solid var(--border)', paddingTop: '12px', fontSize: '0.8rem', color: 'var(--text-muted)', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                  <div>Avg Score: <strong>{leaderboardData.averageScore}</strong></div>
+                  <div>Top Score: <strong>{leaderboardData.highestScore}</strong></div>
+                  <div style={{ gridColumn: '1 / -1' }}>Participants: <strong>{leaderboardData.totalParticipants} students</strong></div>
+                </div>
+              )}
             </div>
           ) : (
             <div style={{ color: 'var(--text-light)', fontStyle: 'italic', fontSize: '0.85rem' }}>Select a test on the left to inspect scores.</div>
@@ -754,6 +914,23 @@ const Tests = () => {
                 ))}
               </select>
             </div>
+          </div>
+
+          <div>
+            <label className="form-label">Assign to Specific Student (Optional)</label>
+            <select
+              className="form-input"
+              value={testForm.assignedStudentId}
+              onChange={e => setTestForm({ ...testForm, assignedStudentId: e.target.value })}
+              style={{ background: 'var(--white)' }}
+            >
+              <option value="">All Students (Default)</option>
+              {students.map(s => (
+                <option key={s.uid} value={s.uid}>
+                  {s.name || s.displayName || 'Student'} ({s.email || s.phone || 'No Contact'})
+                </option>
+              ))}
+            </select>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
