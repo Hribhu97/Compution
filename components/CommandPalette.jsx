@@ -7,7 +7,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { 
   Search, Command, User, Users, GraduationCap, 
   Calendar, FileText, ClipboardList, MessageSquare, 
-  CreditCard, Play, Plus, X, CornerDownLeft 
+  CreditCard, Play, Plus, X, CornerDownLeft, Trophy
 } from 'lucide-react';
 
 const CommandPalette = ({ isOpen, onClose }) => {
@@ -63,8 +63,8 @@ const CommandPalette = ({ isOpen, onClose }) => {
     { label: 'Dashboard Overview', path: '/dashboard', icon: Command, roles: ['admin', 'faculty', 'member', 'student'] },
     { label: 'Courses Roster', path: '/dashboard/courses', icon: GraduationCap, roles: ['admin', 'faculty', 'member', 'student'] },
     { label: 'Schedules & Slots', path: '/dashboard/schedule', icon: Calendar, roles: ['admin', 'faculty', 'member', 'student'] },
+    { label: 'World Cup Mania Event', path: '/dashboard/worldcup', icon: Trophy, roles: ['admin', 'student'] },
     { label: 'Tuition Fees Ledger', path: '/dashboard/fees', icon: CreditCard, roles: ['admin', 'student'] },
-    { label: 'Mini Games & Arcade', path: '/dashboard/mini-games', icon: Play, roles: ['admin', 'student'] },
     { label: 'Attendance Records', path: '/dashboard/attendance', icon: Users, roles: ['admin', 'faculty', 'student'] },
     { label: 'Homework Assignments', path: '/dashboard/assignments', icon: FileText, roles: ['admin', 'faculty', 'student'] },
     { label: 'Mock Practice Tests', path: '/dashboard/tests', icon: ClipboardList, roles: ['admin', 'faculty', 'student'] },

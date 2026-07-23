@@ -1,21 +1,26 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { db, firebaseConfig, syncStudentFeeAggregates } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { initializeApp } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
-import { collection, collectionGroup, doc, getDoc, getDocs, serverTimestamp, onSnapshot, query, where, orderBy, writeBatch, deleteField, arrayUnion, arrayRemove } from 'firebase/firestore';
+import { collection, collectionGroup, doc, getDoc, getDocs, serverTimestamp, onSnapshot, query, where, orderBy, writeBatch, deleteField, arrayUnion, arrayRemove, increment } from 'firebase/firestore';
 import { updateDoc, deleteDoc, addDoc, setDoc, runTransaction } from '../firebase';
-import { Search, Settings, Download, Plus, MoreHorizontal, Eye, ArrowUpRight, Sparkles, ShieldCheck, Trash2, RefreshCw, CheckCircle, XCircle, AlertTriangle, Users, Bell, AlertCircle, Calendar, GraduationCap, ChevronDown, Mail, Send, Pencil, X, ShieldAlert, MessageSquare, Briefcase, UserCheck, Loader2, Check, CheckCheck, Info, UserMinus } from 'lucide-react';
+import { Search, Settings, Download, Plus, MoreHorizontal, Eye, ArrowUpRight, Sparkles, ShieldCheck, Trash2, RefreshCw, CheckCircle, XCircle, AlertTriangle, Users, Bell, AlertCircle, Calendar, GraduationCap, ChevronDown, Mail, Send, Pencil, X, ShieldAlert, MessageSquare, Briefcase, UserCheck, Loader2, Check, CheckCheck, Info, UserMinus, BookOpen, UploadCloud, FileText, Star, Filter, CalendarCheck } from 'lucide-react';
 import Modal from './Modal';
 import SystemHealthPanel from './SystemHealthPanel';
+import StaffCard from './StaffCard';
 import ThemeInspector from '../theme/ThemeInspector';
+import StudentAttendanceWorkspace from './attendance/StudentAttendanceWorkspace';
 import { systemDoctorService } from '../services/systemDoctorService';
 import { reportService } from '../services/reportService';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, PieChart, Pie } from 'recharts';
 import { clientMigrationService } from '../services/clientMigrationService';
 import { calculateFeeMetrics, getStudentMonthlyFee } from '../utils/feeCalculator';
+import { useIsMobile } from '../hooks/useIsMobile';
+import { calculateFacultyWorkload, isFacultyOnLeave } from '../services/workloadEngine';
 
 const stagger = { show: { transition: { staggerChildren: 0.05 } } };
 const item = { hidden: { opacity: 0, y: 10 }, show: { opacity: 1, y: 0, transition: { duration: 0.3 } } };
@@ -67,12 +72,527 @@ const computeEndTime = (startTimeStr) => {
   return `${endHoursStr}:${endMinutesStr}`;
 };
 
+const RoadmapUploadZone = ({ studentId, course, onSuccess }) => {
+  const [isDragging, setIsDragging] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [status, setStatus] = useState('idle'); // idle, uploading, parsing, saving, success, error
+  const [errMsg, setErrMsg] = useState('');
+  const fileInputRef = React.useRef(null);
+
+  // Lazy-load mammoth parser from CDN
+  const loadMammoth = () => {
+    return new Promise((resolve, reject) => {
+      if (window.mammoth) {
+        resolve(window.mammoth);
+        return;
+      }
+      const script = document.createElement('script');
+      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.8.0/mammoth.browser.min.js';
+      script.onload = () => resolve(window.mammoth);
+      script.onerror = () => reject(new Error('Failed to load mammoth parser'));
+      document.head.appendChild(script);
+    });
+  };
+
+  // Parser: Extract syllabus chapters and topics from text
+  const parseSyllabusFromText = (text) => {
+    const lines = text.split('\n').map(line => line.trim()).filter(line => line.length > 0);
+    const chapters = [];
+    let currentChapter = null;
+    let topicIdCounter = 1;
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+
+      // Check if line starts with Chapter, Unit, Module, Section or roman numerals
+      const isChapter = /^(?:Chapter|Unit|Module|Section|Part)\s*\d+/i.test(line) ||
+                        /^[IVXLCDM]+\s*[\.:-]/i.test(line) ||
+                        /^(?:Unit|Chapter)\s*[A-Z]/i.test(line);
+
+      if (isChapter) {
+        if (currentChapter && currentChapter.topics.length > 0) {
+          chapters.push(currentChapter);
+        }
+        currentChapter = {
+          id: `ch_${chapters.length + 1}`,
+          name: line,
+          topics: []
+        };
+      } else {
+        const topicName = line.replace(/^[\s-•\*○▪▫\-]+\s*/, '').replace(/^\d+(\.\d+)*\s*[\.:-]?\s*/, '').trim();
+        if (topicName && topicName.length > 1) {
+          if (!currentChapter) {
+            currentChapter = {
+              id: 'ch_1',
+              name: 'General Syllabus / Introduction',
+              topics: []
+            };
+          }
+          currentChapter.topics.push({
+            id: `t_${topicIdCounter++}`,
+            name: topicName,
+            facultyCompleted: false,
+            studentCompleted: false,
+            facultyCompletedAt: null,
+            studentCompletedAt: null
+          });
+        }
+      }
+    }
+
+    if (currentChapter && currentChapter.topics.length > 0) {
+      chapters.push(currentChapter);
+    }
+
+    return chapters;
+  };
+
+  const handleFile = async (file) => {
+    if (!file) return;
+    const ext = file.name.split('.').pop().toLowerCase();
+    if (ext !== 'docx') {
+      setStatus('error');
+      setErrMsg('Only .docx syllabus files are supported.');
+      return;
+    }
+
+    setStatus('parsing');
+    setProgress(30);
+
+    try {
+      const mammothInstance = await loadMammoth();
+      setProgress(60);
+      
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        try {
+          const arrayBuffer = e.target.result;
+          const result = await mammothInstance.extractRawText({ arrayBuffer });
+          const newChapters = parseSyllabusFromText(result.value);
+
+          if (newChapters.length === 0) {
+            setStatus('error');
+            setErrMsg('No chapters or topics found in the syllabus document. Verify structure.');
+            return;
+          }
+
+          setProgress(80);
+          setStatus('saving');
+
+          // Merge if existing roadmap exists
+          const docRef = doc(db, 'studentClassRoadmaps', studentId);
+          const docSnap = await getDoc(docRef);
+          
+          let chaptersToSave = newChapters;
+          if (docSnap.exists()) {
+            const oldRoadmap = docSnap.data();
+            const oldChapters = oldRoadmap.chapters || [];
+            
+            // Map old completed states to new chapters if names match
+            chaptersToSave = newChapters.map(newCh => {
+              const oldCh = oldChapters.find(c => c.name.toLowerCase() === newCh.name.toLowerCase());
+              if (!oldCh) return newCh;
+
+              const updatedTopics = newCh.topics.map(newTop => {
+                const oldTop = oldCh.topics.find(t => t.name.toLowerCase() === newTop.name.toLowerCase());
+                if (!oldTop) return newTop;
+
+                return {
+                  ...newTop,
+                  facultyCompleted: !!oldTop.facultyCompleted,
+                  studentCompleted: !!oldTop.studentCompleted,
+                  facultyCompletedAt: oldTop.facultyCompletedAt || null,
+                  studentCompletedAt: oldTop.studentCompletedAt || null
+                };
+              });
+
+              return { ...newCh, topics: updatedTopics };
+            });
+          }
+
+          // Count totals
+          let totalTopics = 0;
+          let completedTopics = 0;
+          chaptersToSave.forEach(ch => {
+            ch.topics.forEach(t => {
+              totalTopics++;
+              if (t.facultyCompleted && t.studentCompleted) {
+                completedTopics++;
+              }
+            });
+          });
+
+          const progressPercent = totalTopics > 0 ? Math.round((completedTopics / totalTopics) * 100) : 0;
+
+          await setDoc(docRef, {
+            studentId,
+            course: course || 'Syllabus Tracker',
+            uploadedAt: serverTimestamp(),
+            totalTopicsCount: totalTopics,
+            completedTopicsCount: completedTopics,
+            progressPercent: progressPercent,
+            chapters: chaptersToSave
+          }, { merge: true });
+
+          setProgress(100);
+          setStatus('success');
+          if (onSuccess) onSuccess();
+        } catch (err) {
+          console.error(err);
+          setStatus('error');
+          setErrMsg('Error reading or merging the roadmap syllabus.');
+        }
+      };
+
+      reader.onerror = () => {
+        setStatus('error');
+        setErrMsg('Failed to read file bytes.');
+      };
+
+      reader.readAsArrayBuffer(file);
+    } catch (err) {
+      console.error(err);
+      setStatus('error');
+      setErrMsg('Mammoth library load failed.');
+    }
+  };
+
+  const onDragOver = (e) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const onDragLeave = () => {
+    setIsDragging(false);
+  };
+
+  const onDrop = (e) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files?.[0];
+    handleFile(file);
+  };
+
+  return (
+    <div 
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+      onClick={() => fileInputRef.current?.click()}
+      style={{
+        border: isDragging ? '2px dashed var(--primary)' : '2px dashed var(--border)',
+        borderRadius: '16px',
+        padding: '32px 20px',
+        textAlign: 'center',
+        background: isDragging ? 'rgba(99,102,241,0.02)' : 'var(--surface)',
+        cursor: 'pointer',
+        transition: 'all 0.2s',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: '12px'
+      }}
+    >
+      <input 
+        type="file" 
+        ref={fileInputRef} 
+        style={{ display: 'none' }} 
+        accept=".docx" 
+        onChange={e => handleFile(e.target.files?.[0])} 
+      />
+
+      {status === 'idle' && (
+        <>
+          <UploadCloud size={40} style={{ color: 'var(--text-light)' }} />
+          <div>
+            <strong style={{ color: 'var(--dark)', display: 'block', fontSize: '0.9rem' }}>Drag & drop ClassTracker.docx</strong>
+            <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>or click to browse from files</span>
+          </div>
+        </>
+      )}
+
+      {status === 'parsing' && (
+        <>
+          <Loader2 size={32} className="spinning" style={{ color: 'var(--primary)' }} />
+          <div style={{ fontSize: '0.85rem', color: 'var(--text-light)', fontWeight: 700 }}>Extracting syllabus details ({progress}%)</div>
+        </>
+      )}
+
+      {status === 'saving' && (
+        <>
+          <Loader2 size={32} className="spinning" style={{ color: 'var(--success)' }} />
+          <div style={{ fontSize: '0.85rem', color: 'var(--text-light)', fontWeight: 700 }}>Structuring learning roadmap...</div>
+        </>
+      )}
+
+      {status === 'success' && (
+        <>
+          <CheckCircle size={40} style={{ color: 'var(--success)' }} />
+          <div style={{ fontSize: '0.85rem', color: 'var(--text-light)', fontWeight: 700 }}>Roadmap generated successfully!</div>
+        </>
+      )}
+
+      {status === 'error' && (
+        <>
+          <AlertTriangle size={40} style={{ color: 'var(--danger)' }} />
+          <div>
+            <strong style={{ color: 'var(--danger)', display: 'block', fontSize: '0.85rem' }}>Upload failed</strong>
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{errMsg || 'Verify file format and try again.'}</span>
+          </div>
+        </>
+      )}
+    </div>
+  );
+};
+
+const DrawerClassTracker = ({ studentId, course }) => {
+  const [roadmap, setRoadmap] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [expandedChapters, setExpandedChapters] = useState({});
+  const [isReplacing, setIsReplacing] = useState(false);
+
+  useEffect(() => {
+    setLoading(true);
+    const docRef = doc(db, 'studentClassRoadmaps', studentId);
+    const unsubscribe = onSnapshot(docRef, (snapshot) => {
+      if (snapshot.exists()) {
+        setRoadmap(snapshot.data());
+      } else {
+        setRoadmap(null);
+      }
+      setLoading(false);
+    }, (err) => {
+      console.error("Roadmap snapshot error:", err);
+      setLoading(false);
+    });
+    return () => unsubscribe();
+  }, [studentId]);
+
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', padding: '40px 0' }}>
+        <Loader2 size={32} className="spinning" style={{ color: 'var(--primary)' }} />
+      </div>
+    );
+  }
+
+  const toggleChapter = (chId) => {
+    setExpandedChapters(prev => ({ ...prev, [chId]: !prev[chId] }));
+  };
+
+  // Reusable Donut Chart for Drawer
+  const DrawerDonut = ({ percent, total, completed }) => {
+    const size = 100;
+    const strokeWidth = 10;
+    const radius = (size - strokeWidth) / 2;
+    const circumference = radius * 2 * Math.PI;
+    const offset = circumference - (percent / 100) * circumference;
+
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: '16px', background: 'var(--surface)', padding: '16px', borderRadius: '16px', border: '1px solid var(--border)' }}>
+        <div style={{ position: 'relative', width: size, height: size }}>
+          <svg width={size} height={size} style={{ transform: 'rotate(-90deg)' }}>
+            <circle cx={size / 2} cy={size / 2} r={radius} fill="transparent" stroke="rgba(0,0,0,0.04)" strokeWidth={strokeWidth} />
+            <circle cx={size / 2} cy={size / 2} r={radius} fill="transparent" stroke="var(--primary)" strokeWidth={strokeWidth} strokeDasharray={circumference} strokeDashoffset={offset} strokeLinecap="round" style={{ transition: 'stroke-dashoffset 0.5s' }} />
+          </svg>
+          <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.88rem', fontWeight: 900, color: 'var(--dark)' }}>
+            {percent}%
+          </div>
+        </div>
+        <div>
+          <div style={{ fontSize: '0.85rem', fontWeight: 800, color: 'var(--dark)' }}>Course Progress</div>
+          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px' }}>
+            {completed} of {total} topics complete
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  if (!roadmap || isReplacing) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '10px 0' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <h4 style={{ margin: 0, fontSize: '0.9rem', fontWeight: 800 }}>Upload Class Tracker</h4>
+          {isReplacing && (
+            <button 
+              onClick={() => setIsReplacing(false)} 
+              className="btn btn-ghost" 
+              style={{ padding: '4px 10px', fontSize: '0.75rem' }}
+            >
+              Cancel
+            </button>
+          )}
+        </div>
+        <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+          {isReplacing 
+            ? "Upload a new syllabus file. Future topics will merge, and existing completion records will be preserved." 
+            : "No Class Tracker syllabus uploaded for this student yet."
+          }
+        </p>
+        <RoadmapUploadZone 
+          studentId={studentId} 
+          course={course} 
+          onSuccess={() => {
+            setIsReplacing(false);
+          }} 
+        />
+      </div>
+    );
+  }
+
+  const chapters = roadmap.chapters || [];
+  const totalTopics = roadmap.totalTopicsCount || 0;
+  const completedTopics = roadmap.completedTopicsCount || 0;
+  const progressPercent = roadmap.progressPercent || 0;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '10px 0' }}>
+      {/* Summary dashboard */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }} className="grid-2-col-mobile">
+        <DrawerDonut percent={progressPercent} total={totalTopics} completed={completedTopics} />
+        
+        <div style={{ background: 'var(--surface)', padding: '16px', borderRadius: '16px', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '6px' }}>
+          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Active Course</div>
+          <div style={{ fontSize: '0.9rem', fontWeight: 800, color: 'var(--dark)' }}>{roadmap.course || 'Syllabus Tracker'}</div>
+          
+          <button
+            onClick={() => setIsReplacing(true)}
+            className="btn btn-ghost"
+            style={{ 
+              padding: '6px 12px', fontSize: '0.72rem', fontWeight: 700, color: 'var(--primary)',
+              width: 'fit-content', border: '1px solid rgba(83,109,254,0.15)', background: 'var(--white)',
+              borderRadius: '8px', marginTop: '6px', cursor: 'pointer' 
+            }}
+          >
+            🔄 Replace Syllabus Tracker
+          </button>
+        </div>
+      </div>
+
+      {/* Chapters Tree */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '6px' }}>
+        <h4 style={{ margin: 0, fontSize: '0.88rem', fontWeight: 800, color: 'var(--dark)' }}>Chapter Roadmap</h4>
+        
+        {chapters.map((ch, chIdx) => {
+          const isExpanded = !!expandedChapters[ch.id];
+          const chCompleted = ch.topics.filter(t => t.facultyCompleted && t.studentCompleted).length;
+          const chTotal = ch.topics.length;
+          const chPercent = chTotal > 0 ? Math.round((chCompleted / chTotal) * 100) : 0;
+
+          return (
+            <div key={ch.id} style={{ border: '1px solid var(--border)', borderRadius: '12px', overflow: 'hidden', background: 'var(--white)' }}>
+              {/* Accordion Header */}
+              <div 
+                onClick={() => toggleChapter(ch.id)}
+                style={{ 
+                  padding: '12px 16px', background: 'var(--surface)', 
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center', 
+                  cursor: 'pointer', userSelect: 'none' 
+                }}
+              >
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: '0.82rem', fontWeight: 800, color: 'var(--dark)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {ch.name}
+                  </div>
+                  <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span>{chCompleted} / {chTotal} Completed</span>
+                    <span style={{ width: '4px', height: '4px', borderRadius: '50%', background: 'var(--text-muted)' }} />
+                    <span style={{ fontWeight: 700, color: chPercent === 100 ? 'var(--success)' : 'var(--primary)' }}>{chPercent}%</span>
+                  </div>
+                </div>
+                <ChevronDown size={16} style={{ color: 'var(--text-light)', transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
+              </div>
+
+              {/* Accordion Topics List */}
+              <AnimatePresence initial={false}>
+                {isExpanded && (
+                  <motion.div
+                    initial={{ height: 0 }}
+                    animate={{ height: 'auto' }}
+                    exit={{ height: 0 }}
+                    transition={{ duration: 0.2 }}
+                    style={{ overflow: 'hidden', borderTop: '1px solid var(--border)' }}
+                  >
+                    <div style={{ padding: '8px 16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      {ch.topics.map((t) => {
+                        const bothDone = t.facultyCompleted && t.studentCompleted;
+                        return (
+                          <div 
+                            key={t.id} 
+                            style={{ 
+                              display: 'flex', justifyContent: 'space-between', alignItems: 'center', 
+                              padding: '8px 10px', borderRadius: '8px', background: bothDone ? 'rgba(16,185,129,0.03)' : 'var(--bg)',
+                              border: bothDone ? '1px dashed rgba(16,185,129,0.2)' : '1px solid transparent'
+                            }}
+                          >
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1, minWidth: 0, paddingRight: '12px' }}>
+                              <span style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--dark)' }}>
+                                {t.name}
+                              </span>
+                              <span style={{ fontSize: '0.66rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                {t.studentCompleted ? (
+                                  <span style={{ color: 'var(--success)', fontWeight: 700 }}>✓ Student Revised</span>
+                                ) : (
+                                  <span>☐ Revision Pending</span>
+                                )}
+                              </span>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleToggleFacultyCheckbox(studentId, ch.id, t.id, t.facultyCompleted);
+                              }}
+                              className="btn"
+                              style={{
+                                padding: '6px 12px',
+                                fontSize: '0.7rem',
+                                fontWeight: 700,
+                                borderRadius: '6px',
+                                border: '1px solid var(--border)',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                background: t.facultyCompleted ? 'var(--primary)' : 'var(--white)',
+                                color: t.facultyCompleted ? 'white' : 'var(--text-light)'
+                              }}
+                            >
+                              {t.facultyCompleted ? (
+                                <>
+                                  <Check size={12} /> Taught
+                                </>
+                              ) : (
+                                "Mark Taught"
+                              )}
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
 const AdminDashboard = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
+  const isMobile = useIsMobile();
   const { showToast } = useToast();
   // Navigation Tabs
   const [activePanelTab, setActivePanelTab] = useState('students'); 
   const [settingsSubTab, setSettingsSubTab] = useState('aadhaar');
+  const [memberRoleFilter, setMemberRoleFilter] = useState('all');
+  const [memberCurrentPage, setMemberCurrentPage] = useState(1);
   const [slotRequestsList, setSlotRequestsList] = useState([]);
   const [isAddScheduleOpen, setIsAddScheduleOpen] = useState(false);
   const [editingSchedule, setEditingSchedule] = useState(null);
@@ -123,6 +643,9 @@ const AdminDashboard = () => {
   const [facAvailabilityFilter, setFacAvailabilityFilter] = useState('all');
   const [search, setSearch] = useState('');
   const [toast, setToast] = useState(null);
+  const [expandedBios, setExpandedBios] = useState({});
+  const [onboardingStudent, setOnboardingStudent] = useState(null);
+  const [isUploadRoadmapOpen, setIsUploadRoadmapOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [isAddStudentOpen, setIsAddStudentOpen] = useState(false);
   const [isAddFacultyOpen, setIsAddFacultyOpen] = useState(false);
@@ -172,6 +695,13 @@ const AdminDashboard = () => {
   const [isRosterSubmitting, setIsRosterSubmitting] = useState(false);
   const [rosterForm, setRosterForm] = useState({ studentId: '', facultyId: '', displayName: '', email: '', phone: '', course: '' });
 
+  // Limits Modal States
+  const [isLimitsModalOpen, setIsLimitsModalOpen] = useState(false);
+  const [selectedLimitsFaculty, setSelectedLimitsFaculty] = useState(null);
+  const [limitMaxDailyBatches, setLimitMaxDailyBatches] = useState(5);
+  const [limitMaxWeeklyHours, setLimitMaxWeeklyHours] = useState(30);
+  const [limitMaxConsecutiveClasses, setLimitMaxConsecutiveClasses] = useState(3);
+
   // Inline edits
   const [editingStudentId, setEditingStudentId] = useState(null);
   const [editingAmount, setEditingAmount] = useState('');
@@ -197,6 +727,15 @@ const AdminDashboard = () => {
   // Master Fee Structure Config
   const [feeStructure, setFeeStructure] = useState(null);
   const [aadhaarStatusFilter, setAadhaarStatusFilter] = useState('all');
+
+  // Workload and Schedule System States
+  const [leaveRequests, setLeaveRequests] = useState([]);
+  const [holidays, setHolidays] = useState([]);
+  const [trackerEntries, setTrackerEntries] = useState([]);
+  const [leaveStartDate, setLeaveStartDate] = useState('');
+  const [leaveEndDate, setLeaveEndDate] = useState('');
+  const [leaveReason, setLeaveReason] = useState('');
+  const [isSubmittingLeave, setIsSubmittingLeave] = useState(false);
 
 
   // 1. DATA LISTENERS
@@ -472,6 +1011,42 @@ const AdminDashboard = () => {
       console.error("AdminDashboard: faculty queries listener creation failed", err);
     }
 
+    // 13. Leave Requests listener
+    let unsubLeaves = () => {};
+    try {
+      unsubLeaves = onSnapshot(collection(db, 'leaveRequests'), (snap) => {
+        const list = [];
+        snap.forEach(d => list.push({ id: d.id, ...d.data() }));
+        setLeaveRequests(list);
+      }, (err) => console.error("Error subscribing to leaveRequests:", err));
+    } catch (err) {
+      console.error(err);
+    }
+
+    // 14. Holidays listener
+    let unsubHolidays = () => {};
+    try {
+      unsubHolidays = onSnapshot(collection(db, 'holidays'), (snap) => {
+        const list = [];
+        snap.forEach(d => list.push({ id: d.id, ...d.data() }));
+        setHolidays(list);
+      }, (err) => console.error("Error subscribing to holidays:", err));
+    } catch (err) {
+      console.error(err);
+    }
+
+    // 15. Tracker entries listener
+    let unsubTracker = () => {};
+    try {
+      unsubTracker = onSnapshot(collection(db, 'classTrackerEntries'), (snap) => {
+        const list = [];
+        snap.forEach(d => list.push({ id: d.id, ...d.data() }));
+        setTrackerEntries(list);
+      }, (err) => console.error("Error subscribing to classTrackerEntries:", err));
+    } catch (err) {
+      console.error(err);
+    }
+
     return () => {
       unsubUsers();
       unsubLeads();
@@ -488,6 +1063,9 @@ const AdminDashboard = () => {
       unsubQueries();
       unsubFeeStruct();
       unsubPaymentReq();
+      unsubLeaves();
+      unsubHolidays();
+      unsubTracker();
     };
   }, [user?.uid, user?.role]);
 
@@ -550,7 +1128,9 @@ const AdminDashboard = () => {
       { match: 'hribhu', photoURL: '/team/hribhu.jpg' },
       { match: 'sharmistha', photoURL: '/team/sharmistha.jpeg' },
       { match: 'piyali', photoURL: '/team/piyali.jpg' },
-      { match: 'rajdeep', photoURL: '/team/rajdeep.jpg' }
+      { match: 'rajdeep', photoURL: '/team/rajdeep.jpg' },
+      { match: 'sreeparna', photoURL: '/team/sreeparna.jpeg' },
+      { match: 'panja', photoURL: '/team/sreeparna.jpeg' }
     ];
 
     // 1. Sync users collection
@@ -1281,6 +1861,92 @@ const AdminDashboard = () => {
     }
   };
 
+  const handleToggleFacultyCheckbox = async (studentId, chapterId, topicId, currentVal) => {
+    try {
+      const docRef = doc(db, 'studentClassRoadmaps', studentId);
+      const docSnap = await getDoc(docRef);
+      if (!docSnap.exists()) return;
+
+      const roadmap = docSnap.data();
+      const chapters = roadmap.chapters || [];
+      
+      let targetTopicName = '';
+      let isFullyCompletedNow = false;
+
+      const updatedChapters = chapters.map(ch => {
+        if (ch.id !== chapterId) return ch;
+
+        const updatedTopics = ch.topics.map(t => {
+          if (t.id !== topicId) return t;
+
+          targetTopicName = t.name;
+          const newVal = !currentVal;
+          const bothChecked = newVal && t.studentCompleted;
+          if (bothChecked) {
+            isFullyCompletedNow = true;
+          }
+
+          return {
+            ...t,
+            facultyCompleted: newVal,
+            facultyCompletedAt: newVal ? new Date().toISOString() : null
+          };
+        });
+
+        return { ...ch, topics: updatedTopics };
+      });
+
+      // Recalculate counts
+      let totalTopics = 0;
+      let completedTopics = 0;
+      updatedChapters.forEach(ch => {
+        ch.topics.forEach(t => {
+          totalTopics++;
+          if (t.facultyCompleted && t.studentCompleted) {
+            completedTopics++;
+          }
+        });
+      });
+
+      const progressPercent = totalTopics > 0 ? Math.round((completedTopics / totalTopics) * 100) : 0;
+
+      await setDoc(docRef, {
+        chapters: updatedChapters,
+        totalTopicsCount: totalTopics,
+        completedTopicsCount: completedTopics,
+        progressPercent: progressPercent
+      }, { merge: true });
+
+      // Trigger notification to student
+      try {
+        await notificationService.send(
+          studentId,
+          `Teacher marked ${targetTopicName} as completed`,
+          `Your mentor has marked "${targetTopicName}" as taught. Complete your revision checklist to mark it 100% complete!`,
+          'class_reminder'
+        );
+      } catch (errNotification) {
+        console.error("Failed to send student notification:", errNotification);
+      }
+
+      // Award XP if fully completed
+      if (isFullyCompletedNow) {
+        const studentRef = doc(db, 'users', studentId);
+        const studentSnap = await getDoc(studentRef);
+        if (studentSnap.exists()) {
+          const currentXp = Number(studentSnap.data().xp || 0);
+          await setDoc(studentRef, { xp: currentXp + 20 }, { merge: true });
+          triggerToast(`Topic completed! Student awarded +20 XP.`, 'success');
+        }
+      } else {
+        triggerToast("Checkbox updated.", "success");
+      }
+    } catch (err) {
+      console.error("Error toggling checkbox:", err);
+      triggerToast("Failed to update checkbox status.", "danger");
+    }
+  };
+
   const handleRemoveStudentFromRoster = async (studentId) => {
     try {
       const studentSnap = await getDoc(doc(db, 'users', studentId));
@@ -1787,7 +2453,7 @@ const AdminDashboard = () => {
 
       await logAdminAction('account_create', newUserId, { email, displayName, role });
       triggerToast(`Account created for ${displayName}! Password: ${defaultPassword}`, 'success');
-      return true;
+      return { success: true, uid: newUserId };
     } catch (err) {
       console.error(err);
       if (err.code === 'auth/email-already-in-use') {
@@ -1795,7 +2461,7 @@ const AdminDashboard = () => {
       } else {
         triggerToast('Failed to create account. Try again.', 'danger');
       }
-      return false;
+      return { success: false };
     }
   };
 
@@ -1824,7 +2490,7 @@ const AdminDashboard = () => {
     // If Admin is in 'create' mode, use the original handleCreateAccount
     if (userRoleLower === 'admin' && rosterMode === 'create') {
       setIsRosterSubmitting(true);
-      const success = await handleCreateAccount(newStudent.email, newStudent.displayName, 'student', {
+      const res = await handleCreateAccount(newStudent.email, newStudent.displayName, 'student', {
         phone: newStudent.phone,
         course: newStudent.course,
         studentId: `COMP-2026-${Math.floor(1000 + Math.random() * 9000)}`,
@@ -1833,8 +2499,15 @@ const AdminDashboard = () => {
         feesAmount: 2400
       });
       setIsRosterSubmitting(false);
-      if (success) {
+      if (res && res.success) {
         setIsAddStudentOpen(false);
+        setOnboardingStudent({
+          uid: res.uid,
+          displayName: newStudent.displayName,
+          email: newStudent.email,
+          course: newStudent.course
+        });
+        setIsUploadRoadmapOpen(true);
         setNewStudent({ displayName: '', email: '', phone: '', course: '' });
       }
       return;
@@ -2632,6 +3305,62 @@ const AdminDashboard = () => {
     }
   };
 
+  // ── FACULTY CAPACITY LIMITS HANDLERS ──
+  const handleOpenLimitsModal = (fac) => {
+    setSelectedLimitsFaculty(fac);
+    setLimitMaxDailyBatches(fac.maxDailyBatches || 5);
+    setLimitMaxWeeklyHours(fac.maxWeeklyHours || 30);
+    setLimitMaxConsecutiveClasses(fac.maxConsecutiveClasses || 3);
+    setIsLimitsModalOpen(true);
+  };
+
+  const handleSaveLimits = async (e) => {
+    e.preventDefault();
+    if (!selectedLimitsFaculty) return;
+    try {
+      const ref = doc(db, 'users', selectedLimitsFaculty.id);
+      await updateDoc(ref, {
+        maxDailyBatches: Number(limitMaxDailyBatches),
+        maxWeeklyHours: Number(limitMaxWeeklyHours),
+        maxConsecutiveClasses: Number(limitMaxConsecutiveClasses)
+      });
+      triggerToast('Faculty limits updated successfully!', 'success');
+      setIsLimitsModalOpen(false);
+    } catch (err) {
+      console.error('Error saving faculty limits:', err);
+      triggerToast('Failed to update faculty limits', 'danger');
+    }
+  };
+
+  const handleSubmitLeave = async (e) => {
+    e.preventDefault();
+    if (!leaveStartDate || !leaveEndDate || !leaveReason.trim()) {
+      triggerToast('Please fill all leave fields', 'danger');
+      return;
+    }
+    setIsSubmittingLeave(true);
+    try {
+      await addDoc(collection(db, 'leaveRequests'), {
+        facultyId: user.uid,
+        facultyName: user.displayName || user.name || 'Faculty Mentor',
+        startDate: leaveStartDate,
+        endDate: leaveEndDate,
+        reason: leaveReason.trim(),
+        status: 'pending',
+        createdAt: serverTimestamp()
+      });
+      triggerToast('Leave request submitted successfully!', 'success');
+      setLeaveStartDate('');
+      setLeaveEndDate('');
+      setLeaveReason('');
+    } catch (err) {
+      console.error('Error submitting leave:', err);
+      triggerToast('Failed to submit leave request', 'danger');
+    } finally {
+      setIsSubmittingLeave(false);
+    }
+  };
+
   // ── DELETE USER ACCOUNT ──
   const handleDeleteUser = async (userId, userName) => {
     if (window.confirm(`Delete user "${userName}" permanently? This will cascade delete all their attendance records, class schedules, payments history, and chat logs.`)) {
@@ -3030,6 +3759,32 @@ const AdminDashboard = () => {
   const paginatedStudents = sortedStudents.slice(startIndex, startIndex + pageSize);
   const filteredFaculty = facultyList.filter(f => f.displayName?.toLowerCase().includes(search.toLowerCase()) || f.email?.toLowerCase().includes(search.toLowerCase()) || (f.subjects && f.subjects.some(sub=>sub.toLowerCase().includes(search.toLowerCase()))));
   const filteredMembers = membersList.filter(m => m.displayName?.toLowerCase().includes(search.toLowerCase()) || m.email?.toLowerCase().includes(search.toLowerCase()) || m.department?.toLowerCase().includes(search.toLowerCase()));
+  const combinedStaff = allUsers.filter(u => u.role?.toLowerCase() === 'faculty' || u.role?.toLowerCase() === 'member' || u.role?.toLowerCase() === 'admin');
+  const filteredCombinedMembers = combinedStaff.filter(s => {
+    const sTerm = search.toLowerCase();
+    const matchesSearch = s.displayName?.toLowerCase().includes(sTerm) || 
+                          s.email?.toLowerCase().includes(sTerm) || 
+                          s.role?.toLowerCase().includes(sTerm) ||
+                          s.roleName?.toLowerCase().includes(sTerm) ||
+                          s.department?.toLowerCase().includes(sTerm) ||
+                          (s.subjects && s.subjects.some(sub => sub.toLowerCase().includes(sTerm)));
+                          
+    let matchesRole = true;
+    if (memberRoleFilter === 'faculty') {
+      matchesRole = s.role?.toLowerCase() === 'faculty';
+    } else if (memberRoleFilter === 'member') {
+      matchesRole = s.role?.toLowerCase() === 'member';
+    } else if (memberRoleFilter === 'admin') {
+      matchesRole = s.role?.toLowerCase() === 'admin';
+    }
+    
+    return matchesSearch && matchesRole;
+  });
+
+  const memberPageSize = 6;
+  const totalMemberPages = Math.ceil(filteredCombinedMembers.length / memberPageSize) || 1;
+  const memberStartIndex = (memberCurrentPage - 1) * memberPageSize;
+  const paginatedMembers = filteredCombinedMembers.slice(memberStartIndex, memberStartIndex + memberPageSize);
 
   const metrics = calculateFeeMetrics(studentsList, allFees);
   const totalMonthlyFees = metrics.totalMonthlyFees;
@@ -3311,12 +4066,37 @@ const AdminDashboard = () => {
   };
 
   const renderFacultyOverview = () => {
-    const todayStr = new Date().toISOString().split('T')[0];
-    const myClasses = schedulesList.filter(sch => sch.date === todayStr && (sch.facultyId === user.uid || sch.faculty === user.displayName));
+    // 1. Live Workload calculation
+    const workload = calculateFacultyWorkload(user.uid, schedulesList, leaveRequests, user);
 
+    // 2. Today's classes
+    const todayName = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][new Date().getDay()];
+    const myClassesToday = schedulesList.filter(sch => 
+      sch.day?.toLowerCase() === todayName.toLowerCase() && 
+      (sch.facultyId === user.uid || sch.facultyName === user.displayName)
+    );
+
+    // 3. Doubt count
     const myRooms = chatRoomsList.filter(rm => rm.facultyId === user.uid);
     const unreadDoubtCount = myRooms.reduce((acc, rm) => acc + (rm.facultyUnreadCount || 0), 0);
     const activeQueriesCount = facultyQueries.filter(q => q.status !== 'Resolved').length;
+
+    // 4. Unique students today
+    const uniqueStudentsToday = new Set(myClassesToday.flatMap(c => c.studentIds || [])).size;
+
+    // 5. Leaves history for this faculty
+    const myLeaves = leaveRequests.filter(req => req.facultyId === user.uid);
+
+    // 6. Pending Class Tracker updates
+    const myAllClasses = schedulesList.filter(sch => sch.facultyId === user.uid || sch.facultyName === user.displayName);
+    const pendingTrackerClasses = myAllClasses.filter(sch => 
+      !trackerEntries.some(te => te.topic?.toLowerCase() === sch.subject?.toLowerCase() || te.chapter?.toLowerCase() === sch.subject?.toLowerCase())
+    );
+
+    // 7. Pending Attendance
+    const pendingAttendanceClasses = myClassesToday.filter(sch => 
+      !attendanceLogs.some(log => log.studentGroup === sch.batch && log.date === getDayDateInCurrentWeek(sch.day))
+    );
 
     const getStatusStyle = (status) => {
       switch (status?.toLowerCase()) {
@@ -3360,14 +4140,49 @@ const AdminDashboard = () => {
           </p>
         </div>
 
+        {/* Live Workload Indicator Banner */}
+        <div className="card" style={{ padding: '20px', border: '1px solid var(--border)', background: 'var(--white)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '10px' }}>
+            <div>
+              <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 800 }}>Weekly Workload Utilization</h3>
+              <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Limits: {workload.maxWeeklyHours} Hours/Week · {workload.maxDailyBatches} Batches/Day</span>
+            </div>
+            <span style={{
+              padding: '4px 12px', borderRadius: '100px', fontSize: '0.75rem', fontWeight: 900, textTransform: 'uppercase',
+              background: workload.loadPercent >= 80 ? 'rgba(239,68,68,0.1)' : workload.loadPercent >= 50 ? 'rgba(245,158,11,0.1)' : 'rgba(34,197,94,0.1)',
+              color: workload.loadColor
+            }}>
+              {workload.loadStatus} Load ({workload.loadPercent}%)
+            </span>
+          </div>
+          <div className="progress-track" style={{ height: '8px', background: 'var(--border)', borderRadius: '100px', overflow: 'hidden' }}>
+            <div className="progress-fill" style={{ width: `${workload.loadPercent}%`, background: workload.loadColor, height: '100%', borderRadius: '100px' }} />
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px', marginTop: '16px', textAlign: 'center' }}>
+            <div>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Consecutive Classes</div>
+              <strong style={{ fontSize: '1.2rem', color: 'var(--dark)' }}>{workload.consecutiveClasses} / {workload.maxConsecutiveClasses}</strong>
+            </div>
+            <div>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Weekly Hours</div>
+              <strong style={{ fontSize: '1.2rem', color: 'var(--dark)' }}>{workload.weeklyTeachingHours}h / {workload.maxWeeklyHours}h</strong>
+            </div>
+            <div>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Active Batches</div>
+              <strong style={{ fontSize: '1.2rem', color: 'var(--dark)' }}>{workload.activeBatches} Batches</strong>
+            </div>
+          </div>
+        </div>
+
         {/* Quick Stats Row */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
           {[
             { label: 'Allotted Students', value: `${studentsList.length} Students`, color: 'var(--primary)', icon: <Users size={20} /> },
-            { label: 'Classes Scheduled Today', value: `${myClasses.length} Sessions`, color: 'var(--success)', icon: <Calendar size={20} /> },
+            { label: 'Classes Scheduled Today', value: `${myClassesToday.length} Sessions`, color: 'var(--success)', icon: <Calendar size={20} /> },
+            { label: 'Students Today', value: `${uniqueStudentsToday} Students`, color: '#8B5CF6', icon: <GraduationCap size={20} /> },
             { label: 'Pending Doubt Queries', value: `${activeQueriesCount} Active`, color: activeQueriesCount > 0 ? 'var(--danger)' : 'var(--text-muted)', icon: <MessageSquare size={20} /> }
           ].map((stat, idx) => (
-            <div key={idx} style={{ background: 'var(--surface)', padding: '16px', borderRadius: '12px', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: '14px' }}>
+            <div key={idx} style={{ background: 'var(--white)', padding: '16px', borderRadius: '12px', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: '14px', boxShadow: 'var(--shadow-sm)' }}>
               <div style={{ width: 40, height: 40, borderRadius: '50%', background: 'rgba(0,0,0,0.03)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: stat.color }}>
                 {stat.icon}
               </div>
@@ -3379,12 +4194,48 @@ const AdminDashboard = () => {
           ))}
         </div>
 
-        {/* Main Grid */}
+        {/* Action Queue & Live Dashboard Grid */}
         <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: '24px' }} className="grid-2-col-mobile">
           
           {/* Left Column */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
             
+            {/* Pending Actions / Action Queue */}
+            <div className="card" style={{ padding: '20px', border: '1px solid var(--border)', background: 'var(--white)' }}>
+              <h3 style={{ margin: '0 0 16px 0', fontSize: '0.98rem', fontWeight: 800, color: 'var(--dark)' }}>Pending Tasks & Updates Queue</h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {pendingTrackerClasses.map(sch => (
+                  <div key={sch.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px', background: 'rgba(245,158,11,0.06)', borderRadius: '12px', border: '1.5px solid rgba(245,158,11,0.15)', flexWrap: 'wrap', gap: '10px' }}>
+                    <div style={{ flex: 1, minWidth: '150px' }}>
+                      <span style={{ fontSize: '0.7rem', background: 'var(--warning)', color: 'white', padding: '2px 6px', borderRadius: '4px', fontWeight: 800 }}>Tracker Update Pending</span>
+                      <h4 style={{ margin: '6px 0 2px 0', fontSize: '0.88rem', fontWeight: 800 }}>{sch.subject}</h4>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Batch: {sch.batch} · Venue: {sch.room}</span>
+                    </div>
+                    <button onClick={() => navigate('/dashboard/tracker')} className="btn btn-primary" style={{ padding: '6px 12px', fontSize: '0.72rem', borderRadius: '6px', background: 'var(--warning)', border: 'none', color: 'white' }}>
+                      Update Tracker
+                    </button>
+                  </div>
+                ))}
+                {pendingAttendanceClasses.map(sch => (
+                  <div key={sch.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px', background: 'rgba(83,109,254,0.06)', borderRadius: '12px', border: '1.5px solid rgba(83,109,254,0.15)', flexWrap: 'wrap', gap: '10px' }}>
+                    <div style={{ flex: 1, minWidth: '150px' }}>
+                      <span style={{ fontSize: '0.7rem', background: 'var(--primary)', color: 'white', padding: '2px 6px', borderRadius: '4px', fontWeight: 800 }}>Attendance Pending</span>
+                      <h4 style={{ margin: '6px 0 2px 0', fontSize: '0.88rem', fontWeight: 800 }}>{sch.subject}</h4>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Batch: {sch.batch} · Start: {sch.startTime}</span>
+                    </div>
+                    <button onClick={() => setActivePanelTab('attendance')} className="btn btn-primary" style={{ padding: '6px 12px', fontSize: '0.72rem', borderRadius: '6px' }}>
+                      Mark Attendance
+                    </button>
+                  </div>
+                ))}
+                {pendingTrackerClasses.length === 0 && pendingAttendanceClasses.length === 0 && (
+                  <div style={{ textAlign: 'center', color: 'var(--text-light)', fontStyle: 'italic', fontSize: '0.82rem', padding: '12px 0' }}>
+                    🟢 Awesome! No pending tasks in your queue.
+                  </div>
+                )}
+              </div>
+            </div>
+
             {/* Student Progress */}
             <div className="card" style={{ padding: '20px', border: '1px solid var(--border)', background: 'var(--white)' }}>
               <h3 style={{ margin: '0 0 16px 0', fontSize: '0.98rem', fontWeight: 800, color: 'var(--dark)' }}>Assigned Students Progress</h3>
@@ -3580,57 +4431,38 @@ const AdminDashboard = () => {
               </div>
             </div>
 
-            {/* Doubt Queue */}
-            <div className="card" style={{ padding: '20px', border: '1px solid var(--border)', background: 'var(--white)' }}>
-              <h3 style={{ margin: '0 0 16px 0', fontSize: '0.98rem', fontWeight: 800, color: 'var(--dark)' }}>Active Doubt Queue</h3>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {myRooms.slice(0, 5).map(rm => {
-                  const hasUnreads = (rm.facultyUnreadCount || 0) > 0;
-                  const matchedStudent = allUsers.find(u => u.id === rm.studentId);
-                  
-                  return (
-                    <div key={rm.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px', background: 'var(--bg)', borderRadius: '10px', border: hasUnreads ? '1px solid rgba(239,83,80,0.3)' : '1px solid var(--border)' }}>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0, flex: 1 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <span style={{ fontWeight: 800, fontSize: '0.88rem', color: 'var(--dark)' }}>{rm.studentName}</span>
-                          {hasUnreads && (
-                            <span style={{ background: 'var(--danger)', color: 'var(--text-on-primary)', fontSize: '0.65rem', fontWeight: 800, padding: '2px 6px', borderRadius: '100px' }}>
-                              {rm.facultyUnreadCount} New
-                            </span>
-                          )}
-                        </div>
-                        <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {rm.lastMessageSenderId === user.uid ? 'You: ' : ''}{rm.lastMessage}
-                        </span>
-                      </div>
-                      <button
-                        onClick={() => {
-                          if (matchedStudent) {
-                            setSelectedStudentDetails({ ...matchedStudent, joined: 'Jan 2026', roll: 'Roll #COMP' });
-                            setDrawerActiveTab('chat');
-                          }
-                        }}
-                        className="btn btn-primary"
-                        style={{ padding: '6px 12px', fontSize: '0.72rem', borderRadius: '6px', marginLeft: '12px' }}
-                      >
-                        Reply
-                      </button>
-                    </div>
-                  );
-                })}
-                {myRooms.length === 0 && (
-                  <div style={{ textAlign: 'center', color: 'var(--text-light)', fontStyle: 'italic', fontSize: '0.82rem', padding: '20px' }}>
-                    No active doubt threads.
-                  </div>
-                )}
-              </div>
-            </div>
-
           </div>
 
           {/* Right Column */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
             
+            {/* Live Timetable widget */}
+            <div className="card" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px', border: '1px solid var(--border)', background: 'var(--white)' }}>
+              <h3 style={{ margin: 0, fontSize: '1.02rem', fontWeight: 800, color: 'var(--dark)' }}>My Class Slots Today</h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {myClassesToday.map(sch => (
+                  <div key={sch.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px', background: 'var(--bg)', borderRadius: '10px', border: '1px solid var(--border)', flexWrap: 'wrap', gap: '10px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1, minWidth: '150px' }}>
+                      <span style={{ fontWeight: 800, fontSize: '0.88rem', color: 'var(--dark)' }}>{sch.subject}</span>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>🕒 {sch.startTime} - {sch.endTime} (1.5h) | Batch: {sch.batch}</span>
+                      <span style={{ fontSize: '0.72rem', color: 'var(--text-light)', fontWeight: 600 }}>📍 Venue: {sch.room}</span>
+                    </div>
+                    <span style={{
+                      padding: '3px 8px', borderRadius: '4px', fontSize: '0.68rem', fontWeight: 800, textTransform: 'uppercase',
+                      background: sch.meetLink ? 'rgba(83,109,254,0.1)' : 'rgba(102,187,106,0.1)',
+                      color: sch.meetLink ? 'var(--primary)' : 'var(--success)'
+                    }}>{sch.meetLink ? 'Online' : 'Offline'}</span>
+                  </div>
+                ))}
+                {myClassesToday.length === 0 && (
+                  <div style={{ padding: '20px 0', textAlign: 'center', color: 'var(--text-light)', fontStyle: 'italic', fontSize: '0.82rem' }}>
+                    No class slots scheduled for today.
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Instant Video Support */}
             <div className="card" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px', border: '1px solid var(--border)', background: 'linear-gradient(135deg, rgba(16,185,129,0.02) 0%, rgba(4,120,87,0.04) 100%)' }}>
               <h3 style={{ margin: 0, fontSize: '1.02rem', fontWeight: 800, color: 'var(--dark)' }}>Instant Video Support</h3>
               <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.45 }}>
@@ -3650,28 +4482,70 @@ const AdminDashboard = () => {
               </button>
             </div>
 
-            <div className="card" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px', border: '1px solid var(--border)', background: 'var(--white)' }}>
-              <h3 style={{ margin: 0, fontSize: '1.02rem', fontWeight: 800, color: 'var(--dark)' }}>My Classes Today</h3>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {myClasses.map(sch => (
-                  <div key={sch.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px', background: 'var(--bg)', borderRadius: '10px', border: '1px solid var(--border)' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                      <span style={{ fontWeight: 800, fontSize: '0.88rem', color: 'var(--dark)' }}>{sch.studentName}</span>
-                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>🕒 {sch.time} | Subject: {sch.subject}</span>
-                    </div>
-                    <span style={{
-                      padding: '3px 8px', borderRadius: '4px', fontSize: '0.68rem', fontWeight: 800, textTransform: 'uppercase',
-                      background: sch.mode === 'online' ? 'rgba(83,109,254,0.1)' : 'rgba(102,187,106,0.1)',
-                      color: sch.mode === 'online' ? 'var(--primary)' : 'var(--success)'
-                    }}>{sch.mode}</span>
+            {/* Leave Request Form */}
+            <div className="card" style={{ padding: '20px', border: '1px solid var(--border)', background: 'var(--white)' }}>
+              <h3 style={{ margin: '0 0 16px 0', fontSize: '1.02rem', fontWeight: 800, color: 'var(--dark)' }}>Request Leave / Timeoff</h3>
+              <form onSubmit={handleSubmitLeave} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                  <div>
+                    <label className="form-label" style={{ fontSize: '0.72rem' }}>Start Date</label>
+                    <input
+                      required
+                      type="date"
+                      className="form-input"
+                      style={{ fontSize: '0.8rem', padding: '6px 10px', background: 'white' }}
+                      value={leaveStartDate}
+                      min={new Date().toISOString().split('T')[0]}
+                      onChange={e => setLeaveStartDate(e.target.value)}
+                    />
                   </div>
-                ))}
-                {myClasses.length === 0 && (
-                  <div style={{ padding: '20px 0', textAlign: 'center', color: 'var(--text-light)', fontStyle: 'italic', fontSize: '0.82rem' }}>
-                    No class slots scheduled for today.
+                  <div>
+                    <label className="form-label" style={{ fontSize: '0.72rem' }}>End Date</label>
+                    <input
+                      required
+                      type="date"
+                      className="form-input"
+                      style={{ fontSize: '0.8rem', padding: '6px 10px', background: 'white' }}
+                      value={leaveEndDate}
+                      min={leaveStartDate || new Date().toISOString().split('T')[0]}
+                      onChange={e => setLeaveEndDate(e.target.value)}
+                    />
                   </div>
-                )}
-              </div>
+                </div>
+                <div>
+                  <label className="form-label" style={{ fontSize: '0.72rem' }}>Reason for Timeoff</label>
+                  <textarea
+                    required
+                    className="form-input"
+                    style={{ fontSize: '0.8rem', padding: '6px 10px' }}
+                    placeholder="e.g. Family emergency, medical leave..."
+                    value={leaveReason}
+                    onChange={e => setLeaveReason(e.target.value)}
+                    rows={2}
+                  />
+                </div>
+                <button type="submit" disabled={isSubmittingLeave} className="btn btn-primary" style={{ padding: '8px', fontSize: '0.8rem', width: '100%', justifyContent: 'center' }}>
+                  {isSubmittingLeave ? 'Submitting...' : 'Request Timeoff'}
+                </button>
+              </form>
+
+              {/* Leave History List */}
+              {myLeaves.length > 0 && (
+                <div style={{ marginTop: '16px', borderTop: '1px solid var(--border)', paddingTop: '12px' }}>
+                  <h4 style={{ margin: '0 0 8px 0', fontSize: '0.82rem', fontWeight: 800 }}>Timeoff Request Status</h4>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '120px', overflowY: 'auto' }}>
+                    {myLeaves.map(leave => {
+                      const colorMap = { pending: '#f59e0b', approved: '#22c55e', rejected: '#ef4444' };
+                      return (
+                        <div key={leave.id} style={{ fontSize: '0.75rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 8px', background: 'var(--bg)', borderRadius: '6px', border: '1px solid var(--border)' }}>
+                          <span>{leave.startDate} to {leave.endDate}</span>
+                          <span style={{ fontWeight: 800, color: colorMap[leave.status] || '#64748b', textTransform: 'capitalize' }}>{leave.status}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
 
           </div>
@@ -3905,11 +4779,12 @@ const AdminDashboard = () => {
       </div>
 
       {/* Inner Navigation Tabs */}
-      <div style={{ display: 'flex', gap: '8px', borderBottom: '1px solid var(--border)', paddingBottom: '12px', flexWrap: 'wrap', flexShrink: 0 }}>
+      <div className="tabs-scrollable-container">
         {[
           { key: 'overview', label: user?.role === 'admin' ? 'Admin Overview' : user?.role === 'faculty' ? 'Faculty Overview' : 'Member Overview', roles: ['admin', 'faculty', 'member'] },
           { key: 'students', label: 'Students Roster', roles: ['admin', 'faculty', 'member'] },
           { key: 'faculty', label: 'Faculty Staff', roles: ['admin'] },
+          { key: 'members', label: 'Staff Members', roles: ['admin'] },
           { key: 'schedules', label: 'Class Schedules', roles: ['admin', 'faculty'] },
           { key: 'attendance', label: 'Attendance Logs', roles: ['admin', 'faculty'] },
           { key: 'billing', label: 'Payments', roles: ['admin'] },
@@ -4067,306 +4942,482 @@ const AdminDashboard = () => {
                   </div>
                 )}
                 
-                <table style={{ width: '100%', minWidth: '700px', borderCollapse: 'collapse', textAlign: 'left' }}>
-                  <thead>
-                    <tr style={{ borderBottom: '1px solid var(--border)', fontSize: '0.8rem', color: 'var(--text-light)', position: 'sticky', top: 0, zIndex: 5, background: 'var(--white)' }}>
-                      <th style={{ padding: '12px', width: '40px' }}>
-                        <input 
-                          type="checkbox" 
-                          checked={paginatedStudents.length > 0 && paginatedStudents.every(s => selectedStudentIds.includes(s.id))}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              const pageIds = paginatedStudents.map(s => s.id);
-                              setSelectedStudentIds(prev => Array.from(new Set([...prev, ...pageIds])));
-                            } else {
-                              const pageIds = paginatedStudents.map(s => s.id);
-                              setSelectedStudentIds(prev => prev.filter(id => !pageIds.includes(id)));
-                            }
-                          }}
-                        />
-                      </th>
-                      <th style={{ padding: '12px', cursor: 'pointer' }} onClick={() => {
-                        if (sortField === 'displayName') {
-                          setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
-                        } else {
-                          setSortField('displayName');
-                          setSortDirection('asc');
-                        }
-                      }}>
-                        Student Profile {sortField === 'displayName' && (sortDirection === 'asc' ? ' ▲' : ' ▼')}
-                      </th>
-                      <th style={{ padding: '12px', cursor: 'pointer' }} onClick={() => {
-                        if (sortField === 'course') {
-                          setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
-                        } else {
-                          setSortField('course');
-                          setSortDirection('asc');
-                        }
-                      }}>
-                        Course / Program {sortField === 'course' && (sortDirection === 'asc' ? ' ▲' : ' ▼')}
-                      </th>
-                      <th style={{ padding: '12px' }}>Assigned Mentor</th>
-                      <th style={{ padding: '12px', cursor: 'pointer' }} onClick={() => {
-                        if (sortField === 'feeTarget') {
-                          setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
-                        } else {
-                          setSortField('feeTarget');
-                          setSortDirection('asc');
-                        }
-                      }}>
-                        Fees Target {sortField === 'feeTarget' && (sortDirection === 'asc' ? ' ▲' : ' ▼')}
-                      </th>
-                      <th style={{ padding: '12px', cursor: 'pointer' }} onClick={() => {
-                        if (sortField === 'feeStatus') {
-                          setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
-                        } else {
-                          setSortField('feeStatus');
-                          setSortDirection('asc');
-                        }
-                      }}>
-                        Fee status {sortField === 'feeStatus' && (sortDirection === 'asc' ? ' ▲' : ' ▼')}
-                      </th>
-                      <th style={{ padding: '12px' }}>Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                {paginatedStudents.map(student => {
-                  const feeRecord = currentMonthFeesList.find(f => f.studentId === student.id);
-                  const currentFeesAmount = feeRecord ? feeRecord.amountDue : getStudentMonthlyFee(student);
-                  const feeStatus = (feeRecord ? feeRecord.status : 'pending').toLowerCase();
-                  const colorMap = {
-                    'paid': 'var(--success)',
-                    'pending': 'var(--danger)'
-                  };
-                  const bgMap = {
-                    'paid': 'rgba(102,187,106,0.15)',
-                    'pending': 'rgba(239,83,80,0.15)'
-                  };
-
-                  return (
-                    <tr key={student.id} style={{ borderBottom: '1px solid var(--border)', fontSize: '0.88rem' }}>
-                      <td style={{ padding: '12px', width: '40px' }}>
-                        <input 
-                          type="checkbox" 
-                          checked={selectedStudentIds.includes(student.id)} 
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setSelectedStudentIds(prev => [...prev, student.id]);
-                            } else {
-                              setSelectedStudentIds(prev => prev.filter(id => id !== student.id));
-                            }
-                          }} 
-                        />
-                      </td>
-                      <td style={{ padding: '12px' }}>
-                        <div style={{ fontWeight: 700, color: 'var(--dark)' }}>{student.displayName}</div>
-                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{student.email}</div>
-                      </td>
-                      <td style={{ padding: '12px' }}>{student.course}</td>
-                      <td style={{ padding: '12px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                          {(() => {
-                            const assignedIds = [...(student.assignedFacultyIds || [])];
-                            if (user?.role?.toLowerCase() === 'faculty' && !assignedIds.includes(user.uid) && assignedStudentIds.includes(student.id)) {
-                              assignedIds.push(user.uid);
-                            }
-                            if (assignedIds.length === 0) return <span style={{ color: 'var(--text-light)', fontStyle: 'italic', fontSize: '0.78rem' }}>Unassigned</span>;
-                            const mentorNames = assignedIds.map(fid => {
-                              const found = allUsers.find(u => u.id === fid || u.email === fid);
-                              return found ? found.displayName : fid;
-                            });
-                            return <div style={{ fontWeight: 600, fontSize: '0.82rem', color: 'var(--primary)' }}>{mentorNames.join(', ')}</div>;
-                          })()}
-                          {user?.role?.toLowerCase() === 'admin' && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setSelectedStudentDetails({ ...student, joined: 'Jan 2026', roll: 'Roll #COMP' });
-                              }}
-                              style={{
-                                padding: '2px 6px', background: 'var(--primary-light)', color: 'var(--primary)',
-                                border: '1px solid rgba(83,109,254,0.2)', borderRadius: '4px', fontSize: '0.72rem',
-                                fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s'
-                              }}
-                              onMouseEnter={e => { e.currentTarget.style.background = 'var(--primary)'; e.currentTarget.style.color = 'white'; }}
-                              onMouseLeave={e => { e.currentTarget.style.background = 'var(--primary-light)'; e.currentTarget.style.color = 'var(--primary)'; }}
-                            >
-                              Manage
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                      <td style={{ padding: '12px' }}>
-                        {user?.role === 'admin' ? (
-                          editingStudentId === student.id ? (
-                            <div style={{ display: 'flex', gap: '4px' }}>
-                              <input type="number" value={editingAmount} onChange={e => setEditingAmount(e.target.value)} style={{ width: '80px', padding: '4px' }} autoFocus />
-                              <button onClick={() => handleSaveFeesAmount(student.id)} style={{ background: 'var(--success)', color: 'var(--text-on-primary)', padding: '2px 6px', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Save</button>
-                              <button onClick={() => setEditingStudentId(null)} style={{ background: 'var(--danger)', color: 'var(--text-on-primary)', padding: '2px 6px', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Cancel</button>
-                            </div>
-                          ) : (
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }} onClick={() => { setEditingStudentId(student.id); setEditingAmount(currentFeesAmount); }}>
-                              <span>₹{currentFeesAmount.toLocaleString()}</span>
-                              <Pencil size={12} style={{ color: 'var(--text-light)' }} />
-                            </div>
-                          )
-                        ) : (
-                          <span>₹{currentFeesAmount.toLocaleString()}</span>
-                        )}
-                      </td>
-
-                      <td style={{ padding: '12px' }}>
-                        {user?.role === 'admin' ? (
-                          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleUpdateFeeStatus(student.id, 'paid');
-                              }}
-                              style={{
-                                padding: '4px 10px',
-                                background: feeStatus === 'paid' ? 'rgba(102,187,106,0.15)' : 'var(--surface)',
-                                color: 'var(--success)',
-                                border: feeStatus === 'paid' ? '1px solid var(--success)' : '1px solid var(--border)',
-                                borderRadius: '6px',
-                                fontSize: '0.75rem',
-                                fontWeight: 600,
-                                cursor: 'pointer',
-                                transition: 'all 0.2s',
-                              }}
-                            >
-                              Paid
-                            </button>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleUpdateFeeStatus(student.id, 'pending');
-                              }}
-                              style={{
-                                padding: '4px 10px',
-                                background: feeStatus === 'pending' ? 'rgba(245,158,11,0.15)' : 'var(--surface)',
-                                color: '#F59E0B',
-                                border: feeStatus === 'pending' ? '1px solid #F59E0B' : '1px solid var(--border)',
-                                borderRadius: '6px',
-                                fontSize: '0.75rem',
-                                fontWeight: 600,
-                                cursor: 'pointer',
-                                transition: 'all 0.2s',
-                              }}
-                            >
-                              Pending
-                            </button>
-                            {feeStatus !== 'paid' && (
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleSendWhatsAppNotification(student);
-                                }}
-                                title="Send WhatsApp Reminder"
-                                style={{
-                                  padding: '6px',
-                                  background: 'rgba(83,109,254,0.1)',
-                                  color: 'var(--primary)',
-                                  border: '1px solid rgba(83,109,254,0.2)',
-                                  borderRadius: '6px',
-                                  cursor: 'pointer',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                }}
-                              >
-                                <Send size={12} />
-                              </button>
-                            )}
-                          </div>
-                        ) : (
-                          <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                            <span style={{
-                              padding: '4px 10px',
-                              background: bgMap[feeStatus] || 'var(--surface)',
-                              color: colorMap[feeStatus] || 'var(--text-muted)',
-                              border: `1px solid ${colorMap[feeStatus] || 'var(--border)'}`,
-                              borderRadius: '6px',
-                              fontSize: '0.75rem',
-                              fontWeight: 600
-                            }}>{feeStatus === 'paid' ? 'Paid' : 'Pending'}</span>
-                            {feeStatus !== 'paid' && (
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleSendWhatsAppNotification(student);
-                                }}
-                                title="Send WhatsApp Reminder"
-                                style={{
-                                  padding: '6px',
-                                  background: 'rgba(83,109,254,0.1)',
-                                  color: 'var(--primary)',
-                                  border: '1px solid rgba(83,109,254,0.2)',
-                                  borderRadius: '6px',
-                                  cursor: 'pointer',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                }}
-                              >
-                                <Send size={12} />
-                              </button>
-                            )}
-                          </div>
-                        )}
-                      </td>
+                {isMobile ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    {paginatedStudents.map(student => {
+                      const feeRecord = currentMonthFeesList.find(f => f.studentId === student.id);
+                      const currentFeesAmount = feeRecord ? feeRecord.amountDue : getStudentMonthlyFee(student);
+                      const feeStatus = (feeRecord ? feeRecord.status : 'pending').toLowerCase();
+                      const colorMap = { 'paid': 'var(--success)', 'pending': 'var(--danger)' };
+                      const bgMap = { 'paid': 'rgba(102,187,106,0.15)', 'pending': 'rgba(239,83,80,0.15)' };
                       
-                      <td style={{ padding: '12px' }}>
-                        <div style={{ display: 'flex', gap: '6px' }}>
-                          <button onClick={() => setSelectedStudentDetails({ ...student, joined: 'Jan 2026', roll: 'Roll #COMP' })} className="btn btn-secondary" style={{ padding: '6px', borderRadius: '6px' }} title="View Detail"><Eye size={14} /></button>
-                          <button
-                            onClick={async (e) => {
-                              e.stopPropagation();
-                              const btn = e.currentTarget;
-                              btn.disabled = true;
-                              const origHtml = btn.innerHTML;
-                              btn.innerHTML = `<span class="spinner" style="display:inline-block;width:10px;height:10px;border:1.5px solid var(--primary);border-top-color:transparent;border-radius:50%;animation:spin 1s linear infinite;"></span>`;
-                              try {
-                                const currentMonthStr = new Date().toISOString().slice(0, 7);
-                                await reportService.exportMonthlyReport(student.id, currentMonthStr, showToast);
-                              } catch (err) {
-                                console.error(err);
-                              } finally {
-                                btn.disabled = false;
-                                btn.innerHTML = origHtml;
-                              }
-                            }}
-                            className="btn btn-secondary"
-                            style={{ padding: '6px', borderRadius: '6px' }}
-                            title="Export Monthly Report"
-                          >
-                            <Download size={14} />
-                          </button>
-                          {user?.role === 'admin' && (
-                            <button onClick={() => handleDeleteUser(student.id, student.displayName)} className="btn btn-ghost" style={{ padding: '6px', color: 'var(--danger)', borderRadius: '6px' }} title="Delete Roster"><Trash2 size={14} /></button>
-                          )}
-                          {user?.role?.toLowerCase() === 'faculty' && (
+                      const initials = student.displayName?.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || 'ST';
+                      const assignedIds = [...(student.assignedFacultyIds || [])];
+                      if (user?.role?.toLowerCase() === 'faculty' && !assignedIds.includes(user.uid) && assignedStudentIds.includes(student.id)) {
+                        assignedIds.push(user.uid);
+                      }
+                      const mentorNames = assignedIds.map(fid => {
+                        const found = allUsers.find(u => u.id === fid || u.email === fid);
+                        return found ? found.displayName : fid;
+                      });
+
+                      return (
+                        <div key={student.id} className="mobile-card-item">
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', borderBottom: '1px solid var(--border)', paddingBottom: '8px' }}>
+                            <input 
+                              type="checkbox" 
+                              checked={selectedStudentIds.includes(student.id)} 
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSelectedStudentIds(prev => [...prev, student.id]);
+                                } else {
+                                  setSelectedStudentIds(prev => prev.filter(id => id !== student.id));
+                                }
+                              }} 
+                            />
+                            <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'var(--primary-light)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: '0.8rem' }}>
+                              {initials}
+                            </div>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontWeight: 700, color: 'var(--dark)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{student.displayName}</div>
+                              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{student.email}</div>
+                            </div>
+                          </div>
+                          
+                          <div className="mobile-card-row">
+                            <span className="mobile-card-label">Course:</span>
+                            <span className="mobile-card-value">{student.course}</span>
+                          </div>
+
+                          <div className="mobile-card-row">
+                            <span className="mobile-card-label">Mentor:</span>
+                            <span className="mobile-card-value" style={{ color: 'var(--primary)', textAlign: 'right' }}>
+                              {mentorNames.length > 0 ? mentorNames.join(', ') : 'Unassigned'}
+                            </span>
+                          </div>
+
+                          <div className="mobile-card-row">
+                            <span className="mobile-card-label">Fees Target:</span>
+                            <span className="mobile-card-value">
+                              {user?.role === 'admin' ? (
+                                editingStudentId === student.id ? (
+                                  <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                                    <input type="number" value={editingAmount} onChange={e => setEditingAmount(e.target.value)} style={{ width: '70px', padding: '2px', fontSize: '0.8rem' }} autoFocus />
+                                    <button onClick={() => handleSaveFeesAmount(student.id)} style={{ background: 'var(--success)', color: 'var(--text-on-primary)', padding: '2px 4px', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '0.7rem' }}>Save</button>
+                                    <button onClick={() => setEditingStudentId(null)} style={{ background: 'var(--danger)', color: 'var(--text-on-primary)', padding: '2px 4px', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '0.7rem' }}>X</button>
+                                  </div>
+                                ) : (
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }} onClick={() => { setEditingStudentId(student.id); setEditingAmount(currentFeesAmount); }}>
+                                    <span>₹{currentFeesAmount.toLocaleString()}</span>
+                                    <Pencil size={12} style={{ color: 'var(--text-light)' }} />
+                                  </div>
+                                )
+                              ) : (
+                                <span>₹{currentFeesAmount.toLocaleString()}</span>
+                              )}
+                            </span>
+                          </div>
+
+                          <div className="mobile-card-row">
+                            <span className="mobile-card-label">Fee Status:</span>
+                            <span className="mobile-card-value">
+                              {user?.role === 'admin' ? (
+                                <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                                  <button
+                                    onClick={() => handleUpdateFeeStatus(student.id, 'paid')}
+                                    style={{
+                                      padding: '4px 8px',
+                                      background: feeStatus === 'paid' ? 'rgba(102,187,106,0.15)' : 'var(--surface)',
+                                      color: 'var(--success)',
+                                      border: feeStatus === 'paid' ? '1px solid var(--success)' : '1px solid var(--border)',
+                                      borderRadius: '6px',
+                                      fontSize: '0.75rem',
+                                      fontWeight: 600,
+                                      cursor: 'pointer'
+                                    }}
+                                  >
+                                    Paid
+                                  </button>
+                                  <button
+                                    onClick={() => handleUpdateFeeStatus(student.id, 'pending')}
+                                    style={{
+                                      padding: '4px 8px',
+                                      background: feeStatus === 'pending' ? 'rgba(239,83,80,0.15)' : 'var(--surface)',
+                                      color: 'var(--danger)',
+                                      border: feeStatus === 'pending' ? '1px solid var(--danger)' : '1px solid var(--border)',
+                                      borderRadius: '6px',
+                                      fontSize: '0.75rem',
+                                      fontWeight: 600,
+                                      cursor: 'pointer'
+                                    }}
+                                  >
+                                    Pending
+                                  </button>
+                                </div>
+                              ) : (
+                                <span style={{
+                                  padding: '3px 8px', borderRadius: '100px', fontSize: '0.72rem', fontWeight: 800, textTransform: 'uppercase',
+                                  background: bgMap[feeStatus] || 'rgba(239,83,80,0.15)',
+                                  color: colorMap[feeStatus] || 'var(--danger)'
+                                }}>
+                                  {feeStatus}
+                                </span>
+                              )}
+                            </span>
+                          </div>
+
+                          <div style={{ display: 'flex', gap: '6px', marginTop: '4px', borderTop: '1px solid var(--border)', paddingTop: '8px', flexWrap: 'wrap' }}>
+                            <button onClick={() => setSelectedStudentDetails({ ...student, joined: 'Jan 2026', roll: 'Roll #COMP' })} className="btn btn-secondary" style={{ padding: '6px 12px', fontSize: '0.78rem', borderRadius: '8px', flex: 1, justifyContent: 'center' }}>
+                              <Eye size={13} style={{ marginRight: '4px' }} /> View
+                            </button>
                             <button
                               onClick={async (e) => {
                                 e.stopPropagation();
-                                if (window.confirm(`Remove student "${student.displayName}" from your roster?`)) {
-                                  await handleRemoveStudentFromRoster(student.id);
+                                const btn = e.currentTarget;
+                                btn.disabled = true;
+                                const origHtml = btn.innerHTML;
+                                btn.innerHTML = `Exporting...`;
+                                try {
+                                  const currentMonthStr = new Date().toISOString().slice(0, 7);
+                                  await reportService.exportMonthlyReport(student.id, currentMonthStr, showToast);
+                                } catch (err) {
+                                  console.error(err);
+                                } finally {
+                                  btn.disabled = false;
+                                  btn.innerHTML = origHtml;
                                 }
                               }}
-                              className="btn btn-ghost"
-                              style={{ padding: '6px', color: 'var(--danger)', borderRadius: '6px' }}
-                              title="Remove from Roster"
+                              className="btn btn-secondary"
+                              style={{ padding: '6px 12px', fontSize: '0.78rem', borderRadius: '8px', flex: 1, justifyContent: 'center' }}
                             >
-                              <UserMinus size={14} />
+                              <Download size={13} style={{ marginRight: '4px' }} /> Report
                             </button>
-                          )}
+                            {user?.role === 'admin' && (
+                              <button onClick={() => handleDeleteUser(student.id, student.displayName)} className="btn btn-ghost" style={{ padding: '6px 12px', fontSize: '0.78rem', color: 'var(--danger)', borderRadius: '8px', flex: 1, justifyContent: 'center' }}>
+                                <Trash2 size={13} /> Delete
+                              </button>
+                            )}
+                            {user?.role?.toLowerCase() === 'faculty' && (
+                              <button
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+                                  if (window.confirm(`Remove student "${student.displayName}" from your roster?`)) {
+                                    await handleRemoveStudentFromRoster(student.id);
+                                  }
+                                }}
+                                className="btn btn-ghost"
+                                style={{ padding: '6px 12px', fontSize: '0.78rem', color: 'var(--danger)', borderRadius: '8px', flex: 1, justifyContent: 'center' }}
+                              >
+                                <UserMinus size={13} /> Remove
+                              </button>
+                            )}
+                          </div>
                         </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <table style={{ width: '100%', minWidth: '700px', borderCollapse: 'collapse', textAlign: 'left' }}>
+                    <thead>
+                      <tr style={{ borderBottom: '1px solid var(--border)', fontSize: '0.8rem', color: 'var(--text-light)', position: 'sticky', top: 0, zIndex: 5, background: 'var(--white)' }}>
+                        <th style={{ padding: '12px', width: '40px' }}>
+                          <input 
+                            type="checkbox" 
+                            checked={paginatedStudents.length > 0 && paginatedStudents.every(s => selectedStudentIds.includes(s.id))}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                const pageIds = paginatedStudents.map(s => s.id);
+                                setSelectedStudentIds(prev => Array.from(new Set([...prev, ...pageIds])));
+                              } else {
+                                const pageIds = paginatedStudents.map(s => s.id);
+                                setSelectedStudentIds(prev => prev.filter(id => !pageIds.includes(id)));
+                              }
+                            }}
+                          />
+                        </th>
+                        <th style={{ padding: '12px', cursor: 'pointer' }} onClick={() => {
+                          if (sortField === 'displayName') {
+                            setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+                          } else {
+                            setSortField('displayName');
+                            setSortDirection('asc');
+                          }
+                        }}>
+                          Student Profile {sortField === 'displayName' && (sortDirection === 'asc' ? ' ▲' : ' ▼')}
+                        </th>
+                        <th style={{ padding: '12px', cursor: 'pointer' }} onClick={() => {
+                          if (sortField === 'course') {
+                            setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+                          } else {
+                            setSortField('course');
+                            setSortDirection('asc');
+                          }
+                        }}>
+                          Course / Program {sortField === 'course' && (sortDirection === 'asc' ? ' ▲' : ' ▼')}
+                        </th>
+                        <th style={{ padding: '12px' }}>Assigned Mentor</th>
+                        <th style={{ padding: '12px', cursor: 'pointer' }} onClick={() => {
+                          if (sortField === 'feeTarget') {
+                            setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+                          } else {
+                            setSortField('feeTarget');
+                            setSortDirection('asc');
+                          }
+                        }}>
+                          Fees Target {sortField === 'feeTarget' && (sortDirection === 'asc' ? ' ▲' : ' ▼')}
+                        </th>
+                        <th style={{ padding: '12px', cursor: 'pointer' }} onClick={() => {
+                          if (sortField === 'feeStatus') {
+                            setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
+                          } else {
+                            setSortField('feeStatus');
+                            setSortDirection('asc');
+                          }
+                        }}>
+                          Fee status {sortField === 'feeStatus' && (sortDirection === 'asc' ? ' ▲' : ' ▼')}
+                        </th>
+                        <th style={{ padding: '12px' }}>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {paginatedStudents.map(student => {
+                        const feeRecord = currentMonthFeesList.find(f => f.studentId === student.id);
+                        const currentFeesAmount = feeRecord ? feeRecord.amountDue : getStudentMonthlyFee(student);
+                        const feeStatus = (feeRecord ? feeRecord.status : 'pending').toLowerCase();
+                        const colorMap = {
+                          'paid': 'var(--success)',
+                          'pending': 'var(--danger)'
+                        };
+                        const bgMap = {
+                          'paid': 'rgba(102,187,106,0.15)',
+                          'pending': 'rgba(239,83,80,0.15)'
+                        };
+
+                        return (
+                          <tr key={student.id} style={{ borderBottom: '1px solid var(--border)', fontSize: '0.88rem' }}>
+                            <td style={{ padding: '12px', width: '40px' }}>
+                              <input 
+                                type="checkbox" 
+                                checked={selectedStudentIds.includes(student.id)} 
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setSelectedStudentIds(prev => [...prev, student.id]);
+                                  } else {
+                                    setSelectedStudentIds(prev => prev.filter(id => id !== student.id));
+                                  }
+                                }} 
+                              />
+                            </td>
+                            <td style={{ padding: '12px' }}>
+                              <div style={{ fontWeight: 700, color: 'var(--dark)' }}>{student.displayName}</div>
+                              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{student.email}</div>
+                            </td>
+                            <td style={{ padding: '12px' }}>{student.course}</td>
+                            <td style={{ padding: '12px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                {(() => {
+                                  const assignedIds = [...(student.assignedFacultyIds || [])];
+                                  if (user?.role?.toLowerCase() === 'faculty' && !assignedIds.includes(user.uid) && assignedStudentIds.includes(student.id)) {
+                                    assignedIds.push(user.uid);
+                                  }
+                                  if (assignedIds.length === 0) return <span style={{ color: 'var(--text-light)', fontStyle: 'italic', fontSize: '0.78rem' }}>Unassigned</span>;
+                                  const mentorNames = assignedIds.map(fid => {
+                                    const found = allUsers.find(u => u.id === fid || u.email === fid);
+                                    return found ? found.displayName : fid;
+                                  });
+                                  return <div style={{ fontWeight: 600, fontSize: '0.82rem', color: 'var(--primary)' }}>{mentorNames.join(', ')}</div>;
+                                })()}
+                                {user?.role?.toLowerCase() === 'admin' && (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setSelectedStudentDetails({ ...student, joined: 'Jan 2026', roll: 'Roll #COMP' });
+                                    }}
+                                    style={{
+                                      padding: '2px 6px', background: 'var(--primary-light)', color: 'var(--primary)',
+                                      border: '1px solid rgba(83,109,254,0.2)', borderRadius: '4px', fontSize: '0.72rem',
+                                      fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s'
+                                    }}
+                                    onMouseEnter={e => { e.currentTarget.style.background = 'var(--primary)'; e.currentTarget.style.color = 'white'; }}
+                                    onMouseLeave={e => { e.currentTarget.style.background = 'var(--primary-light)'; e.currentTarget.style.color = 'var(--primary)'; }}
+                                  >
+                                    Manage
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                            <td style={{ padding: '12px' }}>
+                              {user?.role === 'admin' ? (
+                                editingStudentId === student.id ? (
+                                  <div style={{ display: 'flex', gap: '4px' }}>
+                                    <input type="number" value={editingAmount} onChange={e => setEditingAmount(e.target.value)} style={{ width: '80px', padding: '4px' }} autoFocus />
+                                    <button onClick={() => handleSaveFeesAmount(student.id)} style={{ background: 'var(--success)', color: 'var(--text-on-primary)', padding: '2px 6px', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Save</button>
+                                    <button onClick={() => setEditingStudentId(null)} style={{ background: 'var(--danger)', color: 'var(--text-on-primary)', padding: '2px 6px', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Cancel</button>
+                                  </div>
+                                ) : (
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }} onClick={() => { setEditingStudentId(student.id); setEditingAmount(currentFeesAmount); }}>
+                                    <span>₹{currentFeesAmount.toLocaleString()}</span>
+                                    <Pencil size={12} style={{ color: 'var(--text-light)' }} />
+                                  </div>
+                                )
+                              ) : (
+                                <span>₹{currentFeesAmount.toLocaleString()}</span>
+                              )}
+                            </td>
+
+                            <td style={{ padding: '12px' }}>
+                              {user?.role === 'admin' ? (
+                                <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleUpdateFeeStatus(student.id, 'paid');
+                                    }}
+                                    style={{
+                                      padding: '4px 10px',
+                                      background: feeStatus === 'paid' ? 'rgba(102,187,106,0.15)' : 'var(--surface)',
+                                      color: 'var(--success)',
+                                      border: feeStatus === 'paid' ? '1px solid var(--success)' : '1px solid var(--border)',
+                                      borderRadius: '6px',
+                                      fontSize: '0.75rem',
+                                      fontWeight: 600,
+                                      cursor: 'pointer',
+                                      transition: 'all 0.2s',
+                                    }}
+                                  >
+                                    Paid
+                                  </button>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleUpdateFeeStatus(student.id, 'pending');
+                                    }}
+                                    style={{
+                                      padding: '4px 10px',
+                                      background: feeStatus === 'pending' ? 'rgba(245,158,11,0.15)' : 'var(--surface)',
+                                      color: '#F59E0B',
+                                      border: feeStatus === 'pending' ? '1px solid #F59E0B' : '1px solid var(--border)',
+                                      borderRadius: '6px',
+                                      fontSize: '0.75rem',
+                                      fontWeight: 600,
+                                      cursor: 'pointer',
+                                      transition: 'all 0.2s',
+                                    }}
+                                  >
+                                    Pending
+                                  </button>
+                                  {feeStatus !== 'paid' && (
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleSendWhatsAppNotification(student);
+                                      }}
+                                      title="Send WhatsApp Reminder"
+                                      style={{
+                                        padding: '6px',
+                                        background: 'rgba(83,109,254,0.1)',
+                                        color: 'var(--primary)',
+                                        border: '1px solid rgba(83,109,254,0.2)',
+                                        borderRadius: '6px',
+                                        cursor: 'pointer',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                      }}
+                                    >
+                                      <Send size={12} />
+                                    </button>
+                                  )}
+                                </div>
+                              ) : (
+                                <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                                  <span style={{
+                                    padding: '4px 10px',
+                                    background: bgMap[feeStatus] || 'var(--surface)',
+                                    color: colorMap[feeStatus] || 'var(--text-muted)',
+                                    border: `1px solid ${colorMap[feeStatus] || 'var(--border)'}`,
+                                    borderRadius: '6px',
+                                    fontSize: '0.75rem',
+                                    fontWeight: 600
+                                  }}>{feeStatus === 'paid' ? 'Paid' : 'Pending'}</span>
+                                  {feeStatus !== 'paid' && (
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleSendWhatsAppNotification(student);
+                                      }}
+                                      title="Send WhatsApp Reminder"
+                                      style={{
+                                        padding: '6px',
+                                        background: 'rgba(83,109,254,0.1)',
+                                        color: 'var(--primary)',
+                                        border: '1px solid rgba(83,109,254,0.2)',
+                                        borderRadius: '6px',
+                                        cursor: 'pointer',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                      }}
+                                    >
+                                      <Send size={12} />
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+                            </td>
+                            
+                            <td style={{ padding: '12px' }}>
+                              <div style={{ display: 'flex', gap: '6px' }}>
+                                <button onClick={() => setSelectedStudentDetails({ ...student, joined: 'Jan 2026', roll: 'Roll #COMP' })} className="btn btn-secondary" style={{ padding: '6px', borderRadius: '6px' }} title="View Detail"><Eye size={14} /></button>
+                                <button
+                                  onClick={async (e) => {
+                                    e.stopPropagation();
+                                    const btn = e.currentTarget;
+                                    btn.disabled = true;
+                                    const origHtml = btn.innerHTML;
+                                    btn.innerHTML = `<span class="spinner" style="display:inline-block;width:10px;height:10px;border:1.5px solid var(--primary);border-top-color:transparent;border-radius:50%;animation:spin 1s linear infinite;"></span>`;
+                                    try {
+                                      const currentMonthStr = new Date().toISOString().slice(0, 7);
+                                      await reportService.exportMonthlyReport(student.id, currentMonthStr, showToast);
+                                    } catch (err) {
+                                      console.error(err);
+                                    } finally {
+                                      btn.disabled = false;
+                                      btn.innerHTML = origHtml;
+                                    }
+                                  }}
+                                  className="btn btn-secondary"
+                                  style={{ padding: '6px', borderRadius: '6px' }}
+                                  title="Export Monthly Report"
+                                >
+                                  <Download size={14} />
+                                </button>
+                                {user?.role === 'admin' && (
+                                  <button onClick={() => handleDeleteUser(student.id, student.displayName)} className="btn btn-ghost" style={{ padding: '6px', color: 'var(--danger)', borderRadius: '6px' }} title="Delete Roster"><Trash2 size={14} /></button>
+                                )}
+                                {user?.role?.toLowerCase() === 'faculty' && (
+                                  <button
+                                    onClick={async (e) => {
+                                      e.stopPropagation();
+                                      if (window.confirm(`Remove student "${student.displayName}" from your roster?`)) {
+                                        await handleRemoveStudentFromRoster(student.id);
+                                      }
+                                    }}
+                                    className="btn btn-ghost"
+                                    style={{ padding: '6px', color: 'var(--danger)', borderRadius: '6px' }}
+                                    title="Remove from Roster"
+                                  >
+                                    <UserMinus size={14} />
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )}
 
             {/* Pagination Controls */}
             <div style={{
@@ -4529,393 +5580,414 @@ const AdminDashboard = () => {
               {/* Billed Roster Title & List */}
               <div style={{ marginTop: '24px' }}>
                 <h3 style={{ fontSize: '1rem', fontWeight: 800, marginBottom: '12px', color: 'var(--dark)' }}>Student Billing Overview</h3>
-                <div className="table-scroll">
-                  <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '700px' }}>
-                    <thead>
-                      <tr style={{ borderBottom: '1px solid var(--border)', fontSize: '0.8rem', color: 'var(--text-light)' }}>
-                        <th style={{ padding: '10px' }}>Student</th>
-                        <th style={{ padding: '10px' }}>Course</th>
-                        <th style={{ padding: '10px' }}>Billed Amount</th>
-                        <th style={{ padding: '10px' }}>Paid Amount</th>
-                        <th style={{ padding: '10px' }}>Pending Amount</th>
-                        <th style={{ padding: '10px' }}>Status</th>
-                        <th style={{ padding: '10px' }}>Action</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredStudents.map(student => {
-                        const feeRecord = currentMonthActiveFees.find(f => f.studentId === student.id);
-                        const amountDue = feeRecord ? feeRecord.amountDue : getStudentMonthlyFee(student);
-                        const paidAmount = feeRecord ? feeRecord.amountPaid : 0;
-                        const pendingAmount = amountDue - paidAmount;
-                        const feeStatus = (feeRecord ? feeRecord.status : 'pending').toLowerCase();
+                {isMobile ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    {filteredStudents.map(student => {
+                      const feeRecord = currentMonthActiveFees.find(f => f.studentId === student.id);
+                      const amountDue = feeRecord ? feeRecord.amountDue : getStudentMonthlyFee(student);
+                      const paidAmount = feeRecord ? feeRecord.amountPaid : 0;
+                      const pendingAmount = amountDue - paidAmount;
+                      const feeStatus = (feeRecord ? feeRecord.status : 'pending').toLowerCase();
+                      const colorMap = { 'paid': 'var(--success)', 'pending': 'var(--danger)' };
+                      const bgMap = { 'paid': 'rgba(102,187,106,0.1)', 'pending': 'rgba(239,83,80,0.1)' };
 
-                        const colorMap = {
-                          'paid': 'var(--success)',
-                          'pending': 'var(--danger)'
-                        };
-                        const bgMap = {
-                          'paid': 'rgba(102,187,106,0.1)',
-                          'pending': 'rgba(239,83,80,0.1)'
-                        };
-
-                        return (
-                          <tr key={student.id} style={{ borderBottom: '1px solid var(--border)', fontSize: '0.85rem' }}>
-                            <td style={{ padding: '10px' }}>
-                              <div style={{ fontWeight: 700 }}>{student.displayName}</div>
+                      return (
+                        <div key={student.id} className="mobile-card-item">
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border)', paddingBottom: '8px' }}>
+                            <div>
+                              <span style={{ fontWeight: 700, color: 'var(--dark)' }}>{student.displayName}</span>
                               <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{student.email}</div>
-                            </td>
-                            <td style={{ padding: '10px' }}>{student.course}</td>
-                            <td style={{ padding: '10px', fontWeight: 600 }}>₹{amountDue.toLocaleString()}</td>
-                            <td style={{ padding: '10px', fontWeight: 600, color: 'var(--success)' }}>₹{paidAmount.toLocaleString()}</td>
-                            <td style={{ padding: '10px', fontWeight: 600, color: pendingAmount > 0 ? 'var(--danger)' : 'var(--text-muted)' }}>₹{pendingAmount.toLocaleString()}</td>
-                            <td style={{ padding: '10px' }}>
-                              <span style={{
-                                padding: '3px 8px', borderRadius: '100px', fontSize: '0.7rem', fontWeight: 800,
-                                color: colorMap[feeStatus] || 'var(--text-muted)',
-                                background: bgMap[feeStatus] || 'var(--surface)'
-                              }}>{feeStatus === 'paid' ? 'Paid' : 'Pending'}</span>
-                            </td>
-                            <td style={{ padding: '10px' }}>
-                              <button
-                                onClick={() => setSelectedStudentDetails({ ...student, joined: 'Jan 2026', roll: 'Roll #COMP' })}
-                                className="btn btn-secondary"
-                                style={{ padding: '6px 12px', fontSize: '0.75rem', borderRadius: '6px' }}
-                              >
-                                Manage Fees
-                              </button>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
+                            </div>
+                            <span style={{
+                              padding: '3px 8px', borderRadius: '100px', fontSize: '0.7rem', fontWeight: 800,
+                              color: colorMap[feeStatus] || 'var(--text-muted)',
+                              background: bgMap[feeStatus] || 'var(--surface)'
+                            }}>{feeStatus === 'paid' ? 'Paid' : 'Pending'}</span>
+                          </div>
+
+                          <div className="mobile-card-row">
+                            <span className="mobile-card-label">Course:</span>
+                            <span className="mobile-card-value">{student.course}</span>
+                          </div>
+
+                          <div className="mobile-card-row">
+                            <span className="mobile-card-label">Billed Amount:</span>
+                            <span className="mobile-card-value" style={{ fontWeight: 600 }}>₹{amountDue.toLocaleString()}</span>
+                          </div>
+
+                          <div className="mobile-card-row">
+                            <span className="mobile-card-label">Paid Amount:</span>
+                            <span className="mobile-card-value" style={{ fontWeight: 600, color: 'var(--success)' }}>₹{paidAmount.toLocaleString()}</span>
+                          </div>
+
+                          <div className="mobile-card-row">
+                            <span className="mobile-card-label">Pending Amount:</span>
+                            <span className="mobile-card-value" style={{ fontWeight: 600, color: pendingAmount > 0 ? 'var(--danger)' : 'var(--text-muted)' }}>₹{pendingAmount.toLocaleString()}</span>
+                          </div>
+
+                          <div style={{ display: 'flex', gap: '6px', marginTop: '4px', borderTop: '1px solid var(--border)', paddingTop: '8px' }}>
+                            <button
+                              onClick={() => setSelectedStudentDetails({ ...student, joined: 'Jan 2026', roll: 'Roll #COMP' })}
+                              className="btn btn-secondary"
+                              style={{ flex: 1, padding: '8px 12px', fontSize: '0.78rem', borderRadius: '8px', justifyContent: 'center' }}
+                            >
+                              Manage Fees
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="table-scroll">
+                    <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '700px' }}>
+                      <thead>
+                        <tr style={{ borderBottom: '1px solid var(--border)', fontSize: '0.8rem', color: 'var(--text-light)' }}>
+                          <th style={{ padding: '10px' }}>Student</th>
+                          <th style={{ padding: '10px' }}>Course</th>
+                          <th style={{ padding: '10px' }}>Billed Amount</th>
+                          <th style={{ padding: '10px' }}>Paid Amount</th>
+                          <th style={{ padding: '10px' }}>Pending Amount</th>
+                          <th style={{ padding: '10px' }}>Status</th>
+                          <th style={{ padding: '10px' }}>Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredStudents.map(student => {
+                          const feeRecord = currentMonthActiveFees.find(f => f.studentId === student.id);
+                          const amountDue = feeRecord ? feeRecord.amountDue : getStudentMonthlyFee(student);
+                          const paidAmount = feeRecord ? feeRecord.amountPaid : 0;
+                          const pendingAmount = amountDue - paidAmount;
+                          const feeStatus = (feeRecord ? feeRecord.status : 'pending').toLowerCase();
+
+                          const colorMap = {
+                            'paid': 'var(--success)',
+                            'pending': 'var(--danger)'
+                          };
+                          const bgMap = {
+                            'paid': 'rgba(102,187,106,0.1)',
+                            'pending': 'rgba(239,83,80,0.1)'
+                          };
+
+                          return (
+                            <tr key={student.id} style={{ borderBottom: '1px solid var(--border)', fontSize: '0.85rem' }}>
+                              <td style={{ padding: '10px' }}>
+                                <div style={{ fontWeight: 700 }}>{student.displayName}</div>
+                                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{student.email}</div>
+                              </td>
+                              <td style={{ padding: '10px' }}>{student.course}</td>
+                              <td style={{ padding: '10px', fontWeight: 600 }}>₹{amountDue.toLocaleString()}</td>
+                              <td style={{ padding: '10px', fontWeight: 600, color: 'var(--success)' }}>₹{paidAmount.toLocaleString()}</td>
+                              <td style={{ padding: '10px', fontWeight: 600, color: pendingAmount > 0 ? 'var(--danger)' : 'var(--text-muted)' }}>₹{pendingAmount.toLocaleString()}</td>
+                              <td style={{ padding: '10px' }}>
+                                <span style={{
+                                  padding: '3px 8px', borderRadius: '100px', fontSize: '0.7rem', fontWeight: 800,
+                                  color: colorMap[feeStatus] || 'var(--text-muted)',
+                                  background: bgMap[feeStatus] || 'var(--surface)'
+                                }}>{feeStatus === 'paid' ? 'Paid' : 'Pending'}</span>
+                              </td>
+                              <td style={{ padding: '10px' }}>
+                                <button
+                                  onClick={() => setSelectedStudentDetails({ ...student, joined: 'Jan 2026', roll: 'Roll #COMP' })}
+                                  className="btn btn-secondary"
+                                  style={{ padding: '6px 12px', fontSize: '0.75rem', borderRadius: '6px' }}
+                                >
+                                  Manage Fees
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
 
-              {/* Admin Billing Debug Panel */}
-              {user?.role?.toLowerCase() === 'admin' && (
-                <div style={{
-                  background: 'var(--surface)',
-                  borderRadius: '16px',
-                  border: '1px solid var(--border)',
-                  padding: '20px',
-                  marginTop: '24px',
-                  boxShadow: '0 4px 12px rgba(0,0,0,0.05)'
-                }}>
-                  <div 
-                    onClick={() => setIsDebugPanelOpen(!isDebugPanelOpen)}
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      cursor: 'pointer',
-                      userSelect: 'none'
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <AlertTriangle size={18} style={{ color: 'var(--primary)' }} />
-                      <h3 style={{ fontSize: '1rem', fontWeight: 800, margin: 0, color: 'var(--dark)' }}>
-                        Admin Billing Debug Panel
-                      </h3>
-                    </div>
-                    <ChevronDown 
-                      size={20} 
-                      style={{ 
-                        transform: isDebugPanelOpen ? 'rotate(180deg)' : 'rotate(0deg)', 
-                        transition: 'transform 0.2s',
-                        color: 'var(--text-muted)'
-                      }} 
-                    />
-                  </div>
 
-                  {isDebugPanelOpen && (
-                    <div style={{ marginTop: '16px' }}>
-                      <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '16px' }}>
-                        This panel allows you to monitor and control billing state directly. Recalculated directly from student records roster data (real-time listener).
-                      </p>
-
-                      {/* Debug Report Summary */}
-                      <div style={{
-                        display: 'grid',
-                        gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
-                        gap: '12px',
-                        marginBottom: '20px',
-                        background: 'var(--surface-elevated)',
-                        padding: '16px',
-                        borderRadius: '12px',
-                        border: '1px solid var(--border)'
-                      }}>
-                        <div>
-                          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Student Count</div>
-                          <div style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--dark)' }}>{studentsList.length}</div>
-                        </div>
-                        <div>
-                          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Total Fee Sum</div>
-                          <div style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--primary)' }}>₹{totalMonthlyFees.toLocaleString()}</div>
-                        </div>
-                        <div>
-                          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Pending Fee Sum</div>
-                          <div style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--danger)' }}>₹{pendingFeesTotal.toLocaleString()}</div>
-                        </div>
-                        <div>
-                           <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Paid Student Count</div>
-                           <div style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--success)' }}>{studentsPaidCount}</div>
-                         </div>
-                         <div>
-                           <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 700, textTransform: 'uppercase' }}>Pending Student Count</div>
-                           <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#F59E0B' }}>{studentsPendingCount}</div>
-                         </div>
-                      </div>
-
-                      <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '16px' }}>
-                        This panel allows you to monitor and control billing state directly. You can inspect fields stored in Firestore, toggle the billing source override, and force recalculations.
-                      </p>
-
-                      <div style={{ marginBottom: '16px', maxWidth: '400px' }}>
-                        <input
-                          type="text"
-                          placeholder="Search student by name or ID..."
-                          value={debugSearch}
-                          onChange={(e) => setDebugSearch(e.target.value)}
-                          style={{
-                            width: '100%',
-                            padding: '10px 14px',
-                            borderRadius: '8px',
-                            border: '1px solid var(--border)',
-                            background: 'var(--white)',
-                            color: 'var(--dark)',
-                            fontSize: '0.85rem'
-                          }}
-                        />
-                      </div>
-
-                      <div className="table-scroll">
-                        <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: '800px' }}>
-                          <thead>
-                            <tr style={{ borderBottom: '1px solid var(--border)', fontSize: '0.8rem', color: 'var(--text-light)' }}>
-                              <th style={{ padding: '10px' }}>Student Info</th>
-                              <th style={{ padding: '10px' }}>Student ID</th>
-                              <th style={{ padding: '10px' }}>feeStatus</th>
-                              <th style={{ padding: '10px' }}>statusSource</th>
-                              <th style={{ padding: '10px' }}>pendingAmount</th>
-                              <th style={{ padding: '10px' }}>paidAmount</th>
-                              <th style={{ padding: '10px' }}>Last Update</th>
-                              <th style={{ padding: '10px' }}>Actions</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {studentsList
-                              .filter(s => 
-                                !debugSearch || 
-                                s.displayName?.toLowerCase().includes(debugSearch.toLowerCase()) || 
-                                s.id?.toLowerCase().includes(debugSearch.toLowerCase())
-                              )
-                              .map(student => {
-                                const feeRecord = currentMonthFeesList.find(f => f.studentId === student.id);
-                                const amountDue = feeRecord ? feeRecord.amountDue : getStudentMonthlyFee(student);
-                                const paidAmount = feeRecord ? feeRecord.amountPaid : 0;
-                                const pendingAmount = amountDue - paidAmount;
-                                const feeStatus = (feeRecord ? feeRecord.status : 'pending').toLowerCase();
-                                const lastUpdate = feeRecord?.updatedAt?.toDate ? feeRecord.updatedAt.toDate().toLocaleString() : 'Never';
-
-                                const colorMap = {
-                                  'paid': 'var(--success)',
-                                  'pending': 'var(--danger)'
-                                };
-                                const bgMap = {
-                                  'paid': 'rgba(102,187,106,0.1)',
-                                  'pending': 'rgba(239,83,80,0.1)'
-                                };
-
-                                return (
-                                  <tr key={student.id} style={{ borderBottom: '1px solid var(--border)', fontSize: '0.85rem' }}>
-                                    <td style={{ padding: '10px' }}>
-                                      <div style={{ fontWeight: 700, color: 'var(--dark)' }}>{student.displayName}</div>
-                                      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{student.email}</div>
-                                    </td>
-                                    <td style={{ padding: '10px', fontFamily: 'monospace', fontSize: '0.75rem' }}>
-                                      {student.id}
-                                    </td>
-                                    <td style={{ padding: '10px' }}>
-                                      <span style={{
-                                        padding: '3px 8px', borderRadius: '100px', fontSize: '0.7rem', fontWeight: 800,
-                                        color: colorMap[feeStatus] || 'var(--text-muted)',
-                                        background: bgMap[feeStatus] || 'var(--surface)'
-                                      }}>{feeStatus === 'paid' ? 'Paid' : 'Pending'}</span>
-                                    </td>
-                                    <td style={{ padding: '10px' }}>
-                                      <span style={{
-                                        padding: '3px 8px', borderRadius: '100px', fontSize: '0.7rem', fontWeight: 800,
-                                        color: 'var(--success)',
-                                        background: 'rgba(102,187,106,0.1)'
-                                      }}>direct</span>
-                                    </td>
-                                    <td style={{ padding: '10px', fontWeight: 600 }}>
-                                      ₹{pendingAmount.toLocaleString()}
-                                    </td>
-                                    <td style={{ padding: '10px', fontWeight: 600, color: 'var(--success)' }}>
-                                      ₹{paidAmount.toLocaleString()}
-                                    </td>
-                                    <td style={{ padding: '10px', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                                      {lastUpdate}
-                                    </td>
-                                    <td style={{ padding: '10px' }}>
-                                      <div style={{ display: 'flex', gap: '8px' }}>
-                                        {feeStatus === 'pending' ? (
-                                          <button
-                                            onClick={() => handleUpdateFeeStatus(student.id, 'paid')}
-                                            className="btn btn-success"
-                                            style={{ padding: '4px 8px', fontSize: '0.7rem', borderRadius: '4px', background: 'var(--success)', color: 'white', border: 'none' }}
-                                          >
-                                            Mark Paid
-                                          </button>
-                                        ) : (
-                                          <button
-                                            onClick={() => handleUpdateFeeStatus(student.id, 'pending')}
-                                            className="btn btn-warning"
-                                            style={{ padding: '4px 8px', fontSize: '0.7rem', borderRadius: '4px', background: '#F59E0B', color: 'white', border: 'none' }}
-                                          >
-                                            Mark Pending
-                                          </button>
-                                        )}
-                                      </div>
-                                    </td>
-                                  </tr>
-                                );
-                              })}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
 
             </div>
           )}
 
           {/* ==================== 2. TABS: FACULTY STAFF ==================== */}
           {activePanelTab === 'faculty' && (
-            <table style={{ width: '100%', minWidth: '700px', borderCollapse: 'collapse', textAlign: 'left' }}>
-              <thead>
-                <tr style={{ borderBottom: '1px solid var(--border)', fontSize: '0.8rem', color: 'var(--text-light)' }}>
-                  <th style={{ padding: '12px' }}>Faculty profile</th>
-                  <th style={{ padding: '12px' }}>Qualification & Experience</th>
-                  <th style={{ padding: '12px' }}>Subjects taught</th>
-                  <th style={{ padding: '12px' }}>Availability Status</th>
-                  <th style={{ padding: '12px' }}>Allotted Students</th>
-                  <th style={{ padding: '12px' }}>Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredFaculty.map(fac => (
-                  <tr key={fac.id} style={{ borderBottom: '1px solid var(--border)', fontSize: '0.88rem' }}>
-                    <td style={{ padding: '12px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <img src={fac.photoURL || 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&q=80&w=150'} alt={fac.displayName} style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover' }} />
-                      <div>
-                        <div style={{ fontWeight: 700, color: 'var(--dark)' }}>{fac.displayName}</div>
-                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{fac.email}</div>
-                      </div>
-                    </td>
-                    <td style={{ padding: '12px' }}>
-                      <div>{fac.qualification || 'B.Tech CSE'}</div>
-                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{fac.experience || 4} years experience</div>
-                    </td>
-                    <td style={{ padding: '12px' }}>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                        {fac.subjects && fac.subjects.map((sub, i) => (
-                          <span key={i} className="badge badge-primary" style={{ fontSize: '0.68rem', padding: '2px 6px' }}>{sub}</span>
-                        ))}
-                      </div>
-                    </td>
-                    <td style={{ padding: '12px' }}>
-                      <span style={{
-                        padding: '3px 8px', borderRadius: '100px', fontSize: '0.72rem', fontWeight: 800,
-                        background: fac.availability === 'Busy' ? 'rgba(255,167,38,0.1)' : 'rgba(102,187,106,0.1)',
-                        color: fac.availability === 'Busy' ? 'var(--warning)' : 'var(--success)'
-                      }}>{fac.availability || 'Available'}</span>
-                    </td>
-                    <td style={{ padding: '12px' }}>
-                      {(() => {
-                        const count = allUsers.filter(u => u.role?.toLowerCase() === 'student' && (u.assignedFaculty?.includes(fac.id) || u.assignedFaculty?.includes(fac.email))).length;
-                        return <span style={{ fontWeight: 700, color: 'var(--primary)', fontSize: '0.85rem' }}>{count} Students</span>;
-                      })()}
-                    </td>
-                    <td style={{ padding: '12px' }}>
-                      <button onClick={() => handleDeleteUser(fac.id, fac.displayName)} className="btn btn-ghost" style={{ padding: '6px', color: 'var(--danger)', borderRadius: '6px' }} title="Delete Roster"><Trash2 size={14} /></button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '20px', padding: '10px 0' }}>
+              {filteredFaculty.map(fac => {
+                return (
+                  <div key={fac.id} style={{ height: '100%' }}>
+                    <StaffCard
+                      staff={fac}
+                      isAdmin={true}
+                      onDelete={() => handleDeleteUser(fac.id, fac.displayName)}
+                      onConfigureLimits={() => handleOpenLimitsModal(fac)}
+                    />
+                  </div>
+                );
+              })}
+            </div>
           )}
 
           {/* ==================== 3. TABS: MEMBERS STAFF ==================== */}
           {(activePanelTab === 'members' || (activePanelTab === 'settings' && settingsSubTab === 'members')) && (
-            <table style={{ width: '100%', minWidth: '700px', borderCollapse: 'collapse', textAlign: 'left' }}>
-              <thead>
-                <tr style={{ borderBottom: '1px solid var(--border)', fontSize: '0.8rem', color: 'var(--text-light)' }}>
-                  <th style={{ padding: '12px' }}>Member profile</th>
-                  <th style={{ padding: '12px' }}>Department</th>
-                  <th style={{ padding: '12px' }}>Phone / Role</th>
-                  <th style={{ padding: '12px' }}>Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredMembers.map(memb => (
-                  <tr key={memb.id} style={{ borderBottom: '1px solid var(--border)', fontSize: '0.88rem' }}>
-                    <td style={{ padding: '12px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <img src={memb.photoURL || 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=150'} alt={memb.displayName} style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover' }} />
-                      <div>
-                        <div style={{ fontWeight: 700, color: 'var(--dark)' }}>{memb.displayName}</div>
-                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{memb.email}</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              
+              {/* Role Selector Controls */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <Filter size={15} style={{ color: 'var(--text-muted)' }} />
+                  <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-secondary)' }}>Filter Role:</span>
+                  <div style={{ display: 'flex', gap: '4px', background: 'var(--border-light, #f1f5f9)', padding: '3px', borderRadius: '10px' }}>
+                    {[
+                      { id: 'all', label: 'All Staff' },
+                      { id: 'admin', label: 'Admin' },
+                      { id: 'faculty', label: 'Faculty' },
+                      { id: 'member', label: 'Staff' }
+                    ].map(btn => (
+                      <button
+                        key={btn.id}
+                        onClick={() => {
+                          setMemberRoleFilter(btn.id);
+                          setMemberCurrentPage(1);
+                        }}
+                        style={{
+                          padding: '6px 12px',
+                          borderRadius: '8px',
+                          border: 'none',
+                          cursor: 'pointer',
+                          fontSize: '0.78rem',
+                          fontWeight: 700,
+                          background: memberRoleFilter === btn.id ? 'var(--white, #ffffff)' : 'transparent',
+                          color: memberRoleFilter === btn.id ? 'var(--primary)' : 'var(--text-muted)',
+                          boxShadow: memberRoleFilter === btn.id ? '0 1px 4px rgba(0,0,0,0.06)' : 'none',
+                          transition: 'all 0.2s'
+                        }}
+                      >
+                        {btn.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontWeight: 600 }}>
+                  Showing {filteredCombinedMembers.length} staff members
+                </div>
+              </div>
+
+              {/* Staff Cards Grid */}
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+                gap: '16px'
+              }}>
+                {paginatedMembers.map(memb => {
+                  const roleColors = {
+                    admin: { bg: 'rgba(239,68,68,0.08)', text: '#ef4444', label: 'Admin' },
+                    faculty: { bg: 'rgba(99,102,241,0.08)', text: '#6366f1', label: 'Faculty' },
+                    member: { bg: 'rgba(16,185,129,0.08)', text: '#10b981', label: 'Staff' }
+                  };
+                  const roleStyle = roleColors[memb.role?.toLowerCase()] || { bg: 'rgba(100,116,139,0.08)', text: '#64748b', label: memb.role || 'Member' };
+
+                  return (
+                    <div
+                      key={memb.id}
+                      style={{
+                        background: 'var(--surface-elevated, #ffffff)',
+                        border: '1.5px solid var(--border)',
+                        borderRadius: '20px',
+                        padding: '20px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'space-between',
+                        gap: '16px',
+                        boxShadow: 'var(--shadow-sm)',
+                        transition: 'transform 0.2s, box-shadow 0.2s'
+                      }}
+                      className="hover-card-effect"
+                    >
+                      <div style={{ display: 'flex', gap: '14px', alignItems: 'center' }}>
+                        <img
+                          src={memb.photoURL || 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=150'}
+                          alt={memb.displayName}
+                          style={{ width: 52, height: 52, borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--border)' }}
+                        />
+                        <div style={{ minWidth: 0 }}>
+                          <h4 style={{ margin: 0, fontSize: '0.98rem', fontWeight: 800, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {memb.displayName || 'Anonymous'}
+                          </h4>
+                          <span style={{
+                            display: 'inline-block',
+                            padding: '3px 8px',
+                            borderRadius: '6px',
+                            background: roleStyle.bg,
+                            color: roleStyle.text,
+                            fontSize: '0.68rem',
+                            fontWeight: 800,
+                            marginTop: '4px',
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.03em'
+                          }}>
+                            {roleStyle.label}
+                          </span>
+                        </div>
                       </div>
-                    </td>
-                    <td style={{ padding: '12px' }}>{memb.department || 'Operations'}</td>
-                    <td style={{ padding: '12px' }}>
-                      <div>{memb.roleName || 'Student Support'}</div>
-                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{memb.phone || 'N/A'}</div>
-                    </td>
-                    <td style={{ padding: '12px' }}>
-                      <button onClick={() => handleDeleteUser(memb.id, memb.displayName)} className="btn btn-ghost" style={{ padding: '6px', color: 'var(--danger)', borderRadius: '6px' }} title="Delete Roster"><Trash2 size={14} /></button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span style={{ color: 'var(--text-muted)' }}>Email:</span>
+                          <span style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '180px' }}>{memb.email}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span style={{ color: 'var(--text-muted)' }}>Phone:</span>
+                          <span style={{ fontWeight: 600 }}>{memb.phone || 'N/A'}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span style={{ color: 'var(--text-muted)' }}>Department:</span>
+                          <span style={{ fontWeight: 600 }}>{memb.department || 'Operations'}</span>
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', gap: '8px', borderTop: '1px solid var(--border)', paddingTop: '12px', marginTop: '4px' }}>
+                        <a
+                          href={`mailto:${memb.email}`}
+                          className="btn btn-secondary"
+                          style={{
+                            flex: 1,
+                            padding: '8px 0',
+                            fontSize: '0.75rem',
+                            fontWeight: 700,
+                            borderRadius: '10px',
+                            textAlign: 'center',
+                            textDecoration: 'none',
+                            background: 'rgba(0,0,0,0.03)',
+                            color: 'var(--text-primary)',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '4px'
+                          }}
+                        >
+                          <Mail size={12} /> Email
+                        </a>
+
+                        <button
+                          onClick={() => handleDeleteUser(memb.id, memb.displayName)}
+                          className="btn btn-danger"
+                          style={{
+                            padding: '8px 12px',
+                            fontSize: '0.75rem',
+                            fontWeight: 700,
+                            borderRadius: '10px',
+                            background: 'rgba(239,68,68,0.08)',
+                            color: '#ef4444',
+                            border: 'none',
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px'
+                          }}
+                        >
+                          <Trash2 size={12} /> Delete
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Pagination Controls */}
+              {totalMemberPages > 1 && (
+                <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '16px', marginTop: '12px' }}>
+                  <button
+                    disabled={memberCurrentPage === 1}
+                    onClick={() => setMemberCurrentPage(p => Math.max(1, p - 1))}
+                    className="btn btn-secondary"
+                    style={{ padding: '8px 16px', borderRadius: '10px', fontSize: '0.8rem', fontWeight: 700, opacity: memberCurrentPage === 1 ? 0.5 : 1, cursor: memberCurrentPage === 1 ? 'not-allowed' : 'pointer' }}
+                  >
+                    Previous
+                  </button>
+                  <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--text-secondary)' }}>
+                    Page {memberCurrentPage} of {totalMemberPages}
+                  </span>
+                  <button
+                    disabled={memberCurrentPage === totalMemberPages}
+                    onClick={() => setMemberCurrentPage(p => Math.min(totalMemberPages, p + 1))}
+                    className="btn btn-secondary"
+                    style={{ padding: '8px 16px', borderRadius: '10px', fontSize: '0.8rem', fontWeight: 700, opacity: memberCurrentPage === totalMemberPages ? 0.5 : 1, cursor: memberCurrentPage === totalMemberPages ? 'not-allowed' : 'pointer' }}
+                  >
+                    Next
+                  </button>
+                </div>
+              )}
+
+            </div>
           )}
 
           {/* ==================== 4. TABS: ATTENDANCE LOGS ==================== */}
           {activePanelTab === 'attendance' && (
-            <table style={{ width: '100%', minWidth: '700px', borderCollapse: 'collapse', textAlign: 'left' }}>
-              <thead>
-                <tr style={{ borderBottom: '1px solid var(--border)', fontSize: '0.8rem', color: 'var(--text-light)' }}>
-                  <th style={{ padding: '12px' }}>Student Name</th>
-                  <th style={{ padding: '12px' }}>Class Date</th>
-                  <th style={{ padding: '12px' }}>Subject Track</th>
-                  <th style={{ padding: '12px' }}>Marked status</th>
-                  <th style={{ padding: '12px' }}>Faculty Mentor</th>
-                </tr>
-              </thead>
-              <tbody>
+            isMobile ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 {attendanceLogs.filter(log => log.studentName?.toLowerCase().includes(search.toLowerCase()) || log.subject?.toLowerCase().includes(search.toLowerCase())).map(log => (
-                  <tr key={log.id} style={{ borderBottom: '1px solid var(--border)', fontSize: '0.88rem' }}>
-                    <td style={{ padding: '12px', fontWeight: 700 }}>{log.studentName}</td>
-                    <td style={{ padding: '12px' }}>{log.date}</td>
-                    <td style={{ padding: '12px' }}>{log.subject}</td>
-                    <td style={{ padding: '12px' }}>
+                  <div key={log.id} className="mobile-card-item">
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border)', paddingBottom: '8px' }}>
+                      <span style={{ fontWeight: 700, color: 'var(--dark)' }}>{log.studentName}</span>
                       <span style={{
                         padding: '3px 8px', borderRadius: '100px', fontSize: '0.72rem', fontWeight: 800, textTransform: 'uppercase',
                         background: log.status === 'present' ? 'rgba(102,187,106,0.1)' : log.status === 'absent' ? 'rgba(239,83,80,0.1)' : 'rgba(255,167,38,0.1)',
                         color: log.status === 'present' ? 'var(--success)' : log.status === 'absent' ? 'var(--danger)' : '#E65100'
                       }}>{log.status}</span>
-                    </td>
-                    <td style={{ padding: '12px', color: 'var(--text-muted)' }}>{log.faculty}</td>
-                  </tr>
+                    </div>
+                    
+                    <div className="mobile-card-row">
+                      <span className="mobile-card-label">Class Date:</span>
+                      <span className="mobile-card-value">{log.date}</span>
+                    </div>
+
+                    <div className="mobile-card-row">
+                      <span className="mobile-card-label">Subject Track:</span>
+                      <span className="mobile-card-value">{log.subject}</span>
+                    </div>
+
+                    <div className="mobile-card-row">
+                      <span className="mobile-card-label">Faculty Mentor:</span>
+                      <span className="mobile-card-value">{log.faculty}</span>
+                    </div>
+                  </div>
                 ))}
-              </tbody>
-            </table>
+                {attendanceLogs.length === 0 && (
+                  <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                    No attendance logs found.
+                  </div>
+                )}
+              </div>
+            ) : (
+              <table style={{ width: '100%', minWidth: '700px', borderCollapse: 'collapse', textAlign: 'left' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid var(--border)', fontSize: '0.8rem', color: 'var(--text-light)' }}>
+                    <th style={{ padding: '12px' }}>Student Name</th>
+                    <th style={{ padding: '12px' }}>Class Date</th>
+                    <th style={{ padding: '12px' }}>Subject Track</th>
+                    <th style={{ padding: '12px' }}>Marked status</th>
+                    <th style={{ padding: '12px' }}>Faculty Mentor</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {attendanceLogs.filter(log => log.studentName?.toLowerCase().includes(search.toLowerCase()) || log.subject?.toLowerCase().includes(search.toLowerCase())).map(log => (
+                    <tr key={log.id} style={{ borderBottom: '1px solid var(--border)', fontSize: '0.88rem' }}>
+                      <td style={{ padding: '12px', fontWeight: 700 }}>{log.studentName}</td>
+                      <td style={{ padding: '12px' }}>{log.date}</td>
+                      <td style={{ padding: '12px' }}>{log.subject}</td>
+                      <td style={{ padding: '12px' }}>
+                        <span style={{
+                          padding: '3px 8px', borderRadius: '100px', fontSize: '0.72rem', fontWeight: 800, textTransform: 'uppercase',
+                          background: log.status === 'present' ? 'rgba(102,187,106,0.1)' : log.status === 'absent' ? 'rgba(239,83,80,0.1)' : 'rgba(255,167,38,0.1)',
+                          color: log.status === 'present' ? 'var(--success)' : log.status === 'absent' ? 'var(--danger)' : '#E65100'
+                        }}>{log.status}</span>
+                      </td>
+                      <td style={{ padding: '12px', color: 'var(--text-muted)' }}>{log.faculty}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )
           )}
 
           {/* ==================== 5. TABS: CLASS SCHEDULES ==================== */}
@@ -4950,19 +6022,8 @@ const AdminDashboard = () => {
               </div>
 
               {/* Schedules Table */}
-              <table style={{ width: '100%', minWidth: '700px', borderCollapse: 'collapse', textAlign: 'left' }}>
-                <thead>
-                  <tr style={{ borderBottom: '1px solid var(--border)', fontSize: '0.8rem', color: 'var(--text-light)' }}>
-                    <th style={{ padding: '12px' }}>Day & Time</th>
-                    <th style={{ padding: '12px' }}>Subject & Batch</th>
-                    <th style={{ padding: '12px' }}>Faculty Mentor</th>
-                    <th style={{ padding: '12px' }}>Location/Room</th>
-                    <th style={{ padding: '12px' }}>Students Assigned</th>
-                    <th style={{ padding: '12px' }}>Status</th>
-                    <th style={{ padding: '12px' }}>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
+              {isMobile ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                   {schedulesList.filter(sch => {
                     const searchLower = search.toLowerCase();
                     const matchesSearch = sch.subject?.toLowerCase().includes(searchLower) || 
@@ -4976,94 +6037,218 @@ const AdminDashboard = () => {
                     return true;
                   }).map(sch => {
                     const studentNames = (sch.studentIds || []).map(sid => allUsers.find(u => u.id === sid)?.displayName || 'Unknown Student').join(', ');
-                    
-                    // Determine status dynamically
                     let statusLabel = sch.status || 'upcoming';
                     
                     return (
-                      <tr key={sch.id} style={{ borderBottom: '1px solid var(--border)', fontSize: '0.88rem' }}>
-                        <td style={{ padding: '12px' }}>
-                          <div style={{ fontWeight: 700 }}>{sch.day}</div>
-                          <div style={{ fontSize: '0.78rem', color: 'var(--primary)', fontWeight: 600 }}>{sch.startTime} - {sch.endTime || computeEndTime(sch.startTime)}</div>
-                        </td>
-                        <td style={{ padding: '12px' }}>
-                          <div style={{ fontWeight: 700 }}>{sch.subject}</div>
-                          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{sch.batch || 'No Group'}</div>
-                        </td>
-                        <td style={{ padding: '12px' }}>{sch.facultyName || 'Mentor'}</td>
-                        <td style={{ padding: '12px' }}>
-                          <div>{sch.room || 'Compution Campus'}</div>
-                          {sch.meetLink && (
-                            <a href={sch.meetLink} target="_blank" rel="noopener noreferrer" style={{ fontSize: '0.72rem', color: 'var(--primary)', textDecoration: 'underline' }}>
-                              Join Meet Link
-                            </a>
-                          )}
-                        </td>
-                        <td style={{ padding: '12px', fontSize: '0.8rem' }} title={studentNames}>
-                          <div style={{ fontWeight: 700, color: 'var(--primary)' }}>{(sch.studentIds || []).length} Students</div>
-                          <div style={{ color: 'var(--text-muted)', maxWidth: '180px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{studentNames || 'None'}</div>
-                        </td>
-                        <td style={{ padding: '12px' }}>
+                      <div key={sch.id} className="mobile-card-item">
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border)', paddingBottom: '8px' }}>
+                          <div>
+                            <span style={{ fontWeight: 700, fontSize: '1rem', color: 'var(--dark)' }}>{sch.subject}</span>
+                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{sch.batch || 'No Group'}</div>
+                          </div>
                           <span style={{
                             padding: '3px 8px', borderRadius: '100px', fontSize: '0.72rem', fontWeight: 800, textTransform: 'uppercase',
                             background: statusLabel === 'live' ? 'rgba(102,187,106,0.1)' : statusLabel === 'completed' ? 'rgba(158,158,158,0.15)' : 'rgba(83,109,254,0.1)',
                             color: statusLabel === 'live' ? 'var(--success)' : statusLabel === 'completed' ? 'var(--text-muted)' : 'var(--primary)'
                           }}>{statusLabel}</span>
-                        </td>
-                        <td style={{ padding: '12px' }}>
-                          <div style={{ display: 'flex', gap: '8px' }}>
-                            <button
-                              onClick={() => {
-                                setEditingSchedule(sch);
-                                setEventTitle(sch.subject || '');
-                                setEventDesc(sch.description || '');
-                                setStartDate(sch.day || 'Monday');
-                                setStartTime(sch.startTime || '17:30');
-                                setAssignedFacultyId(sch.facultyId || user.uid);
-                                setVenue(sch.room || 'Room 4B');
-                                setSelectedGroups(sch.batch ? [sch.batch] : []);
-                                setSelectedStudents(sch.studentIds || []);
-                                setMeetLink(sch.meetLink || '');
-                                setIsAddScheduleOpen(true);
-                              }}
-                              className="btn btn-secondary"
-                              style={{ padding: '6px', borderRadius: '6px' }}
-                              title="Edit Class Schedule"
-                            >
-                              <Edit2 size={14} />
-                            </button>
-                            <button
-                              onClick={async () => {
-                                if (window.confirm(`Are you sure you want to cancel the class: ${sch.subject} on ${sch.day}?`)) {
-                                  try {
-                                    await deleteDoc(doc(db, 'classSchedules', sch.id));
-                                    triggerToast('Class schedule deleted successfully', 'success');
-                                  } catch (err) {
-                                    console.error(err);
-                                    triggerToast('Failed to delete class schedule', 'danger');
-                                  }
+                        </div>
+
+                        <div className="mobile-card-row">
+                          <span className="mobile-card-label">Day & Time:</span>
+                          <span className="mobile-card-value" style={{ textAlign: 'right' }}>
+                            <div>{sch.day}</div>
+                            <div style={{ fontSize: '0.78rem', color: 'var(--primary)', fontWeight: 600 }}>{sch.startTime} - {sch.endTime || computeEndTime(sch.startTime)}</div>
+                          </span>
+                        </div>
+
+                        <div className="mobile-card-row">
+                          <span className="mobile-card-label">Faculty Mentor:</span>
+                          <span className="mobile-card-value">{sch.facultyName || 'Mentor'}</span>
+                        </div>
+
+                        <div className="mobile-card-row">
+                          <span className="mobile-card-label">Location/Room:</span>
+                          <span className="mobile-card-value" style={{ textAlign: 'right' }}>
+                            <div>{sch.room || 'Compution Campus'}</div>
+                            {sch.meetLink && (
+                              <a href={sch.meetLink} target="_blank" rel="noopener noreferrer" style={{ fontSize: '0.72rem', color: 'var(--primary)', textDecoration: 'underline' }}>
+                                Join Meet Link
+                              </a>
+                            )}
+                          </span>
+                        </div>
+
+                        <div className="mobile-card-row">
+                          <span className="mobile-card-label">Students Assigned:</span>
+                          <span className="mobile-card-value" style={{ textAlign: 'right' }}>
+                            <div style={{ fontWeight: 700, color: 'var(--primary)' }}>{(sch.studentIds || []).length} Students</div>
+                            <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', maxWidth: '180px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={studentNames}>{studentNames || 'None'}</div>
+                          </span>
+                        </div>
+
+                        <div style={{ display: 'flex', gap: '6px', marginTop: '4px', borderTop: '1px solid var(--border)', paddingTop: '8px' }}>
+                          <button
+                            onClick={() => {
+                              setEditingSchedule(sch);
+                              setEventTitle(sch.subject || '');
+                              setEventDesc(sch.description || '');
+                              setStartDate(sch.day || 'Monday');
+                              setStartTime(sch.startTime || '17:30');
+                              setAssignedFacultyId(sch.facultyId || user.uid);
+                              setVenue(sch.room || 'Room 4B');
+                              setSelectedGroups(sch.batch ? [sch.batch] : []);
+                              setSelectedStudents(sch.studentIds || []);
+                              setMeetLink(sch.meetLink || '');
+                              setIsAddScheduleOpen(true);
+                            }}
+                            className="btn btn-secondary"
+                            style={{ flex: 1, padding: '8px 12px', fontSize: '0.78rem', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
+                          >
+                            <Pencil size={13} /> Edit
+                          </button>
+                          <button
+                            onClick={async () => {
+                              if (window.confirm(`Are you sure you want to cancel the class: ${sch.subject} on ${sch.day}?`)) {
+                                try {
+                                  await deleteDoc(doc(db, 'classSchedules', sch.id));
+                                  triggerToast('Class schedule deleted successfully', 'success');
+                                } catch (err) {
+                                  console.error(err);
+                                  triggerToast('Failed to delete class schedule', 'danger');
                                 }
-                              }}
-                              className="btn btn-ghost"
-                              style={{ padding: '6px', color: 'var(--danger)', borderRadius: '6px' }}
-                              title="Cancel Class"
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
+                              }
+                            }}
+                            className="btn btn-ghost"
+                            style={{ flex: 1, padding: '8px 12px', fontSize: '0.78rem', color: 'var(--danger)', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
+                          >
+                            <Trash2 size={13} /> Cancel
+                          </button>
+                        </div>
+                      </div>
                     );
                   })}
                   {schedulesList.length === 0 && (
-                    <tr>
-                      <td colSpan="7" style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)', fontStyle: 'italic' }}>
-                        No class schedules found.
-                      </td>
-                    </tr>
+                    <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                      No class schedules found.
+                    </div>
                   )}
-                </tbody>
-              </table>
+                </div>
+              ) : (
+                <table style={{ width: '100%', minWidth: '700px', borderCollapse: 'collapse', textAlign: 'left' }}>
+                  <thead>
+                    <tr style={{ borderBottom: '1px solid var(--border)', fontSize: '0.8rem', color: 'var(--text-light)' }}>
+                      <th style={{ padding: '12px' }}>Day & Time</th>
+                      <th style={{ padding: '12px' }}>Subject & Batch</th>
+                      <th style={{ padding: '12px' }}>Faculty Mentor</th>
+                      <th style={{ padding: '12px' }}>Location/Room</th>
+                      <th style={{ padding: '12px' }}>Students Assigned</th>
+                      <th style={{ padding: '12px' }}>Status</th>
+                      <th style={{ padding: '12px' }}>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {schedulesList.filter(sch => {
+                      const searchLower = search.toLowerCase();
+                      const matchesSearch = sch.subject?.toLowerCase().includes(searchLower) || 
+                        sch.facultyName?.toLowerCase().includes(searchLower) || 
+                        sch.day?.toLowerCase().includes(searchLower);
+                      if (!matchesSearch) return false;
+                      
+                      if (user?.role === 'faculty') {
+                        return sch.facultyId === user.uid;
+                      }
+                      return true;
+                    }).map(sch => {
+                      const studentNames = (sch.studentIds || []).map(sid => allUsers.find(u => u.id === sid)?.displayName || 'Unknown Student').join(', ');
+                      
+                      // Determine status dynamically
+                      let statusLabel = sch.status || 'upcoming';
+                      
+                      return (
+                        <tr key={sch.id} style={{ borderBottom: '1px solid var(--border)', fontSize: '0.88rem' }}>
+                          <td style={{ padding: '12px' }}>
+                            <div style={{ fontWeight: 700 }}>{sch.day}</div>
+                            <div style={{ fontSize: '0.78rem', color: 'var(--primary)', fontWeight: 600 }}>{sch.startTime} - {sch.endTime || computeEndTime(sch.startTime)}</div>
+                          </td>
+                          <td style={{ padding: '12px' }}>
+                            <div style={{ fontWeight: 700 }}>{sch.subject}</div>
+                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{sch.batch || 'No Group'}</div>
+                          </td>
+                          <td style={{ padding: '12px' }}>{sch.facultyName || 'Mentor'}</td>
+                          <td style={{ padding: '12px' }}>
+                            <div>{sch.room || 'Compution Campus'}</div>
+                            {sch.meetLink && (
+                              <a href={sch.meetLink} target="_blank" rel="noopener noreferrer" style={{ fontSize: '0.72rem', color: 'var(--primary)', textDecoration: 'underline' }}>
+                                Join Meet Link
+                              </a>
+                            )}
+                          </td>
+                          <td style={{ padding: '12px', fontSize: '0.8rem' }} title={studentNames}>
+                            <div style={{ fontWeight: 700, color: 'var(--primary)' }}>{(sch.studentIds || []).length} Students</div>
+                            <div style={{ color: 'var(--text-muted)', maxWidth: '180px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{studentNames || 'None'}</div>
+                          </td>
+                          <td style={{ padding: '12px' }}>
+                            <span style={{
+                              padding: '3px 8px', borderRadius: '100px', fontSize: '0.72rem', fontWeight: 800, textTransform: 'uppercase',
+                              background: statusLabel === 'live' ? 'rgba(102,187,106,0.1)' : statusLabel === 'completed' ? 'rgba(158,158,158,0.15)' : 'rgba(83,109,254,0.1)',
+                              color: statusLabel === 'live' ? 'var(--success)' : statusLabel === 'completed' ? 'var(--text-muted)' : 'var(--primary)'
+                            }}>{statusLabel}</span>
+                          </td>
+                          <td style={{ padding: '12px' }}>
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                              <button
+                                onClick={() => {
+                                  setEditingSchedule(sch);
+                                  setEventTitle(sch.subject || '');
+                                  setEventDesc(sch.description || '');
+                                  setStartDate(sch.day || 'Monday');
+                                  setStartTime(sch.startTime || '17:30');
+                                  setAssignedFacultyId(sch.facultyId || user.uid);
+                                  setVenue(sch.room || 'Room 4B');
+                                  setSelectedGroups(sch.batch ? [sch.batch] : []);
+                                  setSelectedStudents(sch.studentIds || []);
+                                  setMeetLink(sch.meetLink || '');
+                                  setIsAddScheduleOpen(true);
+                                }}
+                                className="btn btn-secondary"
+                                style={{ padding: '6px', borderRadius: '6px' }}
+                                title="Edit Class Schedule"
+                              >
+                                <Pencil size={14} />
+                              </button>
+                              <button
+                                onClick={async () => {
+                                  if (window.confirm(`Are you sure you want to cancel the class: ${sch.subject} on ${sch.day}?`)) {
+                                    try {
+                                      await deleteDoc(doc(db, 'classSchedules', sch.id));
+                                      triggerToast('Class schedule deleted successfully', 'success');
+                                    } catch (err) {
+                                      console.error(err);
+                                      triggerToast('Failed to delete class schedule', 'danger');
+                                    }
+                                  }
+                                }}
+                                className="btn btn-ghost"
+                                style={{ padding: '6px', color: 'var(--danger)', borderRadius: '6px' }}
+                                title="Cancel Class"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {schedulesList.length === 0 && (
+                      <tr>
+                        <td colSpan="7" style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                          No class schedules found.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              )}
 
               {/* Slot Reschedule Requests sub-panel */}
               <div style={{ marginTop: '24px', borderTop: '1px solid var(--border)', paddingTop: '24px' }}>
@@ -5262,29 +6447,61 @@ const AdminDashboard = () => {
 
           {/* ==================== 6. TABS: DOUBT CHATS ==================== */}
           {activePanelTab === 'chats' && (
-            <table style={{ width: '100%', minWidth: '700px', borderCollapse: 'collapse', textAlign: 'left' }}>
-              <thead>
-                <tr style={{ borderBottom: '1px solid var(--border)', fontSize: '0.8rem', color: 'var(--text-light)' }}>
-                  <th style={{ padding: '12px' }}>Room / Match participants</th>
-                  <th style={{ padding: '12px' }}>Last doubt message</th>
-                  <th style={{ padding: '12px' }}>Student Unreads</th>
-                  <th style={{ padding: '12px' }}>Faculty Unreads</th>
-                </tr>
-              </thead>
-              <tbody>
+            isMobile ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 {chatRoomsList.filter(rm => rm.studentName?.toLowerCase().includes(search.toLowerCase()) || rm.facultyName?.toLowerCase().includes(search.toLowerCase())).map(rm => (
-                  <tr key={rm.id} style={{ borderBottom: '1px solid var(--border)', fontSize: '0.88rem' }}>
-                    <td style={{ padding: '12px' }}>
-                      <div style={{ fontWeight: 700 }}>👨‍🎓 {rm.studentName} ↔ 👨‍🏫 {rm.facultyName}</div>
-                      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Room ID: {rm.id}</div>
-                    </td>
-                    <td style={{ padding: '12px', fontSize: '0.82rem', fontStyle: 'italic', maxWidth: '240px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={rm.lastMessage}>{rm.lastMessage}</td>
-                    <td style={{ padding: '12px', textAlign: 'center' }}>{rm.studentUnreadCount || 0}</td>
-                    <td style={{ padding: '12px', textAlign: 'center' }}>{rm.facultyUnreadCount || 0}</td>
-                  </tr>
+                  <div key={rm.id} className="mobile-card-item">
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border)', paddingBottom: '8px' }}>
+                      <span style={{ fontWeight: 700, color: 'var(--dark)' }}>👨‍🎓 {rm.studentName} ↔ 👨‍🏫 {rm.facultyName}</span>
+                    </div>
+
+                    <div className="mobile-card-row">
+                      <span className="mobile-card-label">Last Message:</span>
+                      <span className="mobile-card-value" style={{ fontStyle: 'italic', color: 'var(--text-muted)', fontSize: '0.8rem', maxWidth: '180px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={rm.lastMessage}>{rm.lastMessage || 'No message'}</span>
+                    </div>
+
+                    <div className="mobile-card-row">
+                      <span className="mobile-card-label">Student Unreads:</span>
+                      <span className="mobile-card-value">{rm.studentUnreadCount || 0}</span>
+                    </div>
+
+                    <div className="mobile-card-row">
+                      <span className="mobile-card-label">Faculty Unreads:</span>
+                      <span className="mobile-card-value">{rm.facultyUnreadCount || 0}</span>
+                    </div>
+                  </div>
                 ))}
-              </tbody>
-            </table>
+                {chatRoomsList.length === 0 && (
+                  <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                    No doubt chat rooms found.
+                  </div>
+                )}
+              </div>
+            ) : (
+              <table style={{ width: '100%', minWidth: '700px', borderCollapse: 'collapse', textAlign: 'left' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid var(--border)', fontSize: '0.8rem', color: 'var(--text-light)' }}>
+                    <th style={{ padding: '12px' }}>Room / Match participants</th>
+                    <th style={{ padding: '12px' }}>Last doubt message</th>
+                    <th style={{ padding: '12px' }}>Student Unreads</th>
+                    <th style={{ padding: '12px' }}>Faculty Unreads</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {chatRoomsList.filter(rm => rm.studentName?.toLowerCase().includes(search.toLowerCase()) || rm.facultyName?.toLowerCase().includes(search.toLowerCase())).map(rm => (
+                    <tr key={rm.id} style={{ borderBottom: '1px solid var(--border)', fontSize: '0.88rem' }}>
+                      <td style={{ padding: '12px' }}>
+                        <div style={{ fontWeight: 700 }}>👨‍🎓 {rm.studentName} ↔ 👨‍🏫 {rm.facultyName}</div>
+                        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Room ID: {rm.id}</div>
+                      </td>
+                      <td style={{ padding: '12px', fontSize: '0.82rem', fontStyle: 'italic', maxWidth: '240px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={rm.lastMessage}>{rm.lastMessage}</td>
+                      <td style={{ padding: '12px', textAlign: 'center' }}>{rm.studentUnreadCount || 0}</td>
+                      <td style={{ padding: '12px', textAlign: 'center' }}>{rm.facultyUnreadCount || 0}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )
           )}
 
           {/* ==================== 7. TABS: ALERT NOTIFICATIONS LOGS ==================== */}
@@ -6407,6 +7624,32 @@ const AdminDashboard = () => {
         </form>
       </Modal>
 
+      {/* Onboarding Roadmap Upload Modal */}
+      <Modal 
+        isOpen={isUploadRoadmapOpen} 
+        onClose={() => {
+          setIsUploadRoadmapOpen(false);
+          triggerToast("⚠️ Onboarding incomplete: Remember to upload the syllabus roadmap for this student later.", "warning");
+        }} 
+        title={`Upload Class Tracker Roadmap`}
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <div style={{ padding: '12px', borderRadius: '8px', background: 'rgba(99,102,241,0.06)', border: '1.5px solid rgba(99,102,241,0.15)', fontSize: '0.82rem', color: 'var(--primary)' }}>
+            <strong>Mandatory Onboarding:</strong> Please upload a syllabus document (<strong>.docx</strong>) for <strong>{onboardingStudent?.displayName}</strong> to generate their interactive progression tracker.
+          </div>
+
+          <RoadmapUploadZone 
+            studentId={onboardingStudent?.uid} 
+            course={onboardingStudent?.course}
+            onSuccess={() => {
+              setIsUploadRoadmapOpen(false);
+              setOnboardingStudent(null);
+              triggerToast("🎉 Syllabus roadmap uploaded successfully! Learning journey created.", "success");
+            }}
+          />
+        </div>
+      </Modal>
+
       {/* ==================== 2. MODAL: ADD FACULTY (Step 10) ==================== */}
       <Modal isOpen={isAddFacultyOpen} onClose={() => setIsAddFacultyOpen(false)} title="Add New Faculty Mentor">
         <form onSubmit={handleAddFacultySubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -6609,6 +7852,19 @@ const AdminDashboard = () => {
                 </button>
                 <button
                   type="button"
+                  onClick={() => setDrawerActiveTab('tracker')}
+                  style={{
+                    flex: 1, padding: '10px 14px', borderRadius: '8px', fontSize: '0.82rem', fontWeight: 700,
+                    background: drawerActiveTab === 'tracker' ? 'white' : 'transparent',
+                    color: drawerActiveTab === 'tracker' ? 'var(--dark)' : 'var(--text-muted)',
+                    border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+                    whiteSpace: 'nowrap'
+                  }}
+                >
+                  <BookOpen size={15} /> Class Tracker
+                </button>
+                <button
+                  type="button"
                   onClick={() => setDrawerActiveTab('timeline')}
                   style={{
                     flex: 1, padding: '10px 14px', borderRadius: '8px', fontSize: '0.82rem', fontWeight: 700,
@@ -6622,16 +7878,16 @@ const AdminDashboard = () => {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setDrawerActiveTab('chat')}
+                  onClick={() => setDrawerActiveTab('attendance')}
                   style={{
                     flex: 1, padding: '10px 14px', borderRadius: '8px', fontSize: '0.82rem', fontWeight: 700,
-                    background: drawerActiveTab === 'chat' ? 'white' : 'transparent',
-                    color: drawerActiveTab === 'chat' ? 'var(--dark)' : 'var(--text-muted)',
+                    background: drawerActiveTab === 'attendance' ? 'white' : 'transparent',
+                    color: drawerActiveTab === 'attendance' ? 'var(--dark)' : 'var(--text-muted)',
                     border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
                     whiteSpace: 'nowrap'
                   }}
                 >
-                  <MessageSquare size={15} /> Chat
+                  <CalendarCheck size={15} /> Attendance
                 </button>
               </div>
 
@@ -7390,211 +8646,21 @@ const AdminDashboard = () => {
                   </div>
                 </div>
               )}
+
+              {/* TAB 1.7: CURRICULUM CLASS ROADMAP TRACKER */}
+              {drawerActiveTab === 'tracker' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                  <DrawerClassTracker studentId={selectedStudentDetails.id} course={selectedStudentDetails.course} />
+                </div>
+              )}
                 
-                {/* TAB 2: DOUBT MESSAGING STREAM */}
-                {drawerActiveTab === 'chat' && (
-                  <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: '450px' }}>
-                    {/* Chat Stream Header / Info */}
-                    <div style={{
-                      padding: '8px 12px',
-                      background: 'var(--primary-light)',
-                      borderRadius: '8px',
-                      color: 'var(--primary)',
-                      fontSize: '0.75rem',
-                      fontWeight: 600,
-                      marginBottom: '12px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '6px'
-                    }}>
-                      <Info size={14} /> Direct Doubt Thread between Student and You
-                    </div>
-                    
-                    {/* Message stream panel */}
-                    <div style={{
-                      flex: 1,
-                      overflowY: 'auto',
-                      border: '1px solid var(--border)',
-                      borderRadius: '12px',
-                      padding: '16px',
-                      background: '#F8FAFC',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '12px',
-                      maxHeight: '260px',
-                      minHeight: '220px',
-                      marginBottom: '12px'
-                    }}>
-                      {drawerMessages.length === 0 ? (
-                        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--text-light)', padding: '24px', textAlign: 'center' }}>
-                          <MessageSquare size={32} style={{ opacity: 0.5, marginBottom: '8px' }} />
-                          <h4 style={{ margin: 0, fontSize: '0.85rem', fontWeight: 700 }}>No doubt message threads</h4>
-                          <p style={{ margin: '4px 0 0 0', fontSize: '0.75rem' }}>Send a template reply or message to initiate the discussion!</p>
-                        </div>
-                      ) : (
-                        drawerMessages.map((msg, index) => {
-                          const isMe = msg.senderId === user.uid;
-                          return (
-                            <div key={msg.id || index} style={{ display: 'flex', justifyContent: isMe ? 'flex-end' : 'flex-start', width: '100%' }}>
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', maxWidth: '85%' }}>
-                                <div style={{
-                                  padding: '10px 14px',
-                                  borderRadius: isMe ? '14px 14px 4px 14px' : '14px 14px 14px 4px',
-                                  background: isMe ? 'var(--primary)' : 'var(--surface-elevated)',
-                                  color: isMe ? 'var(--text-on-primary)' : 'var(--text-primary)',
-                                  boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
-                                  border: isMe ? 'none' : '1px solid var(--border)'
-                                }}>
-                                  
-                                  {/* Attachment */}
-                                  {(msg.attachments?.[0] || msg.attachmentData) && (() => {
-                                    const att = msg.attachments?.[0] || { data: msg.attachmentData, type: msg.attachmentType, name: msg.attachmentName };
-                                    return (
-                                      <div style={{ marginBottom: '6px', borderRadius: '6px', overflow: 'hidden' }}>
-                                        {att.type === 'image' ? (
-                                          <img src={att.data} alt="attachment" style={{ maxWidth: '100%', maxHeight: '140px', objectFit: 'cover' }} />
-                                        ) : (
-                                          <a href={att.data} download={att.name} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px', background: isMe ? 'rgba(255,255,255,0.15)' : 'var(--surface)', borderRadius: '4px', color: isMe ? 'white' : 'var(--primary)', fontWeight: 700, fontSize: '0.75rem' }}>
-                                            <FileText size={14} />
-                                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '120px' }}>{att.name}</span>
-                                          </a>
-                                        )}
-                                      </div>
-                                    );
-                                  })()}
-                                  
-                                  {/* Text */}
-                                  {(msg.message || msg.text) && (
-                                    <p style={{ fontSize: '0.8rem', margin: 0, wordBreak: 'break-word', lineHeight: 1.35 }}>
-                                      {msg.message || msg.text}
-                                    </p>
-                                  )}
-                                </div>
-                                
-                                {/* Info Footer */}
-                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px', fontSize: '0.65rem', color: 'var(--text-light)', padding: '0 2px' }}>
-                                  <span>
-                                    {msg.timestamp ? (msg.timestamp.toDate ? new Date(msg.timestamp.toDate()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })) : 'sending...'}
-                                  </span>
-                                  {isMe && (
-                                    <span>
-                                      {(msg.readStatus === true || msg.seen === true) ? <CheckCheck size={11} style={{ color: 'var(--success)' }} /> : <Check size={11} />}
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })
-                      )}
-                    </div>
-                    
-                    {/* Pre-defined templates section */}
-                    <div style={{ marginBottom: '12px' }}>
-                      <label className="form-label" style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '6px', display: 'block' }}>
-                        ⚡ Quick Templates:
-                      </label>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                        {[
-                          { label: 'Graded', text: "Hi! I have graded your assignment. Please check the feedback and let me know if you have any questions." },
-                          { label: 'Join Slot', text: "Hi! Please join the class slot today. Here is the meeting link: https://meet.google.com/compution" },
-                          { label: 'Reminder', text: "Hi! This is a gentle reminder regarding your pending fee payment. Please clear it at the earliest." },
-                          { label: 'Great Work', text: "Hi! Excellent performance in today's class. Keep up the good work!" }
-                        ].map((tpl, i) => (
-                          <button
-                            key={i}
-                            type="button"
-                            onClick={() => handleDrawerSendMessage(null, tpl.text)}
-                            style={{
-                              padding: '5px 10px',
-                              borderRadius: '8px',
-                              border: '1px solid rgba(83,109,254,0.2)',
-                              background: 'var(--white)',
-                              color: 'var(--primary)',
-                              fontSize: '0.7rem',
-                              fontWeight: 700,
-                              cursor: 'pointer',
-                              transition: 'all 0.2s'
-                            }}
-                            onMouseEnter={e => { e.currentTarget.style.background = 'var(--primary-light)'; }}
-                            onMouseLeave={e => { e.currentTarget.style.background = 'white'; }}
-                          >
-                            {tpl.label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                    
-                    {/* Attachment preview if selected */}
-                    {drawerAttachment && (
-                      <div style={{
-                        padding: '6px 12px',
-                        background: '#F1F5F9',
-                        border: '1px solid var(--border)',
-                        borderRadius: '8px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        fontSize: '0.72rem',
-                        marginBottom: '8px'
-                      }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <Paperclip size={14} style={{ color: 'var(--primary)' }} />
-                          <span style={{ fontWeight: 600, color: 'var(--dark)' }}>{drawerAttachment.name}</span>
-                        </div>
-                        <button type="button" onClick={() => setDrawerAttachment(null)} style={{ border: 'none', background: 'none', color: 'var(--danger)', fontWeight: 700, cursor: 'pointer' }}>Remove</button>
-                      </div>
-                    )}
-                    
-                    {/* Send box form */}
-                    <form onSubmit={handleDrawerSendMessage} style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                      <div style={{ position: 'relative' }}>
-                        <label htmlFor="drawer-attachment" style={{
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          width: '38px', height: '38px', borderRadius: '50%',
-                          background: 'var(--surface)', color: 'var(--text-muted)',
-                          cursor: 'pointer', border: '1px solid var(--border)', transition: 'all 0.2s'
-                        }} onMouseEnter={e => e.currentTarget.style.color = 'var(--primary)'} onMouseLeave={e => e.currentTarget.style.color = 'var(--text-muted)'}>
-                          <Paperclip size={16} />
-                        </label>
-                        <input
-                          id="drawer-attachment"
-                          type="file"
-                          accept="image/*,application/pdf"
-                          onChange={handleDrawerFileChange}
-                          disabled={drawerUploadingAttachment}
-                          style={{ display: 'none' }}
-                        />
-                      </div>
-                      
-                      <input
-                        type="text"
-                        placeholder="Type reply to student's doubts..."
-                        value={drawerNewMessage}
-                        onChange={e => setDrawerNewMessage(e.target.value)}
-                        style={{
-                          flex: 1,
-                          padding: '10px 16px',
-                          borderRadius: '100px',
-                          border: '1px solid var(--border)',
-                          fontSize: '0.82rem',
-                          outline: 'none'
-                        }}
-                      />
-                      
-                      <button
-                        type="submit"
-                        className="btn btn-primary"
-                        style={{
-                          width: '38px', height: '38px', borderRadius: '50%', padding: 0,
-                          display: 'flex', alignItems: 'center', justifyContent: 'center'
-                        }}
-                        disabled={!drawerNewMessage.trim() && !drawerAttachment}
-                      >
-                        <Send size={15} />
-                      </button>
-                    </form>
-                  </div>
+                {/* TAB 2: ATTENDANCE WORKSPACE */}
+                {drawerActiveTab === 'attendance' && (
+                  <StudentAttendanceWorkspace
+                    studentId={selectedStudentDetails.id}
+                    currentUser={user}
+                    studentName={selectedStudentDetails.name}
+                  />
                 )}
                 
               </div>
@@ -7861,6 +8927,52 @@ const AdminDashboard = () => {
               {editingSchedule ? 'Save Changes' : 'Schedule Class'}
             </button>
             <button type="button" onClick={() => setIsAddScheduleOpen(false)} className="btn btn-secondary" style={{ flex: 1 }}>Cancel</button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* MODAL: CONFIGURE FACULTY LIMITS */}
+      <Modal isOpen={isLimitsModalOpen} onClose={() => setIsLimitsModalOpen(false)} title={`Configure Faculty Limits: ${selectedLimitsFaculty?.displayName || ''}`}>
+        <form onSubmit={handleSaveLimits} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <div>
+            <label className="form-label">Maximum Daily Batches</label>
+            <input
+              type="number"
+              min={1}
+              max={15}
+              required
+              className="form-input"
+              value={limitMaxDailyBatches}
+              onChange={e => setLimitMaxDailyBatches(Number(e.target.value))}
+            />
+          </div>
+          <div>
+            <label className="form-label">Maximum Weekly Teaching Hours</label>
+            <input
+              type="number"
+              min={1}
+              max={100}
+              required
+              className="form-input"
+              value={limitMaxWeeklyHours}
+              onChange={e => setLimitMaxWeeklyHours(Number(e.target.value))}
+            />
+          </div>
+          <div>
+            <label className="form-label">Maximum Consecutive Classes</label>
+            <input
+              type="number"
+              min={1}
+              max={10}
+              required
+              className="form-input"
+              value={limitMaxConsecutiveClasses}
+              onChange={e => setLimitMaxConsecutiveClasses(Number(e.target.value))}
+            />
+          </div>
+          <div style={{ display: 'flex', gap: '12px', marginTop: '10px' }}>
+            <button type="submit" className="btn btn-primary" style={{ flex: 1 }}>Save Limits</button>
+            <button type="button" onClick={() => setIsLimitsModalOpen(false)} className="btn btn-secondary" style={{ flex: 1 }}>Cancel</button>
           </div>
         </form>
       </Modal>

@@ -7,11 +7,29 @@ import {
   ClipboardList, Calendar, MessageSquare, CreditCard, Play 
 } from 'lucide-react';
 
-const QuickActionButton = () => {
+const QuickActionButton = ({ isMoreMenuOpen }) => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
+  const [isGameplayActive, setIsGameplayActive] = useState(false);
   const menuRef = useRef(null);
+
+  useEffect(() => {
+    const handleStart = () => setIsGameplayActive(true);
+    const handleStop = () => setIsGameplayActive(false);
+
+    window.addEventListener('gameplay-start', handleStart);
+    window.addEventListener('gameplay-stop', handleStop);
+
+    if (window.isGameplayActive) {
+      setIsGameplayActive(true);
+    }
+
+    return () => {
+      window.removeEventListener('gameplay-start', handleStart);
+      window.removeEventListener('gameplay-stop', handleStop);
+    };
+  }, []);
 
   const role = user?.role?.toLowerCase() || 'student';
 
@@ -36,7 +54,7 @@ const QuickActionButton = () => {
     ],
     student: [
       { label: 'Pay Monthly Tuition', icon: CreditCard, path: '/dashboard/fees' },
-      { label: 'Start Coding Arcade', icon: Play, path: '/dashboard/mini-games' },
+      { label: 'Start World Cup Match', icon: Play, path: '/dashboard/worldcup' },
       { label: 'Ask Doubt Room', icon: MessageSquare, path: '/dashboard/community' },
     ]
   }[role] || [];
@@ -66,17 +84,18 @@ const QuickActionButton = () => {
     }
   };
 
-  if (actions.length === 0) return null;
+  if (actions.length === 0 || isGameplayActive) return null;
 
   return (
     <div 
+      className="quick-action-container"
       ref={menuRef}
       style={{
         position: 'fixed',
         bottom: 'calc(96px + env(safe-area-inset-bottom, 0px))',
         right: '20px',
-        zIndex: 1050,
-        display: 'flex',
+        zIndex: isMoreMenuOpen ? 950 : 1050,
+        display: isMoreMenuOpen ? 'none' : 'flex',
         flexDirection: 'column',
         alignItems: 'flex-end',
         gap: '12px'
@@ -113,6 +132,7 @@ const QuickActionButton = () => {
                     alignItems: 'center',
                     gap: '10px',
                     width: '100%',
+                    minHeight: '44px',
                     padding: '10px 12px',
                     border: 'none',
                     background: 'transparent',
