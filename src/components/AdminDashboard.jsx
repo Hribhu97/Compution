@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { db, firebaseConfig, syncStudentFeeAggregates } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
@@ -7,16 +8,19 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
 import { collection, collectionGroup, doc, getDoc, getDocs, serverTimestamp, onSnapshot, query, where, orderBy, writeBatch, deleteField, arrayUnion, arrayRemove, increment } from 'firebase/firestore';
 import { updateDoc, deleteDoc, addDoc, setDoc, runTransaction } from '../firebase';
-import { Search, Settings, Download, Plus, MoreHorizontal, Eye, ArrowUpRight, Sparkles, ShieldCheck, Trash2, RefreshCw, CheckCircle, XCircle, AlertTriangle, Users, Bell, AlertCircle, Calendar, GraduationCap, ChevronDown, Mail, Send, Pencil, X, ShieldAlert, MessageSquare, Briefcase, UserCheck, Loader2, Check, CheckCheck, Info, UserMinus, BookOpen, UploadCloud, FileText, Star } from 'lucide-react';
+import { Search, Settings, Download, Plus, MoreHorizontal, Eye, ArrowUpRight, Sparkles, ShieldCheck, Trash2, RefreshCw, CheckCircle, XCircle, AlertTriangle, Users, Bell, AlertCircle, Calendar, GraduationCap, ChevronDown, Mail, Send, Pencil, X, ShieldAlert, MessageSquare, Briefcase, UserCheck, Loader2, Check, CheckCheck, Info, UserMinus, BookOpen, UploadCloud, FileText, Star, Filter, CalendarCheck } from 'lucide-react';
 import Modal from './Modal';
 import SystemHealthPanel from './SystemHealthPanel';
+import StaffCard from './StaffCard';
 import ThemeInspector from '../theme/ThemeInspector';
+import StudentAttendanceWorkspace from './attendance/StudentAttendanceWorkspace';
 import { systemDoctorService } from '../services/systemDoctorService';
 import { reportService } from '../services/reportService';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, PieChart, Pie } from 'recharts';
 import { clientMigrationService } from '../services/clientMigrationService';
 import { calculateFeeMetrics, getStudentMonthlyFee } from '../utils/feeCalculator';
 import { useIsMobile } from '../hooks/useIsMobile';
+import { calculateFacultyWorkload, isFacultyOnLeave } from '../services/workloadEngine';
 
 const stagger = { show: { transition: { staggerChildren: 0.05 } } };
 const item = { hidden: { opacity: 0, y: 10 }, show: { opacity: 1, y: 0, transition: { duration: 0.3 } } };
@@ -581,6 +585,7 @@ const DrawerClassTracker = ({ studentId, course }) => {
 
 const AdminDashboard = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const isMobile = useIsMobile();
   const { showToast } = useToast();
   // Navigation Tabs
@@ -690,6 +695,13 @@ const AdminDashboard = () => {
   const [isRosterSubmitting, setIsRosterSubmitting] = useState(false);
   const [rosterForm, setRosterForm] = useState({ studentId: '', facultyId: '', displayName: '', email: '', phone: '', course: '' });
 
+  // Limits Modal States
+  const [isLimitsModalOpen, setIsLimitsModalOpen] = useState(false);
+  const [selectedLimitsFaculty, setSelectedLimitsFaculty] = useState(null);
+  const [limitMaxDailyBatches, setLimitMaxDailyBatches] = useState(5);
+  const [limitMaxWeeklyHours, setLimitMaxWeeklyHours] = useState(30);
+  const [limitMaxConsecutiveClasses, setLimitMaxConsecutiveClasses] = useState(3);
+
   // Inline edits
   const [editingStudentId, setEditingStudentId] = useState(null);
   const [editingAmount, setEditingAmount] = useState('');
@@ -715,6 +727,15 @@ const AdminDashboard = () => {
   // Master Fee Structure Config
   const [feeStructure, setFeeStructure] = useState(null);
   const [aadhaarStatusFilter, setAadhaarStatusFilter] = useState('all');
+
+  // Workload and Schedule System States
+  const [leaveRequests, setLeaveRequests] = useState([]);
+  const [holidays, setHolidays] = useState([]);
+  const [trackerEntries, setTrackerEntries] = useState([]);
+  const [leaveStartDate, setLeaveStartDate] = useState('');
+  const [leaveEndDate, setLeaveEndDate] = useState('');
+  const [leaveReason, setLeaveReason] = useState('');
+  const [isSubmittingLeave, setIsSubmittingLeave] = useState(false);
 
 
   // 1. DATA LISTENERS
@@ -990,6 +1011,42 @@ const AdminDashboard = () => {
       console.error("AdminDashboard: faculty queries listener creation failed", err);
     }
 
+    // 13. Leave Requests listener
+    let unsubLeaves = () => {};
+    try {
+      unsubLeaves = onSnapshot(collection(db, 'leaveRequests'), (snap) => {
+        const list = [];
+        snap.forEach(d => list.push({ id: d.id, ...d.data() }));
+        setLeaveRequests(list);
+      }, (err) => console.error("Error subscribing to leaveRequests:", err));
+    } catch (err) {
+      console.error(err);
+    }
+
+    // 14. Holidays listener
+    let unsubHolidays = () => {};
+    try {
+      unsubHolidays = onSnapshot(collection(db, 'holidays'), (snap) => {
+        const list = [];
+        snap.forEach(d => list.push({ id: d.id, ...d.data() }));
+        setHolidays(list);
+      }, (err) => console.error("Error subscribing to holidays:", err));
+    } catch (err) {
+      console.error(err);
+    }
+
+    // 15. Tracker entries listener
+    let unsubTracker = () => {};
+    try {
+      unsubTracker = onSnapshot(collection(db, 'classTrackerEntries'), (snap) => {
+        const list = [];
+        snap.forEach(d => list.push({ id: d.id, ...d.data() }));
+        setTrackerEntries(list);
+      }, (err) => console.error("Error subscribing to classTrackerEntries:", err));
+    } catch (err) {
+      console.error(err);
+    }
+
     return () => {
       unsubUsers();
       unsubLeads();
@@ -1006,6 +1063,9 @@ const AdminDashboard = () => {
       unsubQueries();
       unsubFeeStruct();
       unsubPaymentReq();
+      unsubLeaves();
+      unsubHolidays();
+      unsubTracker();
     };
   }, [user?.uid, user?.role]);
 
@@ -1068,7 +1128,9 @@ const AdminDashboard = () => {
       { match: 'hribhu', photoURL: '/team/hribhu.jpg' },
       { match: 'sharmistha', photoURL: '/team/sharmistha.jpeg' },
       { match: 'piyali', photoURL: '/team/piyali.jpg' },
-      { match: 'rajdeep', photoURL: '/team/rajdeep.jpg' }
+      { match: 'rajdeep', photoURL: '/team/rajdeep.jpg' },
+      { match: 'sreeparna', photoURL: '/team/sreeparna.jpeg' },
+      { match: 'panja', photoURL: '/team/sreeparna.jpeg' }
     ];
 
     // 1. Sync users collection
@@ -3243,6 +3305,62 @@ const AdminDashboard = () => {
     }
   };
 
+  // ── FACULTY CAPACITY LIMITS HANDLERS ──
+  const handleOpenLimitsModal = (fac) => {
+    setSelectedLimitsFaculty(fac);
+    setLimitMaxDailyBatches(fac.maxDailyBatches || 5);
+    setLimitMaxWeeklyHours(fac.maxWeeklyHours || 30);
+    setLimitMaxConsecutiveClasses(fac.maxConsecutiveClasses || 3);
+    setIsLimitsModalOpen(true);
+  };
+
+  const handleSaveLimits = async (e) => {
+    e.preventDefault();
+    if (!selectedLimitsFaculty) return;
+    try {
+      const ref = doc(db, 'users', selectedLimitsFaculty.id);
+      await updateDoc(ref, {
+        maxDailyBatches: Number(limitMaxDailyBatches),
+        maxWeeklyHours: Number(limitMaxWeeklyHours),
+        maxConsecutiveClasses: Number(limitMaxConsecutiveClasses)
+      });
+      triggerToast('Faculty limits updated successfully!', 'success');
+      setIsLimitsModalOpen(false);
+    } catch (err) {
+      console.error('Error saving faculty limits:', err);
+      triggerToast('Failed to update faculty limits', 'danger');
+    }
+  };
+
+  const handleSubmitLeave = async (e) => {
+    e.preventDefault();
+    if (!leaveStartDate || !leaveEndDate || !leaveReason.trim()) {
+      triggerToast('Please fill all leave fields', 'danger');
+      return;
+    }
+    setIsSubmittingLeave(true);
+    try {
+      await addDoc(collection(db, 'leaveRequests'), {
+        facultyId: user.uid,
+        facultyName: user.displayName || user.name || 'Faculty Mentor',
+        startDate: leaveStartDate,
+        endDate: leaveEndDate,
+        reason: leaveReason.trim(),
+        status: 'pending',
+        createdAt: serverTimestamp()
+      });
+      triggerToast('Leave request submitted successfully!', 'success');
+      setLeaveStartDate('');
+      setLeaveEndDate('');
+      setLeaveReason('');
+    } catch (err) {
+      console.error('Error submitting leave:', err);
+      triggerToast('Failed to submit leave request', 'danger');
+    } finally {
+      setIsSubmittingLeave(false);
+    }
+  };
+
   // ── DELETE USER ACCOUNT ──
   const handleDeleteUser = async (userId, userName) => {
     if (window.confirm(`Delete user "${userName}" permanently? This will cascade delete all their attendance records, class schedules, payments history, and chat logs.`)) {
@@ -3948,12 +4066,37 @@ const AdminDashboard = () => {
   };
 
   const renderFacultyOverview = () => {
-    const todayStr = new Date().toISOString().split('T')[0];
-    const myClasses = schedulesList.filter(sch => sch.date === todayStr && (sch.facultyId === user.uid || sch.faculty === user.displayName));
+    // 1. Live Workload calculation
+    const workload = calculateFacultyWorkload(user.uid, schedulesList, leaveRequests, user);
 
+    // 2. Today's classes
+    const todayName = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][new Date().getDay()];
+    const myClassesToday = schedulesList.filter(sch => 
+      sch.day?.toLowerCase() === todayName.toLowerCase() && 
+      (sch.facultyId === user.uid || sch.facultyName === user.displayName)
+    );
+
+    // 3. Doubt count
     const myRooms = chatRoomsList.filter(rm => rm.facultyId === user.uid);
     const unreadDoubtCount = myRooms.reduce((acc, rm) => acc + (rm.facultyUnreadCount || 0), 0);
     const activeQueriesCount = facultyQueries.filter(q => q.status !== 'Resolved').length;
+
+    // 4. Unique students today
+    const uniqueStudentsToday = new Set(myClassesToday.flatMap(c => c.studentIds || [])).size;
+
+    // 5. Leaves history for this faculty
+    const myLeaves = leaveRequests.filter(req => req.facultyId === user.uid);
+
+    // 6. Pending Class Tracker updates
+    const myAllClasses = schedulesList.filter(sch => sch.facultyId === user.uid || sch.facultyName === user.displayName);
+    const pendingTrackerClasses = myAllClasses.filter(sch => 
+      !trackerEntries.some(te => te.topic?.toLowerCase() === sch.subject?.toLowerCase() || te.chapter?.toLowerCase() === sch.subject?.toLowerCase())
+    );
+
+    // 7. Pending Attendance
+    const pendingAttendanceClasses = myClassesToday.filter(sch => 
+      !attendanceLogs.some(log => log.studentGroup === sch.batch && log.date === getDayDateInCurrentWeek(sch.day))
+    );
 
     const getStatusStyle = (status) => {
       switch (status?.toLowerCase()) {
@@ -3997,14 +4140,49 @@ const AdminDashboard = () => {
           </p>
         </div>
 
+        {/* Live Workload Indicator Banner */}
+        <div className="card" style={{ padding: '20px', border: '1px solid var(--border)', background: 'var(--white)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '10px' }}>
+            <div>
+              <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 800 }}>Weekly Workload Utilization</h3>
+              <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Limits: {workload.maxWeeklyHours} Hours/Week · {workload.maxDailyBatches} Batches/Day</span>
+            </div>
+            <span style={{
+              padding: '4px 12px', borderRadius: '100px', fontSize: '0.75rem', fontWeight: 900, textTransform: 'uppercase',
+              background: workload.loadPercent >= 80 ? 'rgba(239,68,68,0.1)' : workload.loadPercent >= 50 ? 'rgba(245,158,11,0.1)' : 'rgba(34,197,94,0.1)',
+              color: workload.loadColor
+            }}>
+              {workload.loadStatus} Load ({workload.loadPercent}%)
+            </span>
+          </div>
+          <div className="progress-track" style={{ height: '8px', background: 'var(--border)', borderRadius: '100px', overflow: 'hidden' }}>
+            <div className="progress-fill" style={{ width: `${workload.loadPercent}%`, background: workload.loadColor, height: '100%', borderRadius: '100px' }} />
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px', marginTop: '16px', textAlign: 'center' }}>
+            <div>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Consecutive Classes</div>
+              <strong style={{ fontSize: '1.2rem', color: 'var(--dark)' }}>{workload.consecutiveClasses} / {workload.maxConsecutiveClasses}</strong>
+            </div>
+            <div>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Weekly Hours</div>
+              <strong style={{ fontSize: '1.2rem', color: 'var(--dark)' }}>{workload.weeklyTeachingHours}h / {workload.maxWeeklyHours}h</strong>
+            </div>
+            <div>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Active Batches</div>
+              <strong style={{ fontSize: '1.2rem', color: 'var(--dark)' }}>{workload.activeBatches} Batches</strong>
+            </div>
+          </div>
+        </div>
+
         {/* Quick Stats Row */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px' }}>
           {[
             { label: 'Allotted Students', value: `${studentsList.length} Students`, color: 'var(--primary)', icon: <Users size={20} /> },
-            { label: 'Classes Scheduled Today', value: `${myClasses.length} Sessions`, color: 'var(--success)', icon: <Calendar size={20} /> },
+            { label: 'Classes Scheduled Today', value: `${myClassesToday.length} Sessions`, color: 'var(--success)', icon: <Calendar size={20} /> },
+            { label: 'Students Today', value: `${uniqueStudentsToday} Students`, color: '#8B5CF6', icon: <GraduationCap size={20} /> },
             { label: 'Pending Doubt Queries', value: `${activeQueriesCount} Active`, color: activeQueriesCount > 0 ? 'var(--danger)' : 'var(--text-muted)', icon: <MessageSquare size={20} /> }
           ].map((stat, idx) => (
-            <div key={idx} style={{ background: 'var(--surface)', padding: '16px', borderRadius: '12px', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: '14px' }}>
+            <div key={idx} style={{ background: 'var(--white)', padding: '16px', borderRadius: '12px', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: '14px', boxShadow: 'var(--shadow-sm)' }}>
               <div style={{ width: 40, height: 40, borderRadius: '50%', background: 'rgba(0,0,0,0.03)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: stat.color }}>
                 {stat.icon}
               </div>
@@ -4016,12 +4194,48 @@ const AdminDashboard = () => {
           ))}
         </div>
 
-        {/* Main Grid */}
+        {/* Action Queue & Live Dashboard Grid */}
         <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr', gap: '24px' }} className="grid-2-col-mobile">
           
           {/* Left Column */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
             
+            {/* Pending Actions / Action Queue */}
+            <div className="card" style={{ padding: '20px', border: '1px solid var(--border)', background: 'var(--white)' }}>
+              <h3 style={{ margin: '0 0 16px 0', fontSize: '0.98rem', fontWeight: 800, color: 'var(--dark)' }}>Pending Tasks & Updates Queue</h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {pendingTrackerClasses.map(sch => (
+                  <div key={sch.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px', background: 'rgba(245,158,11,0.06)', borderRadius: '12px', border: '1.5px solid rgba(245,158,11,0.15)', flexWrap: 'wrap', gap: '10px' }}>
+                    <div style={{ flex: 1, minWidth: '150px' }}>
+                      <span style={{ fontSize: '0.7rem', background: 'var(--warning)', color: 'white', padding: '2px 6px', borderRadius: '4px', fontWeight: 800 }}>Tracker Update Pending</span>
+                      <h4 style={{ margin: '6px 0 2px 0', fontSize: '0.88rem', fontWeight: 800 }}>{sch.subject}</h4>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Batch: {sch.batch} · Venue: {sch.room}</span>
+                    </div>
+                    <button onClick={() => navigate('/dashboard/tracker')} className="btn btn-primary" style={{ padding: '6px 12px', fontSize: '0.72rem', borderRadius: '6px', background: 'var(--warning)', border: 'none', color: 'white' }}>
+                      Update Tracker
+                    </button>
+                  </div>
+                ))}
+                {pendingAttendanceClasses.map(sch => (
+                  <div key={sch.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px', background: 'rgba(83,109,254,0.06)', borderRadius: '12px', border: '1.5px solid rgba(83,109,254,0.15)', flexWrap: 'wrap', gap: '10px' }}>
+                    <div style={{ flex: 1, minWidth: '150px' }}>
+                      <span style={{ fontSize: '0.7rem', background: 'var(--primary)', color: 'white', padding: '2px 6px', borderRadius: '4px', fontWeight: 800 }}>Attendance Pending</span>
+                      <h4 style={{ margin: '6px 0 2px 0', fontSize: '0.88rem', fontWeight: 800 }}>{sch.subject}</h4>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Batch: {sch.batch} · Start: {sch.startTime}</span>
+                    </div>
+                    <button onClick={() => setActivePanelTab('attendance')} className="btn btn-primary" style={{ padding: '6px 12px', fontSize: '0.72rem', borderRadius: '6px' }}>
+                      Mark Attendance
+                    </button>
+                  </div>
+                ))}
+                {pendingTrackerClasses.length === 0 && pendingAttendanceClasses.length === 0 && (
+                  <div style={{ textAlign: 'center', color: 'var(--text-light)', fontStyle: 'italic', fontSize: '0.82rem', padding: '12px 0' }}>
+                    🟢 Awesome! No pending tasks in your queue.
+                  </div>
+                )}
+              </div>
+            </div>
+
             {/* Student Progress */}
             <div className="card" style={{ padding: '20px', border: '1px solid var(--border)', background: 'var(--white)' }}>
               <h3 style={{ margin: '0 0 16px 0', fontSize: '0.98rem', fontWeight: 800, color: 'var(--dark)' }}>Assigned Students Progress</h3>
@@ -4217,57 +4431,38 @@ const AdminDashboard = () => {
               </div>
             </div>
 
-            {/* Doubt Queue */}
-            <div className="card" style={{ padding: '20px', border: '1px solid var(--border)', background: 'var(--white)' }}>
-              <h3 style={{ margin: '0 0 16px 0', fontSize: '0.98rem', fontWeight: 800, color: 'var(--dark)' }}>Active Doubt Queue</h3>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {myRooms.slice(0, 5).map(rm => {
-                  const hasUnreads = (rm.facultyUnreadCount || 0) > 0;
-                  const matchedStudent = allUsers.find(u => u.id === rm.studentId);
-                  
-                  return (
-                    <div key={rm.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px', background: 'var(--bg)', borderRadius: '10px', border: hasUnreads ? '1px solid rgba(239,83,80,0.3)' : '1px solid var(--border)' }}>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0, flex: 1 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <span style={{ fontWeight: 800, fontSize: '0.88rem', color: 'var(--dark)' }}>{rm.studentName}</span>
-                          {hasUnreads && (
-                            <span style={{ background: 'var(--danger)', color: 'var(--text-on-primary)', fontSize: '0.65rem', fontWeight: 800, padding: '2px 6px', borderRadius: '100px' }}>
-                              {rm.facultyUnreadCount} New
-                            </span>
-                          )}
-                        </div>
-                        <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {rm.lastMessageSenderId === user.uid ? 'You: ' : ''}{rm.lastMessage}
-                        </span>
-                      </div>
-                      <button
-                        onClick={() => {
-                          if (matchedStudent) {
-                            setSelectedStudentDetails({ ...matchedStudent, joined: 'Jan 2026', roll: 'Roll #COMP' });
-                            setDrawerActiveTab('chat');
-                          }
-                        }}
-                        className="btn btn-primary"
-                        style={{ padding: '6px 12px', fontSize: '0.72rem', borderRadius: '6px', marginLeft: '12px' }}
-                      >
-                        Reply
-                      </button>
-                    </div>
-                  );
-                })}
-                {myRooms.length === 0 && (
-                  <div style={{ textAlign: 'center', color: 'var(--text-light)', fontStyle: 'italic', fontSize: '0.82rem', padding: '20px' }}>
-                    No active doubt threads.
-                  </div>
-                )}
-              </div>
-            </div>
-
           </div>
 
           {/* Right Column */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
             
+            {/* Live Timetable widget */}
+            <div className="card" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px', border: '1px solid var(--border)', background: 'var(--white)' }}>
+              <h3 style={{ margin: 0, fontSize: '1.02rem', fontWeight: 800, color: 'var(--dark)' }}>My Class Slots Today</h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {myClassesToday.map(sch => (
+                  <div key={sch.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px', background: 'var(--bg)', borderRadius: '10px', border: '1px solid var(--border)', flexWrap: 'wrap', gap: '10px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1, minWidth: '150px' }}>
+                      <span style={{ fontWeight: 800, fontSize: '0.88rem', color: 'var(--dark)' }}>{sch.subject}</span>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>🕒 {sch.startTime} - {sch.endTime} (1.5h) | Batch: {sch.batch}</span>
+                      <span style={{ fontSize: '0.72rem', color: 'var(--text-light)', fontWeight: 600 }}>📍 Venue: {sch.room}</span>
+                    </div>
+                    <span style={{
+                      padding: '3px 8px', borderRadius: '4px', fontSize: '0.68rem', fontWeight: 800, textTransform: 'uppercase',
+                      background: sch.meetLink ? 'rgba(83,109,254,0.1)' : 'rgba(102,187,106,0.1)',
+                      color: sch.meetLink ? 'var(--primary)' : 'var(--success)'
+                    }}>{sch.meetLink ? 'Online' : 'Offline'}</span>
+                  </div>
+                ))}
+                {myClassesToday.length === 0 && (
+                  <div style={{ padding: '20px 0', textAlign: 'center', color: 'var(--text-light)', fontStyle: 'italic', fontSize: '0.82rem' }}>
+                    No class slots scheduled for today.
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Instant Video Support */}
             <div className="card" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px', border: '1px solid var(--border)', background: 'linear-gradient(135deg, rgba(16,185,129,0.02) 0%, rgba(4,120,87,0.04) 100%)' }}>
               <h3 style={{ margin: 0, fontSize: '1.02rem', fontWeight: 800, color: 'var(--dark)' }}>Instant Video Support</h3>
               <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.45 }}>
@@ -4287,28 +4482,70 @@ const AdminDashboard = () => {
               </button>
             </div>
 
-            <div className="card" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px', border: '1px solid var(--border)', background: 'var(--white)' }}>
-              <h3 style={{ margin: 0, fontSize: '1.02rem', fontWeight: 800, color: 'var(--dark)' }}>My Classes Today</h3>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {myClasses.map(sch => (
-                  <div key={sch.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px', background: 'var(--bg)', borderRadius: '10px', border: '1px solid var(--border)' }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                      <span style={{ fontWeight: 800, fontSize: '0.88rem', color: 'var(--dark)' }}>{sch.studentName}</span>
-                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>🕒 {sch.time} | Subject: {sch.subject}</span>
-                    </div>
-                    <span style={{
-                      padding: '3px 8px', borderRadius: '4px', fontSize: '0.68rem', fontWeight: 800, textTransform: 'uppercase',
-                      background: sch.mode === 'online' ? 'rgba(83,109,254,0.1)' : 'rgba(102,187,106,0.1)',
-                      color: sch.mode === 'online' ? 'var(--primary)' : 'var(--success)'
-                    }}>{sch.mode}</span>
+            {/* Leave Request Form */}
+            <div className="card" style={{ padding: '20px', border: '1px solid var(--border)', background: 'var(--white)' }}>
+              <h3 style={{ margin: '0 0 16px 0', fontSize: '1.02rem', fontWeight: 800, color: 'var(--dark)' }}>Request Leave / Timeoff</h3>
+              <form onSubmit={handleSubmitLeave} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                  <div>
+                    <label className="form-label" style={{ fontSize: '0.72rem' }}>Start Date</label>
+                    <input
+                      required
+                      type="date"
+                      className="form-input"
+                      style={{ fontSize: '0.8rem', padding: '6px 10px', background: 'white' }}
+                      value={leaveStartDate}
+                      min={new Date().toISOString().split('T')[0]}
+                      onChange={e => setLeaveStartDate(e.target.value)}
+                    />
                   </div>
-                ))}
-                {myClasses.length === 0 && (
-                  <div style={{ padding: '20px 0', textAlign: 'center', color: 'var(--text-light)', fontStyle: 'italic', fontSize: '0.82rem' }}>
-                    No class slots scheduled for today.
+                  <div>
+                    <label className="form-label" style={{ fontSize: '0.72rem' }}>End Date</label>
+                    <input
+                      required
+                      type="date"
+                      className="form-input"
+                      style={{ fontSize: '0.8rem', padding: '6px 10px', background: 'white' }}
+                      value={leaveEndDate}
+                      min={leaveStartDate || new Date().toISOString().split('T')[0]}
+                      onChange={e => setLeaveEndDate(e.target.value)}
+                    />
                   </div>
-                )}
-              </div>
+                </div>
+                <div>
+                  <label className="form-label" style={{ fontSize: '0.72rem' }}>Reason for Timeoff</label>
+                  <textarea
+                    required
+                    className="form-input"
+                    style={{ fontSize: '0.8rem', padding: '6px 10px' }}
+                    placeholder="e.g. Family emergency, medical leave..."
+                    value={leaveReason}
+                    onChange={e => setLeaveReason(e.target.value)}
+                    rows={2}
+                  />
+                </div>
+                <button type="submit" disabled={isSubmittingLeave} className="btn btn-primary" style={{ padding: '8px', fontSize: '0.8rem', width: '100%', justifyContent: 'center' }}>
+                  {isSubmittingLeave ? 'Submitting...' : 'Request Timeoff'}
+                </button>
+              </form>
+
+              {/* Leave History List */}
+              {myLeaves.length > 0 && (
+                <div style={{ marginTop: '16px', borderTop: '1px solid var(--border)', paddingTop: '12px' }}>
+                  <h4 style={{ margin: '0 0 8px 0', fontSize: '0.82rem', fontWeight: 800 }}>Timeoff Request Status</h4>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '120px', overflowY: 'auto' }}>
+                    {myLeaves.map(leave => {
+                      const colorMap = { pending: '#f59e0b', approved: '#22c55e', rejected: '#ef4444' };
+                      return (
+                        <div key={leave.id} style={{ fontSize: '0.75rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 8px', background: 'var(--bg)', borderRadius: '6px', border: '1px solid var(--border)' }}>
+                          <span>{leave.startDate} to {leave.endDate}</span>
+                          <span style={{ fontWeight: 800, color: colorMap[leave.status] || '#64748b', textTransform: 'capitalize' }}>{leave.status}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
 
           </div>
@@ -4547,6 +4784,7 @@ const AdminDashboard = () => {
           { key: 'overview', label: user?.role === 'admin' ? 'Admin Overview' : user?.role === 'faculty' ? 'Faculty Overview' : 'Member Overview', roles: ['admin', 'faculty', 'member'] },
           { key: 'students', label: 'Students Roster', roles: ['admin', 'faculty', 'member'] },
           { key: 'faculty', label: 'Faculty Staff', roles: ['admin'] },
+          { key: 'members', label: 'Staff Members', roles: ['admin'] },
           { key: 'schedules', label: 'Class Schedules', roles: ['admin', 'faculty'] },
           { key: 'attendance', label: 'Attendance Logs', roles: ['admin', 'faculty'] },
           { key: 'billing', label: 'Payments', roles: ['admin'] },
@@ -5474,136 +5712,15 @@ const AdminDashboard = () => {
           {/* ==================== 2. TABS: FACULTY STAFF ==================== */}
           {activePanelTab === 'faculty' && (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '20px', padding: '10px 0' }}>
-              {filteredStaff.map(fac => {
-                const isExpanded = !!expandedBios[fac.id];
-                const cleanRole = (() => {
-                  if (fac.email === 'biswa.maity2011@gmail.com') return 'CEO';
-                  if (fac.email === 'tapadarhribhu@gmail.com') return 'Team Lead';
-                  if (fac.roleName) return fac.roleName;
-                  if (fac.role?.toLowerCase() === 'admin') return 'Management';
-                  if (fac.role?.toLowerCase() === 'faculty') return 'Faculty Mentor';
-                  return fac.department || 'Staff Member';
-                })();
-                
+              {filteredFaculty.map(fac => {
                 return (
-                  <div key={fac.id} className="card" style={{
-                    background: 'var(--white)',
-                    border: '1px solid var(--border)',
-                    borderRadius: '20px',
-                    padding: '20px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    justifyContent: 'space-between',
-                    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.03)',
-                    transition: 'transform 0.2s, box-shadow 0.2s',
-                    position: 'relative',
-                    overflow: 'hidden'
-                  }}
-                  onMouseEnter={e => {
-                    e.currentTarget.style.transform = 'translateY(-2px)';
-                    e.currentTarget.style.boxShadow = '0 8px 24px rgba(0,0,0,0.06)';
-                  }}
-                  onMouseLeave={e => {
-                    e.currentTarget.style.transform = 'none';
-                    e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.03)';
-                  }}
-                  >
-                    <div>
-                      {/* Top Row: Profile Pic & Status & Role */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
-                        <img 
-                          src={fac.photoURL || 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&q=80&w=150'} 
-                          alt={fac.displayName} 
-                          style={{ width: '56px', height: '56px', borderRadius: '50%', objectFit: 'cover', border: '2px solid var(--primary)' }} 
-                        />
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 800, color: 'var(--dark)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {fac.displayName}
-                          </h3>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
-                            <span style={{
-                              padding: '2px 8px', borderRadius: '100px', fontSize: '0.65rem', fontWeight: 900, textTransform: 'uppercase',
-                              background: 'rgba(99, 102, 241, 0.08)', color: 'var(--primary)'
-                            }}>
-                              {cleanRole}
-                            </span>
-                            <span style={{
-                              width: '8px', height: '8px', borderRadius: '50%',
-                              background: fac.availability === 'Busy' ? 'var(--warning)' : 'var(--success)'
-                            }} title={fac.availability || 'Available'} />
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Info fields */}
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '0.8rem', color: 'var(--text-light)', marginBottom: '16px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                          <span style={{ color: 'var(--text-muted)' }}>Qualifications:</span>
-                          <strong style={{ color: 'var(--dark)' }}>{fac.qualification || 'B.Tech / M.Tech CSE'}</strong>
-                        </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                          <span style={{ color: 'var(--text-muted)' }}>Experience:</span>
-                          <strong style={{ color: 'var(--dark)' }}>{fac.experience || 3} Years</strong>
-                        </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                          <span style={{ color: 'var(--text-muted)', flexShrink: 0 }}>Expertise:</span>
-                          <div style={{ textAlign: 'right', display: 'flex', flexWrap: 'wrap', gap: '4px', justifyContent: 'flex-end' }}>
-                            {fac.subjects && fac.subjects.length > 0 ? (
-                              fac.subjects.map((sub, i) => (
-                                <span key={i} className="badge badge-primary" style={{ fontSize: '0.62rem', padding: '1px 5px' }}>{sub}</span>
-                              ))
-                            ) : (
-                              <span style={{ fontWeight: 700, color: 'var(--dark)' }}>{fac.department || 'Curriculum Operations'}</span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Bio Collapsible section */}
-                      <div style={{
-                        maxHeight: isExpanded ? '200px' : '0px',
-                        overflow: 'hidden',
-                        transition: 'all 0.3s ease-in-out',
-                        fontSize: '0.78rem',
-                        color: 'var(--text-muted)',
-                        background: 'var(--surface)',
-                        borderRadius: '8px',
-                        padding: isExpanded ? '10px' : '0px 10px',
-                        marginBottom: isExpanded ? '14px' : '0'
-                      }}>
-                        {fac.bio || 'Dedicated team member at Compution ERP. Committed to supporting student growth and implementing innovative educational methodologies.'}
-                      </div>
-                    </div>
-
-                    {/* Action buttons */}
-                    <div style={{ display: 'flex', gap: '8px', borderTop: '1px solid var(--border)', paddingTop: '14px', marginTop: '10px' }}>
-                      <button 
-                        type="button"
-                        onClick={() => setExpandedBios(prev => ({ ...prev, [fac.id]: !isExpanded }))}
-                        className="btn btn-ghost"
-                        style={{ flex: 1, padding: '8px 0', fontSize: '0.75rem', fontWeight: 700 }}
-                      >
-                        {isExpanded ? 'Hide Bio' : 'Read Bio'}
-                      </button>
-                      
-                      <a 
-                        href={`mailto:${fac.email}`}
-                        className="btn btn-primary"
-                        style={{ flex: 1.2, padding: '8px 0', fontSize: '0.75rem', fontWeight: 800, textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', textDecoration: 'none' }}
-                      >
-                        Contact Staff
-                      </a>
-                      
-                      <button 
-                        type="button" 
-                        onClick={() => handleDeleteUser(fac.id, fac.displayName)} 
-                        className="btn btn-ghost" 
-                        style={{ padding: '8px', color: 'var(--danger)' }} 
-                        title="Delete Roster"
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
+                  <div key={fac.id} style={{ height: '100%' }}>
+                    <StaffCard
+                      staff={fac}
+                      isAdmin={true}
+                      onDelete={() => handleDeleteUser(fac.id, fac.displayName)}
+                      onConfigureLimits={() => handleOpenLimitsModal(fac)}
+                    />
                   </div>
                 );
               })}
@@ -7761,16 +7878,16 @@ const AdminDashboard = () => {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setDrawerActiveTab('chat')}
+                  onClick={() => setDrawerActiveTab('attendance')}
                   style={{
                     flex: 1, padding: '10px 14px', borderRadius: '8px', fontSize: '0.82rem', fontWeight: 700,
-                    background: drawerActiveTab === 'chat' ? 'white' : 'transparent',
-                    color: drawerActiveTab === 'chat' ? 'var(--dark)' : 'var(--text-muted)',
+                    background: drawerActiveTab === 'attendance' ? 'white' : 'transparent',
+                    color: drawerActiveTab === 'attendance' ? 'var(--dark)' : 'var(--text-muted)',
                     border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
                     whiteSpace: 'nowrap'
                   }}
                 >
-                  <MessageSquare size={15} /> Chat
+                  <CalendarCheck size={15} /> Attendance
                 </button>
               </div>
 
@@ -8537,210 +8654,13 @@ const AdminDashboard = () => {
                 </div>
               )}
                 
-                {/* TAB 2: DOUBT MESSAGING STREAM */}
-                {drawerActiveTab === 'chat' && (
-                  <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: '450px' }}>
-                    {/* Chat Stream Header / Info */}
-                    <div style={{
-                      padding: '8px 12px',
-                      background: 'var(--primary-light)',
-                      borderRadius: '8px',
-                      color: 'var(--primary)',
-                      fontSize: '0.75rem',
-                      fontWeight: 600,
-                      marginBottom: '12px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '6px'
-                    }}>
-                      <Info size={14} /> Direct Doubt Thread between Student and You
-                    </div>
-                    
-                    {/* Message stream panel */}
-                    <div style={{
-                      flex: 1,
-                      overflowY: 'auto',
-                      border: '1px solid var(--border)',
-                      borderRadius: '12px',
-                      padding: '16px',
-                      background: '#F8FAFC',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '12px',
-                      maxHeight: '260px',
-                      minHeight: '220px',
-                      marginBottom: '12px'
-                    }}>
-                      {drawerMessages.length === 0 ? (
-                        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--text-light)', padding: '24px', textAlign: 'center' }}>
-                          <MessageSquare size={32} style={{ opacity: 0.5, marginBottom: '8px' }} />
-                          <h4 style={{ margin: 0, fontSize: '0.85rem', fontWeight: 700 }}>No doubt message threads</h4>
-                          <p style={{ margin: '4px 0 0 0', fontSize: '0.75rem' }}>Send a template reply or message to initiate the discussion!</p>
-                        </div>
-                      ) : (
-                        drawerMessages.map((msg, index) => {
-                          const isMe = msg.senderId === user.uid;
-                          return (
-                            <div key={msg.id || index} style={{ display: 'flex', justifyContent: isMe ? 'flex-end' : 'flex-start', width: '100%' }}>
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', maxWidth: '85%' }}>
-                                <div style={{
-                                  padding: '10px 14px',
-                                  borderRadius: isMe ? '14px 14px 4px 14px' : '14px 14px 14px 4px',
-                                  background: isMe ? 'var(--primary)' : 'var(--surface-elevated)',
-                                  color: isMe ? 'var(--text-on-primary)' : 'var(--text-primary)',
-                                  boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
-                                  border: isMe ? 'none' : '1px solid var(--border)'
-                                }}>
-                                  
-                                  {/* Attachment */}
-                                  {(msg.attachments?.[0] || msg.attachmentData) && (() => {
-                                    const att = msg.attachments?.[0] || { data: msg.attachmentData, type: msg.attachmentType, name: msg.attachmentName };
-                                    return (
-                                      <div style={{ marginBottom: '6px', borderRadius: '6px', overflow: 'hidden' }}>
-                                        {att.type === 'image' ? (
-                                          <img src={att.data} alt="attachment" style={{ maxWidth: '100%', maxHeight: '140px', objectFit: 'cover' }} />
-                                        ) : (
-                                          <a href={att.data} download={att.name} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px', background: isMe ? 'rgba(255,255,255,0.15)' : 'var(--surface)', borderRadius: '4px', color: isMe ? 'white' : 'var(--primary)', fontWeight: 700, fontSize: '0.75rem' }}>
-                                            <FileText size={14} />
-                                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '120px' }}>{att.name}</span>
-                                          </a>
-                                        )}
-                                      </div>
-                                    );
-                                  })()}
-                                  
-                                  {/* Text */}
-                                  {(msg.message || msg.text) && (
-                                    <p style={{ fontSize: '0.8rem', margin: 0, wordBreak: 'break-word', lineHeight: 1.35 }}>
-                                      {msg.message || msg.text}
-                                    </p>
-                                  )}
-                                </div>
-                                
-                                {/* Info Footer */}
-                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px', fontSize: '0.65rem', color: 'var(--text-light)', padding: '0 2px' }}>
-                                  <span>
-                                    {msg.timestamp ? (msg.timestamp.toDate ? new Date(msg.timestamp.toDate()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })) : 'sending...'}
-                                  </span>
-                                  {isMe && (
-                                    <span>
-                                      {(msg.readStatus === true || msg.seen === true) ? <CheckCheck size={11} style={{ color: 'var(--success)' }} /> : <Check size={11} />}
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })
-                      )}
-                    </div>
-                    
-                    {/* Pre-defined templates section */}
-                    <div style={{ marginBottom: '12px' }}>
-                      <label className="form-label" style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: '6px', display: 'block' }}>
-                        ⚡ Quick Templates:
-                      </label>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                        {[
-                          { label: 'Graded', text: "Hi! I have graded your assignment. Please check the feedback and let me know if you have any questions." },
-                          { label: 'Join Slot', text: "Hi! Please join the class slot today. Here is the meeting link: https://meet.google.com/compution" },
-                          { label: 'Reminder', text: "Hi! This is a gentle reminder regarding your pending fee payment. Please clear it at the earliest." },
-                          { label: 'Great Work', text: "Hi! Excellent performance in today's class. Keep up the good work!" }
-                        ].map((tpl, i) => (
-                          <button
-                            key={i}
-                            type="button"
-                            onClick={() => handleDrawerSendMessage(null, tpl.text)}
-                            style={{
-                              padding: '5px 10px',
-                              borderRadius: '8px',
-                              border: '1px solid rgba(83,109,254,0.2)',
-                              background: 'var(--white)',
-                              color: 'var(--primary)',
-                              fontSize: '0.7rem',
-                              fontWeight: 700,
-                              cursor: 'pointer',
-                              transition: 'all 0.2s'
-                            }}
-                            onMouseEnter={e => { e.currentTarget.style.background = 'var(--primary-light)'; }}
-                            onMouseLeave={e => { e.currentTarget.style.background = 'white'; }}
-                          >
-                            {tpl.label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                    
-                    {/* Attachment preview if selected */}
-                    {drawerAttachment && (
-                      <div style={{
-                        padding: '6px 12px',
-                        background: '#F1F5F9',
-                        border: '1px solid var(--border)',
-                        borderRadius: '8px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        fontSize: '0.72rem',
-                        marginBottom: '8px'
-                      }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <Paperclip size={14} style={{ color: 'var(--primary)' }} />
-                          <span style={{ fontWeight: 600, color: 'var(--dark)' }}>{drawerAttachment.name}</span>
-                        </div>
-                        <button type="button" onClick={() => setDrawerAttachment(null)} style={{ border: 'none', background: 'none', color: 'var(--danger)', fontWeight: 700, cursor: 'pointer' }}>Remove</button>
-                      </div>
-                    )}
-                    
-                    {/* Send box form */}
-                    <form onSubmit={handleDrawerSendMessage} style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                      <div style={{ position: 'relative' }}>
-                        <label htmlFor="drawer-attachment" style={{
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          width: '38px', height: '38px', borderRadius: '50%',
-                          background: 'var(--surface)', color: 'var(--text-muted)',
-                          cursor: 'pointer', border: '1px solid var(--border)', transition: 'all 0.2s'
-                        }} onMouseEnter={e => e.currentTarget.style.color = 'var(--primary)'} onMouseLeave={e => e.currentTarget.style.color = 'var(--text-muted)'}>
-                          <Paperclip size={16} />
-                        </label>
-                        <input
-                          id="drawer-attachment"
-                          type="file"
-                          accept="image/*,application/pdf"
-                          onChange={handleDrawerFileChange}
-                          disabled={drawerUploadingAttachment}
-                          style={{ display: 'none' }}
-                        />
-                      </div>
-                      
-                      <input
-                        type="text"
-                        placeholder="Type reply to student's doubts..."
-                        value={drawerNewMessage}
-                        onChange={e => setDrawerNewMessage(e.target.value)}
-                        style={{
-                          flex: 1,
-                          padding: '10px 16px',
-                          borderRadius: '100px',
-                          border: '1px solid var(--border)',
-                          fontSize: '0.82rem',
-                          outline: 'none'
-                        }}
-                      />
-                      
-                      <button
-                        type="submit"
-                        className="btn btn-primary"
-                        style={{
-                          width: '38px', height: '38px', borderRadius: '50%', padding: 0,
-                          display: 'flex', alignItems: 'center', justifyContent: 'center'
-                        }}
-                        disabled={!drawerNewMessage.trim() && !drawerAttachment}
-                      >
-                        <Send size={15} />
-                      </button>
-                    </form>
-                  </div>
+                {/* TAB 2: ATTENDANCE WORKSPACE */}
+                {drawerActiveTab === 'attendance' && (
+                  <StudentAttendanceWorkspace
+                    studentId={selectedStudentDetails.id}
+                    currentUser={user}
+                    studentName={selectedStudentDetails.name}
+                  />
                 )}
                 
               </div>
@@ -9007,6 +8927,52 @@ const AdminDashboard = () => {
               {editingSchedule ? 'Save Changes' : 'Schedule Class'}
             </button>
             <button type="button" onClick={() => setIsAddScheduleOpen(false)} className="btn btn-secondary" style={{ flex: 1 }}>Cancel</button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* MODAL: CONFIGURE FACULTY LIMITS */}
+      <Modal isOpen={isLimitsModalOpen} onClose={() => setIsLimitsModalOpen(false)} title={`Configure Faculty Limits: ${selectedLimitsFaculty?.displayName || ''}`}>
+        <form onSubmit={handleSaveLimits} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <div>
+            <label className="form-label">Maximum Daily Batches</label>
+            <input
+              type="number"
+              min={1}
+              max={15}
+              required
+              className="form-input"
+              value={limitMaxDailyBatches}
+              onChange={e => setLimitMaxDailyBatches(Number(e.target.value))}
+            />
+          </div>
+          <div>
+            <label className="form-label">Maximum Weekly Teaching Hours</label>
+            <input
+              type="number"
+              min={1}
+              max={100}
+              required
+              className="form-input"
+              value={limitMaxWeeklyHours}
+              onChange={e => setLimitMaxWeeklyHours(Number(e.target.value))}
+            />
+          </div>
+          <div>
+            <label className="form-label">Maximum Consecutive Classes</label>
+            <input
+              type="number"
+              min={1}
+              max={10}
+              required
+              className="form-input"
+              value={limitMaxConsecutiveClasses}
+              onChange={e => setLimitMaxConsecutiveClasses(Number(e.target.value))}
+            />
+          </div>
+          <div style={{ display: 'flex', gap: '12px', marginTop: '10px' }}>
+            <button type="submit" className="btn btn-primary" style={{ flex: 1 }}>Save Limits</button>
+            <button type="button" onClick={() => setIsLimitsModalOpen(false)} className="btn btn-secondary" style={{ flex: 1 }}>Cancel</button>
           </div>
         </form>
       </Modal>

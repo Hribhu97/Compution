@@ -15,6 +15,7 @@ import {
  getActiveSeason
 } from '../../services/worldCupService';
 import TeamSelection from '../../components/worldcup/TeamSelection.jsx';
+import WorldCupFinale from '../../components/worldcup/WorldCupFinale.jsx';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import { 
  Trophy, MessageSquare, Send, Users, Award, 
@@ -42,19 +43,19 @@ const TEAM_THEMES = {
 
 const LEGENDS = {
  Argentina: ['Diego Maradona', 'Lionel Messi', 'Gabriel Batistuta', 'Mario Kempes'],
- Brazil: ['PelÃ©', 'Ronaldo NazÃ¡rio', 'Ronaldinho', 'Neymar Jr'],
- France: ['Zinedine Zidane', 'Michel Platini', 'Kylian MbappÃ©', 'Thierry Henry'],
+ Brazil: ['Pelé', 'Ronaldo Nazário', 'Ronaldinho', 'Neymar Jr'],
+ France: ['Zinedine Zidane', 'Michel Platini', 'Kylian Mbappé', 'Thierry Henry'],
  England: ['Bobby Charlton', 'David Beckham', 'Harry Kane', 'Bobby Moore'],
- Germany: ['Franz Beckenbauer', 'Gerd MÃ¼ller', 'Jamal Musiala', 'Miroslav Klose'],
- Spain: ['AndrÃ©s Iniesta', 'Xavi HernÃ¡ndez', 'Iker Casillas', 'RaÃºl'],
- Portugal: ['EusÃ©bio', 'LuÃ­s Figo', 'Cristiano Ronaldo', 'Rui Costa'],
+ Germany: ['Franz Beckenbauer', 'Gerd Müller', 'Jamal Musiala', 'Miroslav Klose'],
+ Spain: ['Andrés Iniesta', 'Xavi Hernández', 'Iker Casillas', 'Raúl'],
+ Portugal: ['Eusébio', 'Luís Figo', 'Cristiano Ronaldo', 'Rui Costa'],
  Italy: ['Roberto Baggio', 'Andrea Pirlo', 'Francesco Totti', 'Gianluigi Buffon'],
  Netherlands: ['Johan Cruyff', 'Marco van Basten', 'Virgil van Dijk', 'Ruud Gullit'],
  Belgium: ['Kevin De Bruyne', 'Eden Hazard', 'Romelu Lukaku', 'Jan Ceulemans'],
- Croatia: ['Luka ModriÄ‡', 'Davor Å uker', 'Ivan RakitiÄ‡', 'Zvonimir Boban'],
- Uruguay: ['Luis SuÃ¡rez', 'Diego ForlÃ¡n', 'Federico Valverde', 'Obdulio Varela'],
+ Croatia: ['Luka Modrić', 'Davor Šuker', 'Ivan Rakitić', 'Zvonimir Boban'],
+ Uruguay: ['Luis Suárez', 'Diego Forlán', 'Federico Valverde', 'Obdulio Varela'],
  Japan: ['Hidetoshi Nakata', 'Keisuke Honda', 'Wataru Endo', 'Shunsuke Nakamura'],
- Senegal: ['Sadio ManÃ©', 'El Hadji Diouf', 'Kalidou Koulibaly', 'Aliou CissÃ©'],
+ Senegal: ['Sadio Mané', 'El Hadji Diouf', 'Kalidou Koulibaly', 'Aliou Cissé'],
  Morocco: ['Mustapha Hadji', 'Achraf Hakimi', 'Yassine Bounou', 'Noureddine Naybet'],
  USA: ['Landon Donovan', 'Christian Pulisic', 'Clint Dempsey', 'Brian McBride']
 };
@@ -79,7 +80,7 @@ const TEAM_DETAILS = {
  { name: 'Lionel\nMessi', nickname: '', initials: 'LM', bg: '#1a2e5c' },
  { name: 'Diego\nMaradona', nickname: '', initials: 'DM', bg: '#1e3a8a' },
  { name: 'Gabriel\nBatistuta', nickname: '', initials: 'GB', bg: '#152955' },
- { name: 'Ãngel\nDi Maria', nickname: '', initials: 'AD', bg: '#1a3570' }
+ { name: 'Ángel\nDi Maria', nickname: '', initials: 'AD', bg: '#1a3570' }
  ]
  },
  Brazil: {
@@ -98,8 +99,8 @@ const TEAM_DETAILS = {
  accentLine: '#FEDF00',
  squadAlphaColor: '#FEDF00',
  legends: [
- { name: 'PelÃ©', nickname: 'The King', initials: 'P', bg: '#1a4a28' },
- { name: 'Ronaldo\nNazÃ¡rio', nickname: 'O FenÃ´meno', initials: 'RN', bg: '#1a4a28' },
+ { name: 'Pelé', nickname: 'The King', initials: 'P', bg: '#1a4a28' },
+ { name: 'Ronaldo\nNazário', nickname: 'O Fenômeno', initials: 'RN', bg: '#1a4a28' },
  { name: 'Ronaldinho', nickname: 'The Magician', initials: 'R', bg: '#1a4a28' },
  { name: 'Neymar Jr', nickname: 'The Star', initials: 'NJ', bg: '#1a4a28' }
  ]
@@ -122,7 +123,7 @@ const TEAM_DETAILS = {
  legends: [
  { name: 'Zinedine\nZidane', nickname: 'Zizou', initials: 'ZZ', bg: '#0a1a40' },
  { name: 'Thierry\nHenry', nickname: 'The Icon', initials: 'TH', bg: '#0a1a40' },
- { name: 'Kylian\nMbappÃ©', nickname: 'The Future', initials: 'KM', bg: '#0a1a40' },
+ { name: 'Kylian\nMbappé', nickname: 'The Future', initials: 'KM', bg: '#0a1a40' },
  { name: 'Antoine\nGriezmann', nickname: 'The Maestro', initials: 'AG', bg: '#0a1a40' }
  ]
  },
@@ -167,7 +168,7 @@ const TEAM_DETAILS = {
  { name: 'Franz\nBeckenbauer', nickname: 'The Emperor', initials: 'FB', bg: '#1a1a1a' },
  { name: 'Miroslav\nKlose', nickname: 'The Record Breaker', initials: 'MK', bg: '#1a1a1a' },
  { name: 'Bastian\nSchweinsteiger', nickname: 'The Engine', initials: 'BS', bg: '#1a1a1a' },
- { name: 'Thomas\nMÃ¼ller', nickname: 'The Raumdeuter', initials: 'TM', bg: '#1a1a1a' }
+ { name: 'Thomas\nMüller', nickname: 'The Raumdeuter', initials: 'TM', bg: '#1a1a1a' }
  ]
  },
  Portugal: {
@@ -186,8 +187,8 @@ const TEAM_DETAILS = {
  accentLine: '#FEDF00',
  squadAlphaColor: '#FEDF00',
  legends: [
- { name: 'EusÃ©bio', nickname: 'The Black Panther', initials: 'E', bg: '#2a0a0a' },
- { name: 'LuÃ­s Figo', nickname: 'The Wizard', initials: 'LF', bg: '#2a0a0a' },
+ { name: 'Eusébio', nickname: 'The Black Panther', initials: 'E', bg: '#2a0a0a' },
+ { name: 'Luís Figo', nickname: 'The Wizard', initials: 'LF', bg: '#2a0a0a' },
  { name: 'C. Ronaldo', nickname: 'CR7', initials: 'CR', bg: '#2a0a0a' },
  { name: 'Rui Costa', nickname: 'The Maestro', initials: 'RC', bg: '#2a0a0a' }
  ]
@@ -208,10 +209,10 @@ const TEAM_DETAILS = {
  accentLine: '#FFD700',
  squadAlphaColor: '#FFD700',
  legends: [
- { name: 'AndrÃ©s\nIniesta', nickname: 'The Maestro', initials: 'AI', bg: '#2a0a12' },
- { name: 'Xavi\nHernÃ¡ndez', nickname: 'The Architect', initials: 'XH', bg: '#2a0a12' },
+ { name: 'Andrés\nIniesta', nickname: 'The Maestro', initials: 'AI', bg: '#2a0a12' },
+ { name: 'Xavi\nHernández', nickname: 'The Architect', initials: 'XH', bg: '#2a0a12' },
  { name: 'Iker\nCasillas', nickname: 'Saint Iker', initials: 'IC', bg: '#2a0a12' },
- { name: 'RaÃºl\nGonzÃ¡lez', nickname: 'El CapitÃ¡n', initials: 'RG', bg: '#2a0a12' }
+ { name: 'Raúl\nGonzález', nickname: 'El Capitán', initials: 'RG', bg: '#2a0a12' }
  ]
  },
  Italy: {
@@ -296,9 +297,9 @@ const TEAM_DETAILS = {
  accentLine: '#E30613',
  squadAlphaColor: '#E30613',
  legends: [
- { name: 'Luka\nModriÄ‡', nickname: 'The General', initials: 'LM', bg: '#2a0a0a' },
- { name: 'Davor\nÅ uker', nickname: 'The Sharpshooter', initials: 'DS', bg: '#2a0a0a' },
- { name: 'Ivan\nRakitiÄ‡', nickname: 'The Playmaker', initials: 'IR', bg: '#2a0a0a' },
+ { name: 'Luka\nModrić', nickname: 'The General', initials: 'LM', bg: '#2a0a0a' },
+ { name: 'Davor\nŠuker', nickname: 'The Sharpshooter', initials: 'DS', bg: '#2a0a0a' },
+ { name: 'Ivan\nRakitić', nickname: 'The Playmaker', initials: 'IR', bg: '#2a0a0a' },
  { name: 'Zvonimir\nBoban', nickname: 'The Legend', initials: 'ZB', bg: '#2a0a0a' }
  ]
  },
@@ -318,8 +319,8 @@ const TEAM_DETAILS = {
  accentLine: '#55B355',
  squadAlphaColor: '#55B355',
  legends: [
- { name: 'Luis\nSuÃ¡rez', nickname: 'El Pistolero', initials: 'LS', bg: '#0a2a14' },
- { name: 'Diego\nForlÃ¡n', nickname: 'The Star', initials: 'DF', bg: '#0a2a14' },
+ { name: 'Luis\nSuárez', nickname: 'El Pistolero', initials: 'LS', bg: '#0a2a14' },
+ { name: 'Diego\nForlán', nickname: 'The Star', initials: 'DF', bg: '#0a2a14' },
  { name: 'F. Valverde', nickname: 'El Pajarito', initials: 'FV', bg: '#0a2a14' },
  { name: 'Obdulio\nVarela', nickname: 'El Jefe', initials: 'OV', bg: '#0a2a14' }
  ]
@@ -362,10 +363,10 @@ const TEAM_DETAILS = {
  accentLine: '#00853F',
  squadAlphaColor: '#00853F',
  legends: [
- { name: 'Sadio\nManÃ©', nickname: 'The Lion', initials: 'SM', bg: '#0a2a14' },
+ { name: 'Sadio\nMané', nickname: 'The Lion', initials: 'SM', bg: '#0a2a14' },
  { name: 'El Hadji\nDiouf', nickname: 'The Wizard', initials: 'ED', bg: '#0a2a14' },
  { name: 'K. Koulibaly', nickname: 'The Wall', initials: 'KK', bg: '#0a2a14' },
- { name: 'Aliou\nCissÃ©', nickname: 'The General', initials: 'AC', bg: '#0a2a14' }
+ { name: 'Aliou\nCissé', nickname: 'The General', initials: 'AC', bg: '#0a2a14' }
  ]
  },
  Morocco: {
@@ -512,31 +513,31 @@ const QUESTIONS_POOL = {
  { q: "Which protocol is used to secure web pages?", a: "Option B", options: ["Option A: HTTP", "Option B: HTTPS", "Option C: FTP", "Option D: SMTP"] }
  ],
  football: [
-    { q: "Which nation won the first FIFA World Cup in 1930?", a: "Option B", options: ["Option A: Brazil", "Option B: Uruguay", "Option C: Argentina", "Option D: Italy"] },
-    { q: "Who is the all-time top goalscorer in FIFA World Cup history?", a: "Option C", options: ["Option A: Pelé", "Option B: Ronaldo Nazário", "Option C: Miroslav Klose", "Option D: Lionel Messi"] },
-    { q: "Which country has won the most FIFA World Cup titles?", a: "Option A", options: ["Option A: Brazil", "Option B: Germany", "Option C: Italy", "Option D: Argentina"] },
-    { q: "What does VAR stand for in football?", a: "Option B", options: ["Option A: Video Associate Referee", "Option B: Video Assistant Referee", "Option C: Virtual Assistant Referee", "Option D: Video Analysis Review"] },
-    { q: "Which player won the Golden Boot at the 2022 FIFA World Cup in Qatar?", a: "Option C", options: ["Option A: Lionel Messi", "Option B: Olivier Giroud", "Option C: Kylian Mbappé", "Option D: Neymar Jr"] },
-    { q: "How long is a standard professional football match, excluding extra time?", a: "Option D", options: ["Option A: 80 minutes", "Option B: 100 minutes", "Option C: 75 minutes", "Option D: 90 minutes"] },
-    { q: "What is the maximum number of players on the field for one team during a match?", a: "Option A", options: ["Option A: 11 players", "Option B: 10 players", "Option C: 12 players", "Option D: 9 players"] },
-    { q: "Which legendary player scored the famous 'Hand of God' goal in 1986?", a: "Option B", options: ["Option A: Pelé", "Option B: Diego Maradona", "Option C: Michel Platini", "Option D: Zico"] },
-    { q: "Who won the Golden Ball as the best player at the 2014 FIFA World Cup?", a: "Option A", options: ["Option A: Lionel Messi", "Option B: Thomas Müller", "Option C: James Rodríguez", "Option D: Arjen Robben"] },
-    { q: "In which country was the 2018 FIFA World Cup hosted?", a: "Option C", options: ["Option A: Brazil", "Option B: Germany", "Option C: Russia", "Option D: Qatar"] },
-    { q: "How many yellow cards in a single match result in a player receiving a red card?", a: "Option B", options: ["Option A: 3", "Option B: 2", "Option C: 1", "Option D: 4"] },
-    { q: "What is the distance of the penalty spot from the goal line in football?", a: "Option A", options: ["Option A: 12 yards", "Option B: 10 yards", "Option C: 15 yards", "Option D: 8 yards"] },
-    { q: "Which team won the 2006 FIFA World Cup after a penalty shootout?", a: "Option C", options: ["Option A: France", "Option B: Germany", "Option C: Italy", "Option D: Portugal"] },
-    { q: "Who was the coach of the French national team that won the 2018 World Cup?", a: "Option D", options: ["Option A: Zinedine Zidane", "Option B: Laurent Blanc", "Option C: Arsène Wenger", "Option D: Didier Deschamps"] },
-    { q: "Which country hosted the first FIFA World Cup in Africa in 2010?", a: "Option B", options: ["Option A: Egypt", "Option B: South Africa", "Option C: Nigeria", "Option D: Morocco"] },
-    { q: "Who scored the winning goal for Germany in the 2014 World Cup Final?", a: "Option A", options: ["Option A: Mario Götze", "Option B: Thomas Müller", "Option C: Miroslav Klose", "Option D: Toni Kroos"] },
-    { q: "What happens if a knockout stage match remains a draw after 30 minutes of extra time?", a: "Option D", options: ["Option A: Golden goal", "Option B: Replay match", "Option C: Coin toss", "Option D: Penalty Shootout"] },
-    { q: "Which country won its first World Cup title in 2010 in South Africa?", a: "Option C", options: ["Option A: Netherlands", "Option B: Germany", "Option C: Spain", "Option D: Portugal"] },
-    { q: "Which player has played in the most World Cup matches in history?", a: "Option A", options: ["Option A: Lionel Messi", "Option B: Lothar Matthäus", "Option C: Miroslav Klose", "Option D: Paolo Maldini"] },
-    { q: "Which city hosted the final of the 1994 FIFA World Cup in the United States?", a: "Option B", options: ["Option A: New York", "Option B: Pasadena", "Option C: Miami", "Option D: Chicago"] },
-    { q: "What is the official height of a professional football goalpost?", a: "Option C", options: ["Option A: 10 feet", "Option B: 6 feet", "Option C: 8 feet", "Option D: 9 feet"] },
-    { q: "Which team won the 1966 FIFA World Cup on home soil?", a: "Option A", options: ["Option A: England", "Option B: Germany", "Option C: Portugal", "Option D: France"] },
-    { q: "Who won the Best Young Player award at the 2018 FIFA World Cup?", a: "Option B", options: ["Option A: Luka Modrić", "Option B: Kylian Mbappé", "Option C: Antoine Griezmann", "Option D: Paul Pogba"] },
-    { q: "Which goalkeeper made the famous save in the 2022 World Cup Final shootout?", a: "Option A", options: ["Option A: Emiliano Martínez", "Option B: Hugo Lloris", "Option C: Dominik Livaković", "Option D: Yassine Bounou"] },
-    { q: "Who scored a hat-trick in the 1966 World Cup Final for England?", a: "Option B", options: ["Option A: Bobby Charlton", "Option B: Geoff Hurst", "Option C: Bobby Moore", "Option D: Jimmy Greaves"] }
+ { q: "Which nation won the first FIFA World Cup in 1930?", a: "Option B", options: ["Option A: Brazil", "Option B: Uruguay", "Option C: Argentina", "Option D: Italy"] },
+ { q: "Who is the all-time top goalscorer in FIFA World Cup history?", a: "Option C", options: ["Option A: Pelé", "Option B: Ronaldo Nazário", "Option C: Miroslav Klose", "Option D: Lionel Messi"] },
+ { q: "Which country has won the most FIFA World Cup titles?", a: "Option A", options: ["Option A: Brazil", "Option B: Germany", "Option C: Italy", "Option D: Argentina"] },
+ { q: "What does VAR stand for in football?", a: "Option B", options: ["Option A: Video Associate Referee", "Option B: Video Assistant Referee", "Option C: Virtual Assistant Referee", "Option D: Video Analysis Review"] },
+ { q: "Which player won the Golden Boot at the 2022 FIFA World Cup in Qatar?", a: "Option C", options: ["Option A: Lionel Messi", "Option B: Olivier Giroud", "Option C: Kylian Mbappé", "Option D: Neymar Jr"] },
+ { q: "How long is a standard professional football match, excluding extra time?", a: "Option D", options: ["Option A: 80 minutes", "Option B: 100 minutes", "Option C: 75 minutes", "Option D: 90 minutes"] },
+ { q: "What is the maximum number of players on the field for one team during a match?", a: "Option A", options: ["Option A: 11 players", "Option B: 10 players", "Option C: 12 players", "Option D: 9 players"] },
+ { q: "Which legendary player scored the famous 'Hand of God' goal in 1986?", a: "Option B", options: ["Option A: Pelé", "Option B: Diego Maradona", "Option C: Michel Platini", "Option D: Zico"] },
+ { q: "Who won the Golden Ball as the best player at the 2014 FIFA World Cup?", a: "Option A", options: ["Option A: Lionel Messi", "Option B: Thomas Müller", "Option C: James Rodríguez", "Option D: Arjen Robben"] },
+ { q: "In which country was the 2018 FIFA World Cup hosted?", a: "Option C", options: ["Option A: Brazil", "Option B: Germany", "Option C: Russia", "Option D: Qatar"] },
+ { q: "How many yellow cards in a single match result in a player receiving a red card?", a: "Option B", options: ["Option A: 3", "Option B: 2", "Option C: 1", "Option D: 4"] },
+ { q: "What is the distance of the penalty spot from the goal line in football?", a: "Option A", options: ["Option A: 12 yards", "Option B: 10 yards", "Option C: 15 yards", "Option D: 8 yards"] },
+ { q: "Which team won the 2006 FIFA World Cup after a penalty shootout?", a: "Option C", options: ["Option A: France", "Option B: Germany", "Option C: Italy", "Option D: Portugal"] },
+ { q: "Who was the coach of the French national team that won the 2018 World Cup?", a: "Option D", options: ["Option A: Zinedine Zidane", "Option B: Laurent Blanc", "Option C: Arsène Wenger", "Option D: Didier Deschamps"] },
+ { q: "Which country hosted the first FIFA World Cup in Africa in 2010?", a: "Option B", options: ["Option A: Egypt", "Option B: South Africa", "Option C: Nigeria", "Option D: Morocco"] },
+ { q: "Who scored the winning goal for Germany in the 2014 World Cup Final?", a: "Option A", options: ["Option A: Mario Götze", "Option B: Thomas Müller", "Option C: Miroslav Klose", "Option D: Toni Kroos"] },
+ { q: "What happens if a knockout stage match remains a draw after 30 minutes of extra time?", a: "Option D", options: ["Option A: Golden goal", "Option B: Replay match", "Option C: Coin toss", "Option D: Penalty Shootout"] },
+ { q: "Which country won its first World Cup title in 2010 in South Africa?", a: "Option C", options: ["Option A: Netherlands", "Option B: Germany", "Option C: Spain", "Option D: Portugal"] },
+ { q: "Which player has played in the most World Cup matches in history?", a: "Option A", options: ["Option A: Lionel Messi", "Option B: Lothar Matthäus", "Option C: Miroslav Klose", "Option D: Paolo Maldini"] },
+ { q: "Which city hosted the final of the 1994 FIFA World Cup in the United States?", a: "Option B", options: ["Option A: New York", "Option B: Pasadena", "Option C: Miami", "Option D: Chicago"] },
+ { q: "What is the official height of a professional football goalpost?", a: "Option C", options: ["Option A: 10 feet", "Option B: 6 feet", "Option C: 8 feet", "Option D: 9 feet"] },
+ { q: "Which team won the 1966 FIFA World Cup on home soil?", a: "Option A", options: ["Option A: England", "Option B: Germany", "Option C: Portugal", "Option D: France"] },
+ { q: "Who won the Best Young Player award at the 2018 FIFA World Cup?", a: "Option B", options: ["Option A: Luka Modrić", "Option B: Kylian Mbappé", "Option C: Antoine Griezmann", "Option D: Paul Pogba"] },
+ { q: "Which goalkeeper made the famous save in the 2022 World Cup Final shootout?", a: "Option A", options: ["Option A: Emiliano Martínez", "Option B: Hugo Lloris", "Option C: Dominik Livaković", "Option D: Yassine Bounou"] },
+ { q: "Who scored a hat-trick in the 1966 World Cup Final for England?", a: "Option B", options: ["Option A: Bobby Charlton", "Option B: Geoff Hurst", "Option C: Bobby Moore", "Option D: Jimmy Greaves"] }
  ]
 };
 
@@ -566,9 +567,33 @@ const WorldCupPage = () => {
  const isMobile = useIsMobile();
  const { showToast } = useToast();
  const chatEndRef = useRef(null);
+ const [showFinale, setShowFinale] = useState(false);
+
+ if (showFinale) {
+   return <WorldCupFinale onComplete={() => setShowFinale(false)} />;
+ }
 
  // App States
  const [screen, setScreen] = useState('lobby'); 
+  useEffect(() => {
+    const gameplayScreens = ['kickoff', 'match', 'halftime', 'fulltime'];
+    if (gameplayScreens.includes(screen)) {
+      window.isGameplayActive = true;
+      document.body.classList.add('wc-gameplay-active');
+      window.dispatchEvent(new CustomEvent('gameplay-start'));
+    } else {
+      window.isGameplayActive = false;
+      document.body.classList.remove('wc-gameplay-active');
+      window.dispatchEvent(new CustomEvent('gameplay-stop'));
+    }
+    
+    return () => {
+      window.isGameplayActive = false;
+      document.body.classList.remove('wc-gameplay-active');
+      window.dispatchEvent(new CustomEvent('gameplay-stop'));
+    };
+  }, [screen]);
+
  const [isMuted, setIsMuted] = useState(true);
  const [squad, setSquad] = useState(null);
  const [squadLoading, setSquadLoading] = useState(true);
@@ -892,29 +917,8 @@ const WorldCupPage = () => {
  };
 
  const startKickOffFlow = () => {
- if (hasPlayedToday) {
- showToast("You have already played today's match. Return tomorrow for the next match!", "info");
- return;
- }
-
- const category = 'football';
- const pool = (QUESTIONS_POOL[category] || []).filter(validateQuestion);
- const shuffled = [...pool].sort(() => 0.5 - Math.random());
- setMatchQuestions(shuffled);
- setQIndex(0);
- setActiveQuestion(shuffled[0]);
- setStudentScore(0);
- setBotScore(0);
- setIsSuddenDeath(false);
- setCrowdEnergy(40);
- setMatchMinute(12);
-
- setScreen('kickoff');
- playSoundEffect('whistle', isMuted);
- 
- setTimeout(() => {
- setScreen('match');
- }, 3500);
+ showToast("This event has concluded. Thank you for participating. Final results are available below.", "info");
+ setShowFinale(true);
  };
 
  const handleWelcomeDismiss = () => {
@@ -1111,23 +1115,36 @@ const WorldCupPage = () => {
  backgroundImage: 'radial-gradient(circle, rgba(255,255,255,0.6) 1px, transparent 1px)',
  backgroundSize: '40px 40px', opacity: 0.06 }} />
 
- {/* === TOP RIGHT: Leave Squad === */}
- <button
- onClick={handleLeaveTeam}
- style={{
- position: 'absolute', top: '20px', right: '20px', zIndex: 20,
- display: 'flex', alignItems: 'center', gap: '7px',
- padding: '9px 18px', borderRadius: '8px',
- border: '1.5px solid rgba(239,68,68,0.55)',
- background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(8px)',
- color: '#ef4444', fontSize: '0.82rem', fontWeight: 700, cursor: 'pointer',
- transition: 'all 0.2s'
- }}
- onMouseEnter={e => { e.currentTarget.style.background = 'rgba(239,68,68,0.12)'; }}
- onMouseLeave={e => { e.currentTarget.style.background = 'rgba(0,0,0,0.4)'; }}
- >
- <LogOut size={14} /> Leave Squad
- </button>
+  {/* === TOP RIGHT: Finale & Leave Squad === */}
+  <div style={{ position: 'absolute', top: '20px', right: '20px', zIndex: 20, display: 'flex', gap: '10px' }}>
+    <button
+      onClick={() => setShowFinale(true)}
+      style={{
+        display: 'flex', alignItems: 'center', gap: '7px',
+        padding: '9px 18px', borderRadius: '8px',
+        border: '1.5px solid #F59E0B',
+        background: 'linear-gradient(135deg, rgba(245,158,11,0.2), rgba(217,119,6,0.3))', backdropFilter: 'blur(8px)',
+        color: '#FFD700', fontSize: '0.82rem', fontWeight: 800, cursor: 'pointer',
+        boxShadow: '0 0 15px rgba(245,158,11,0.3)',
+        minHeight: '44px'
+      }}
+    >
+      <Trophy size={16} /> World Cup Finale 🏆
+    </button>
+    <button
+      onClick={handleLeaveTeam}
+      style={{
+        display: 'flex', alignItems: 'center', gap: '7px',
+        padding: '9px 18px', borderRadius: '8px',
+        border: '1.5px solid rgba(239,68,68,0.55)',
+        background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(8px)',
+        color: '#ef4444', fontSize: '0.82rem', fontWeight: 700, cursor: 'pointer',
+        transition: 'all 0.2s', minHeight: '44px'
+      }}
+    >
+      <LogOut size={14} /> Leave Squad
+    </button>
+  </div>
 
  {/* === MAIN 3-COLUMN LAYOUT === */}
  <div style={{
@@ -1164,7 +1181,7 @@ const WorldCupPage = () => {
  {[0, 1, 2, 3].map(idx => {
  const member = squad.members?.[idx] || null;
  const isCurrentUser = member?.uid === user.uid;
- const isCapt = squad.captain === member?.uid;
+ const isCamp = squad.captain === member?.uid;
  // Display the actual student name from Firestore, not hardcoded
  const displayName = member?.username || member?.name || member?.displayName || 'Unknown';
 
@@ -1205,7 +1222,7 @@ const WorldCupPage = () => {
  <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '2px' }}>
  <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#22c55e', flexShrink: 0 }} />
  <span style={{ fontSize: '0.72rem', color: '#22c55e', fontWeight: 700 }}>
- {isCapt ? '👑 Captain' : 'Player'}
+ {isCamp ? '👑 Captain' : 'Player'}
  </span>
  </div>
  </div>
@@ -1340,35 +1357,35 @@ const WorldCupPage = () => {
  marginBottom: '22px', textAlign: 'left'
  }}>
  {isFirst ? (
- <div style={{ display: 'flex', gap: '14px', alignItems: 'flex-start' }}>
- <div style={{
- width: '42px', height: '42px', borderRadius: '50%', flexShrink: 0,
- background: 'rgba(254,223,0,0.1)', border: '1.5px solid rgba(254,223,0,0.4)',
- display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.3rem'
- }}>👑</div>
- <div>
- <div style={{ fontSize: '0.78rem', fontWeight: 900, color: '#FEDF00', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '4px' }}>CAPTAIN APPOINTED</div>
- <div style={{ fontSize: '0.83rem', color: 'rgba(255,255,255,0.75)', lineHeight: 1.5 }}>
- No one reached the dressing room before you.<br />
- You now lead {user.chosenTeam} Squad {squadLabel}. Your mission begins today.
- </div>
- </div>
- </div>
- ) : (
- <div style={{ display: 'flex', gap: '14px', alignItems: 'flex-start' }}>
- <div style={{
- width: '42px', height: '42px', borderRadius: '50%', flexShrink: 0,
- background: 'rgba(96,165,250,0.1)', border: '1.5px solid rgba(96,165,250,0.4)',
- display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.3rem'
- }}>🛡️ </div>
- <div>
- <div style={{ fontSize: '0.78rem', fontWeight: 900, color: '#60A5FA', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '4px' }}>DRESSED FOR THE MATCH</div>
- <div style={{ fontSize: '0.83rem', color: 'rgba(255,255,255,0.75)', lineHeight: 1.5 }}>
- You've joined the national lineup. Support Captain 👑 <strong>{squad.captainName || 'your leader'}</strong> and represent the team!
- </div>
- </div>
- </div>
- )}
+  <div style={{ display: 'flex', gap: '14px', alignItems: 'flex-start' }}>
+  <div style={{
+  width: '42px', height: '42px', borderRadius: '50%', flexShrink: 0,
+  background: 'rgba(254,223,0,0.1)', border: '1.5px solid rgba(254,223,0,0.4)',
+  display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.3rem'
+  }}>👑</div>
+  <div>
+  <div style={{ fontSize: '0.78rem', fontWeight: 900, color: '#FEDF00', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '4px' }}>CAPTAIN APPOINTED</div>
+  <div style={{ fontSize: '0.83rem', color: 'rgba(255,255,255,0.75)', lineHeight: 1.5 }}>
+  No one reached the dressing room before you.<br />
+  You now lead {user.chosenTeam} Squad {squadLabel}. Your mission begins today.
+  </div>
+  </div>
+  </div>
+  ) : (
+  <div style={{ display: 'flex', gap: '14px', alignItems: 'flex-start' }}>
+  <div style={{
+  width: '42px', height: '42px', borderRadius: '50%', flexShrink: 0,
+  background: 'rgba(96,165,250,0.1)', border: '1.5px solid rgba(96,165,250,0.4)',
+  display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.3rem'
+  }}>🛡️ </div>
+  <div>
+  <div style={{ fontSize: '0.78rem', fontWeight: 900, color: '#60A5FA', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: '4px' }}>DRESSED FOR THE MATCH</div>
+  <div style={{ fontSize: '0.83rem', color: 'rgba(255,255,255,0.75)', lineHeight: 1.5 }}>
+  You've joined the national lineup. Support Captain 👑 <strong>{squad.captainName || 'your leader'}</strong> and represent the team!
+  </div>
+  </div>
+  </div>
+  )}
  </div>
 
  {/* Legends Row */}
@@ -1418,48 +1435,37 @@ const WorldCupPage = () => {
  )}
  {/* Team flag / accent dot */}
  <div style={{ width: '20px', height: '3px', borderRadius: '2px', background: td.primary, opacity: 0.7 }} />
- </div>
- );
- })}
- </div>
- </div>
+  </div>
+  );
+  })}
+  </div>
+  </div>
 
- {/* CTA Button */}
- <AnimatePresence>
- {welcomeLoadStep >= 4 ? (
- <motion.button
- key="cta-btn"
- initial={{ opacity: 0, y: 14, scale: 0.95 }}
- animate={{ opacity: 1, y: 0, scale: 1 }}
- transition={{ duration: 0.35 }}
- onClick={startKickOffFlow}
- style={{
- display: 'flex', alignItems: 'center', gap: '10px',
- padding: '17px 52px', borderRadius: '100px', border: 'none',
- background: td.buttonGradient,
- color: td.buttonTextColor || 'white',
- fontWeight: 900, fontSize: '1.05rem', cursor: 'pointer', letterSpacing: '0.04em',
- boxShadow: `0 8px 28px rgba(0,0,0,0.4)`,
- marginBottom: '12px',
- transition: 'transform 0.2s, box-shadow 0.2s'
- }}
- onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.04)'; e.currentTarget.style.boxShadow = `0 12px 36px rgba(0,0,0,0.5)`; }}
- onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.boxShadow = `0 8px 28px rgba(0,0,0,0.4)`; }}
- >
- <span style={{ fontSize: '1.2rem' }}>⚽</span> PLAY YOUR FIRST MATCH
- </motion.button>
- ) : (
- <div key="loading-cta" style={{ height: '56px', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.85rem', color: 'rgba(255,255,255,0.4)', fontWeight: 700 }}>
- <div style={{ width: '16px', height: '16px', border: '2px solid rgba(255,255,255,0.2)', borderTopColor: td.primary, borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
- Preparing kickoff...
- </div>
- )}
- </AnimatePresence>
+  {/* Archived Event Notice */}
+  <div
+    style={{
+      padding: '16px 28px',
+      borderRadius: '100px',
+      background: 'rgba(239, 68, 68, 0.15)',
+      border: '1.5px solid rgba(239, 68, 68, 0.4)',
+      color: '#F87171',
+      fontWeight: 900,
+      fontSize: '0.9rem',
+      display: 'flex',
+      alignItems: 'center',
+      gap: '10px',
+      marginBottom: '12px',
+      cursor: 'pointer'
+    }}
+    onClick={() => setShowFinale(true)}
+  >
+    <span>🔒</span> This event has concluded. Thank you for participating. Final results are available below.
+  </div>
 
  {/* View Squad Lobby link */}
  <button
  onClick={handleWelcomeDismiss}
- style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.5)', fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', textDecoration: 'none', transition: 'color 0.2s' }}
+ style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.5)', fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', textDecoration: 'none', transition: 'color 0.2s', minHeight: '44px' }}
  onMouseEnter={e => e.currentTarget.style.color = 'rgba(255,255,255,0.85)'}
  onMouseLeave={e => e.currentTarget.style.color = 'rgba(255,255,255,0.5)'}
  >
@@ -1535,15 +1541,15 @@ const WorldCupPage = () => {
  // ——— SCREEN 2: KICK OFF TRANSITION ———
  if (screen === 'kickoff') {
  return (
-  <div style={{
-  background: '#020617', height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column',
-  alignItems: 'center', justifyContent: 'center', color: 'white', borderRadius: '32px'
-  }}>
- <div style={{ fontSize: '6rem', marginBottom: '16px', animation: 'bounce 1s infinite' }}>⚽</div>
+ <div style={{
+ background: '#020617', height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column',
+ alignItems: 'center', justifyContent: 'center', color: 'white', borderRadius: '32px'
+ }}>
+ <div style={{ fontSize: 'clamp(4rem, 12vw, 6rem)', marginBottom: '16px', animation: 'bounce 1s infinite' }}>⚽</div>
  <div style={{ fontSize: '0.85rem', fontWeight: 900, color: theme.primary, textTransform: 'uppercase', letterSpacing: '0.25em', marginBottom: '12px' }}>
  WORLD CUP MANIA
  </div>
- <h1 style={{ fontSize: '2.5rem', fontWeight: 950, textTransform: 'uppercase', margin: '0 0 24px' }}>
+ <h1 style={{ fontSize: 'clamp(1.8rem, 6vw, 2.5rem)', fontWeight: 950, textTransform: 'uppercase', margin: '0 0 24px' }}>
  {user.chosenTeam} <span style={{ color: 'rgba(255,255,255,0.3)' }}>VS</span> BOT
  </h1>
  
@@ -1553,7 +1559,7 @@ const WorldCupPage = () => {
  initial={{ scale: 0.5, opacity: 0 }}
  animate={{ scale: [1, 1.5, 1], opacity: [0, 1, 0] }}
  transition={{ duration: 3, times: [0, 0.5, 1] }}
- style={{ fontSize: '3rem', fontWeight: 950, color: '#f59e0b' }}
+ style={{ fontSize: 'clamp(1.8rem, 5vw, 3rem)', fontWeight: 950, color: '#f59e0b' }}
  >
  3... 2... 1... Kick Off!
  </motion.div>
@@ -1564,18 +1570,46 @@ const WorldCupPage = () => {
 
  // ——— SCREEN 3: ACTIVE MATCH PENALTY ENGINE (SPLIT MATCH BROADCAST VIEW) ———
  if (screen === 'match' && activeQuestion) {
-  console.log('WorldCupPage Match Screen Options Length:', activeQuestion.options?.length);
-  console.log('WorldCupPage Match Screen Options:', activeQuestion.options);
-  return (
-  <div style={{
-  background: 'radial-gradient(circle at center, #0b0f19 0%, #020617 100%)',
-  height: '100%', minHeight: 0, maxHeight: '100%',
-  overflowY: 'auto', overflowX: 'hidden',
-  WebkitOverflowScrolling: 'touch',
-  touchAction: 'pan-y',
-  display: 'flex', flexDirection: 'column',
-  color: 'white', padding: isMobile ? '12px' : '20px', borderRadius: '32px', boxSizing: 'border-box'
-  }}>
+ return (
+ <div style={{
+ background: 'radial-gradient(circle at center, #0b0f19 0%, #020617 100%)',
+ height: '100%', minHeight: 0, maxHeight: '100%',
+ overflowY: 'auto', overflowX: 'hidden',
+ WebkitOverflowScrolling: 'touch',
+ touchAction: 'pan-y',
+ display: 'flex', flexDirection: 'column',
+ color: 'white', padding: isMobile ? '12px' : '20px', borderRadius: '32px', boxSizing: 'border-box'
+ }}>
+  {/* Back button */}
+  <div style={{ width: '100%', maxWidth: '650px', margin: '0 auto 10px', display: 'flex', justifyContent: 'flex-start' }}>
+    <button
+      onClick={() => {
+        if (window.confirm("Are you sure you want to exit the match? You will lose your progress.")) {
+          setScreen('lobby');
+        }
+      }}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '6px',
+        background: 'rgba(255,255,255,0.06)',
+        border: '1px solid rgba(255,255,255,0.1)',
+        borderRadius: '10px',
+        color: 'white',
+        padding: '8px 14px',
+        fontSize: '0.8rem',
+        fontWeight: 700,
+        cursor: 'pointer',
+        minHeight: '44px',
+        transition: 'all 0.2s'
+      }}
+      onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.12)'}
+      onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.06)'}
+    >
+      <ArrowLeft size={14} /> Exit Match
+    </button>
+  </div>
+
  {/* TV Style Scoreboard & Broadcast Banner */}
  <div style={{
  width: '100%', maxWidth: '650px', margin: isMobile ? '0 auto 10px' : '0 auto 20px',
@@ -1624,11 +1658,11 @@ const WorldCupPage = () => {
  )}
 
  {/* TV Broadcaster field box (Split visual structure) */}
- <div style={{
-  flex: 1, width: '100%', maxWidth: '650px', margin: isMobile ? '0 auto 12px' : '0 auto 24px',
+ <div className="wc-field-box" style={{
+  flex: '1 1 auto', width: '100%', maxWidth: '650px', margin: isMobile ? '0 auto 10px' : '0 auto 20px',
   background: 'rgba(16, 185, 129, 0.05)',
   border: `2px solid ${theme.primary}30`, borderRadius: '24px',
-  position: 'relative', overflow: 'hidden', minHeight: isMobile ? '160px' : '220px',
+  position: 'relative', overflow: 'hidden',
   display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center'
   }}>
  {/* Turf grid lines */}
@@ -1639,20 +1673,21 @@ const WorldCupPage = () => {
 
  {/* Goalie Representation */}
  <motion.div
+ className="wc-goalie-repr"
  animate={{
  x: goalieDir === 'left' ? -130 : goalieDir === 'right' ? 130 : 0,
  rotate: goalieDir === 'left' ? -35 : goalieDir === 'right' ? 35 : 0,
  y: goalieDir !== 'center' ? 10 : 0
  }}
  transition={{ duration: 0.25, type: 'spring' }}
- style={{ fontSize: '3.2rem', position: 'absolute', top: '35px', zIndex: 5 }}
+ style={{ fontSize: 'clamp(2rem, 6vh, 3.2rem)', position: 'absolute', top: isMobile ? '20px' : '35px', zIndex: 5 }}
  >
  🧤
  </motion.div>
 
  {/* Target Corners Overlay (Aiming Guides) */}
  {selectedAnswer === null && botActiveKick === null && (
- <div style={{ position: 'absolute', inset: '16px', pointerEvents: 'none', border: '2px dashed rgba(255,255,255,0.1)', borderRadius: '12px' }}>
+ <div className="wc-target-corners" style={{ position: 'absolute', inset: '16px', pointerEvents: 'none', border: '2px dashed rgba(255,255,255,0.1)', borderRadius: '12px' }}>
  <div style={{ position: 'absolute', top: '10px', left: '10px', fontSize: '0.65rem', color: 'rgba(255,255,255,0.3)', fontWeight: 800 }}>A: TOP LEFT</div>
  <div style={{ position: 'absolute', top: '10px', right: '10px', fontSize: '0.65rem', color: 'rgba(255,255,255,0.3)', fontWeight: 800 }}>B: TOP RIGHT</div>
  <div style={{ position: 'absolute', bottom: '10px', left: '10px', fontSize: '0.65rem', color: 'rgba(255,255,255,0.3)', fontWeight: 800 }}>C: BOT LEFT</div>
@@ -1672,13 +1707,13 @@ const WorldCupPage = () => {
  )}
  {botActiveKick === 'goal' && (
  <div style={{ color: '#ef4444' }}>
- <div style={{ fontSize: '2.8rem', fontWeight: 950 }}>BOT SCORES! 🤖⚽</div>
+ <div style={{ fontSize: 'clamp(1.8rem, 6vw, 2.8rem)', fontWeight: 950 }}>BOT SCORES! 🤖⚽</div>
  <div style={{ fontSize: '0.8rem', fontWeight: 800, opacity: 0.9 }}>"What a strike! The goalie was beaten."</div>
  </div>
  )}
  {botActiveKick === 'saved' && (
  <div style={{ color: '#10b981' }}>
- <div style={{ fontSize: '2.8rem', fontWeight: 950 }}>SAVED BY KEEPER! 🧤</div>
+ <div style={{ fontSize: 'clamp(1.8rem, 6vw, 2.8rem)', fontWeight: 950 }}>SAVED BY KEEPER! 🧤</div>
  <div style={{ fontSize: '0.8rem', fontWeight: 800, opacity: 0.9 }}>"Incredible diving save by your keeper!"</div>
  </div>
  )}
@@ -1692,17 +1727,17 @@ const WorldCupPage = () => {
  </div>
  ) : shootResult === 'goal' ? (
  <div style={{ color: '#10b981' }}>
- <div style={{ fontSize: '3rem', fontWeight: 950 }}>GOOOOOOOAL!!! ⚽🔥</div>
+ <div style={{ fontSize: 'clamp(2rem, 8vw, 3rem)', fontWeight: 950 }}>GOOOOOOOAL!!! ⚽🔥</div>
  <div style={{ fontSize: '0.8rem', fontWeight: 800, opacity: 0.9 }}>"What a finish! The goalkeeper had no chance!"</div>
  </div>
  ) : shootResult === 'timeout' ? (
  <div style={{ color: '#ef4444' }}>
- <div style={{ fontSize: '2.8rem', fontWeight: 950 }}>MISS! ❌</div>
+ <div style={{ fontSize: 'clamp(1.8rem, 6vw, 2.8rem)', fontWeight: 950 }}>MISS! ❌</div>
  <div style={{ fontSize: '0.8rem', fontWeight: 800, opacity: 0.9 }}>"Shot clock violation! The penalty window closed."</div>
  </div>
  ) : (
  <div style={{ color: '#ef4444' }}>
- <div style={{ fontSize: '2.8rem', fontWeight: 950 }}>SAVED! 🧤</div>
+ <div style={{ fontSize: 'clamp(1.8rem, 6vw, 2.8rem)', fontWeight: 950 }}>SAVED! 🧤</div>
  <div style={{ fontSize: '0.8rem', fontWeight: 800, opacity: 0.9 }}>"The goalie guessed correctly and punched it away!"</div>
  </div>
  )}
@@ -1714,12 +1749,12 @@ const WorldCupPage = () => {
  {/* Question & Target buttons split */}
  {botActiveKick === null && (
  <div style={{ width: '100%', maxWidth: '650px', margin: '0 auto', textAlign: 'center' }}>
- <h2 style={{ fontSize: '1.25rem', fontWeight: 900, margin: '0 0 24px', lineHeight: 1.4, color: 'white' }}>
+ <h2 className="wc-question-text" style={{ fontSize: 'clamp(1.1rem, 4vw, 1.3rem)', fontWeight: 900, margin: isMobile ? '0 0 12px' : '0 0 20px', lineHeight: 1.4, color: 'white' }}>
  {activeQuestion.q}
  </h2>
 
  {/* Split options buttons mapping to corners */}
- <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: isMobile ? '8px' : '12px' }}>
+ <div className="wc-options-grid" style={{ gap: isMobile ? '6px' : '12px' }}>
  {activeQuestion.options.map((opt, idx) => {
  const isSelected = selectedAnswer === opt;
  const optLetter = opt.split(':')[0]; // "Option A"
@@ -1753,11 +1788,11 @@ const WorldCupPage = () => {
  onClick={() => handleSelectAnswer(opt)}
  disabled={selectedAnswer !== null}
  style={{
- padding: isMobile ? '10px 12px' : '16px', borderRadius: '16px', border: `1.5px solid ${border}`,
+ padding: isMobile ? '10px 12px' : '14px 16px', borderRadius: '16px', border: `1.5px solid ${border}`,
  background: bg, color, fontWeight: 800, fontSize: isMobile ? '0.78rem' : '0.85rem',
  cursor: selectedAnswer !== null ? 'default' : 'pointer',
- display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px',
- transition: 'all 0.2s'
+ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '4px',
+ transition: 'all 0.2s', minHeight: '44px'
  }}
  >
  <span style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', fontWeight: 900 }}>
@@ -1789,11 +1824,11 @@ const WorldCupPage = () => {
   WebkitOverflowScrolling: 'touch',
   touchAction: 'pan-y'
   }}>
- <div style={{ fontSize: '5rem', marginBottom: '16px' }}>⏱</div>
+ <div style={{ fontSize: 'clamp(4rem, 10vw, 5rem)', marginBottom: '16px' }}>⏱</div>
  <div style={{ fontSize: '0.85rem', fontWeight: 900, color: '#f59e0b', textTransform: 'uppercase', letterSpacing: '0.25em', marginBottom: '8px' }}>
  Match Summary
  </div>
- <h1 style={{ fontSize: '2.5rem', fontWeight: 950, margin: '0 0 32px' }}>HALF TIME</h1>
+ <h1 style={{ fontSize: 'clamp(1.8rem, 6vw, 2.5rem)', fontWeight: 950, margin: '0 0 32px' }}>HALF TIME</h1>
  
  <div style={{
  display: 'flex', alignItems: 'center', gap: '32px',
@@ -1838,7 +1873,8 @@ const WorldCupPage = () => {
  padding: '16px 48px', borderRadius: '100px', border: 'none',
  background: 'linear-gradient(135deg, #3b82f6, #6366f1)', color: 'white',
  fontWeight: 900, fontSize: '1rem', cursor: 'pointer',
- boxShadow: '0 8px 20px rgba(99,102,241,0.3)'
+ boxShadow: '0 8px 20px rgba(99,102,241,0.3)',
+ minHeight: '44px'
  }}
  >
  Continue Second Half →
@@ -1863,11 +1899,11 @@ const WorldCupPage = () => {
   WebkitOverflowScrolling: 'touch',
   touchAction: 'pan-y'
  }}>
- <div style={{ fontSize: '6rem', marginBottom: '16px' }}>{isWin ? '🏆' : '⚽'}</div>
+ <div style={{ fontSize: 'clamp(4rem, 12vw, 6rem)', marginBottom: '16px' }}>{isWin ? '🏆' : '⚽'}</div>
  <div style={{ fontSize: '0.85rem', fontWeight: 900, color: isWin ? '#10b981' : '#f59e0b', textTransform: 'uppercase', letterSpacing: '0.25em', marginBottom: '8px' }}>
  90' whistle
  </div>
- <h1 style={{ fontSize: '3rem', fontWeight: 950, margin: '0 0 32px' }}>FULL TIME</h1>
+ <h1 style={{ fontSize: 'clamp(2rem, 6vw, 3rem)', fontWeight: 950, margin: '0 0 32px' }}>FULL TIME</h1>
 
  <div style={{
  display: 'flex', alignItems: 'center', gap: '32px',
@@ -1886,18 +1922,18 @@ const WorldCupPage = () => {
  </div>
 
  {/* Rewards */}
- <div style={{ marginBottom: '40px' }}>
+ <div style={{ marginBottom: '40px', width: '100%', maxWidth: '500px' }}>
  <h4 style={{ margin: '0 0 12px', fontSize: '0.8rem', color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', fontWeight: 800 }}>Rewards Earned</h4>
- <div style={{ display: 'flex', gap: '16px', justifyContent: 'center' }}>
- <div style={{ background: 'rgba(255,255,255,0.03)', padding: '12px 20px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.05)' }}>
+ <div style={{ display: 'flex', gap: isMobile ? '8px' : '16px', justifyContent: 'center', flexWrap: 'wrap' }}>
+ <div style={{ background: 'rgba(255,255,255,0.03)', padding: isMobile ? '10px 14px' : '12px 20px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.05)', flex: '1 1 auto', minWidth: '100px' }}>
  <div style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.4)', fontWeight: 800 }}>XP</div>
  <strong style={{ fontSize: '1.2rem', color: '#10B981', display: 'block', marginTop: '2px' }}>{isWin ? '+150 XP' : '+30 XP'}</strong>
  </div>
- <div style={{ background: 'rgba(255,255,255,0.03)', padding: '12px 20px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.05)' }}>
+ <div style={{ background: 'rgba(255,255,255,0.03)', padding: isMobile ? '10px 14px' : '12px 20px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.05)', flex: '1 1 auto', minWidth: '100px' }}>
  <div style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.4)', fontWeight: 800 }}>COINS</div>
  <strong style={{ fontSize: '1.2rem', color: '#F59E0B', display: 'block', marginTop: '2px' }}>{isWin ? '+50 Coins' : '+15 Coins'}</strong>
  </div>
- <div style={{ background: 'rgba(255,255,255,0.03)', padding: '12px 20px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.05)' }}>
+ <div style={{ background: 'rgba(255,255,255,0.03)', padding: isMobile ? '10px 14px' : '12px 20px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.05)', flex: '1 1 auto', minWidth: '100px' }}>
  <div style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.4)', fontWeight: 800 }}>SQUAD POINTS</div>
  <strong style={{ fontSize: '1.2rem', color: '#60A5FA', display: 'block', marginTop: '2px' }}>{isWin ? '+15 Pts' : '+5 Pts'}</strong>
  </div>
@@ -1910,7 +1946,8 @@ const WorldCupPage = () => {
  padding: '16px 48px', borderRadius: '100px', border: 'none',
  background: 'linear-gradient(135deg, #10b981, #059669)', color: 'white',
  fontWeight: 900, fontSize: '1rem', cursor: 'pointer',
- boxShadow: '0 8px 20px rgba(16,185,129,0.3)'
+ boxShadow: '0 8px 20px rgba(16,185,129,0.3)',
+ minHeight: '44px'
  }}
  >
  Return to Dressing Room
@@ -1956,14 +1993,14 @@ const WorldCupPage = () => {
  <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
  <button 
  onClick={() => setIsMuted(p => !p)}
- style={{ padding: '12px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.04)', color: 'white', cursor: 'pointer' }}
+ style={{ width: '44px', height: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.04)', color: 'white', cursor: 'pointer' }}
  >
  {isMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
  </button>
  
  <button
  onClick={handleLeaveTeam}
- style={{ padding: '12px 20px', borderRadius: '12px', border: '1px solid rgba(239,68,68,0.2)', background: 'rgba(239,68,68,0.05)', color: '#ef4444', fontSize: '0.85rem', fontWeight: 800, cursor: 'pointer' }}
+ style={{ minHeight: '44px', padding: '10px 20px', borderRadius: '12px', border: '1px solid rgba(239,68,68,0.2)', background: 'rgba(239,68,68,0.05)', color: '#ef4444', fontSize: '0.85rem', fontWeight: 800, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
  >
  Leave Squad
  </button>
@@ -1995,16 +2032,16 @@ const WorldCupPage = () => {
  </div>
 
  {/* 4 Seats Dressing Room */}
- <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '28px' }} className="grid-2-col-mobile">
+ <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '28px' }}>
  {seats.map((member, idx) => {
- const isOwn = member?.uid === user.uid;
+ const isCamp = member?.uid === user.uid;
  
  return (
  <div 
  key={idx}
  style={{
  background: member ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.005)',
- border: member ? `1.5px solid ${isOwn ? theme.primary : 'rgba(255,255,255,0.08)'}` : '1.5px dashed rgba(255,255,255,0.03)',
+ border: member ? `1.5px solid ${isCamp ? theme.primary : 'rgba(255,255,255,0.08)'}` : '1.5px dashed rgba(255,255,255,0.03)',
  borderRadius: '20px', padding: '18px', display: 'flex', flexDirection: 'column',
  alignItems: 'center', gap: '10px', transition: 'all 0.2s', position: 'relative'
  }}
@@ -2046,7 +2083,7 @@ const WorldCupPage = () => {
  <button
  onClick={handleShareInvite}
  style={{
- flex: 1, padding: '14px', borderRadius: '100px', border: '1px solid rgba(255,255,255,0.15)',
+ flex: 1, minHeight: '44px', padding: '14px 20px', borderRadius: '100px', border: '1px solid rgba(255,255,255,0.15)',
  background: 'rgba(255,255,255,0.05)', color: 'white', fontWeight: 800, fontSize: '0.9rem',
  cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
  transition: 'background 0.2s'
@@ -2061,7 +2098,7 @@ const WorldCupPage = () => {
  onClick={startKickOffFlow}
  disabled={hasPlayedToday}
  style={{
- flex: 1.2, padding: '14px', borderRadius: '100px', border: 'none',
+ flex: 1.2, minHeight: '44px', padding: '14px 20px', borderRadius: '100px', border: 'none',
  background: hasPlayedToday ? 'rgba(255,255,255,0.05)' : 'linear-gradient(135deg, #10b981, #059669)',
  color: hasPlayedToday ? 'rgba(255,255,255,0.3)' : 'white', fontWeight: 900, fontSize: '0.9rem',
  cursor: hasPlayedToday ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
@@ -2077,7 +2114,7 @@ const WorldCupPage = () => {
  {/* Right Side: Messenger-style Chat Room OR Standings */}
  <div style={{ 
  background: '#090d16', border: '1px solid rgba(255,255,255,0.06)', 
- borderRadius: '28px', height: '480px', display: 'flex', flexDirection: 'column',
+ borderRadius: '28px', height: isMobile ? '380px' : '480px', display: 'flex', flexDirection: 'column',
  overflow: 'hidden'
  }}>
  {/* Tabs bar */}
@@ -2094,7 +2131,7 @@ const WorldCupPage = () => {
  color: lobbyTab === tab.id ? theme.primary : 'rgba(255,255,255,0.4)',
  fontWeight: 900, fontSize: '0.82rem', cursor: 'pointer',
  borderBottom: lobbyTab === tab.id ? `3px solid ${theme.primary}` : '3px solid transparent',
- transition: 'all 0.2s'
+ transition: 'all 0.2s', minHeight: '44px'
  }}
  >
  {tab.label}
@@ -2156,13 +2193,14 @@ const WorldCupPage = () => {
  onChange={e => setChatInput(e.target.value)}
  style={{
  flex: 1, padding: '10px 14px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.08)',
- background: 'rgba(255,255,255,0.02)', color: 'white', outline: 'none', fontSize: '0.8rem'
+ background: 'rgba(255,255,255,0.02)', color: 'white', outline: 'none', fontSize: '0.8rem',
+ minHeight: '44px'
  }}
  />
  <button
  type="submit"
  style={{
- padding: '10px 14px', borderRadius: '10px', border: 'none', background: theme.primary,
+ width: '44px', height: '44px', borderRadius: '10px', border: 'none', background: theme.primary,
  color: theme.primary === '#FEDF00' ? '#000' : 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer'
  }}
  >
@@ -2187,7 +2225,8 @@ const WorldCupPage = () => {
  flex: 1, padding: '6px 0', border: 'none', cursor: 'pointer', borderRadius: '6px',
  fontWeight: 800, fontSize: '0.72rem', transition: 'all 0.2s',
  background: standingsTab === sub.id ? 'rgba(255,255,255,0.06)' : 'transparent',
- color: standingsTab === sub.id ? theme.primary : 'rgba(255,255,255,0.5)'
+ color: standingsTab === sub.id ? theme.primary : 'rgba(255,255,255,0.5)',
+ minHeight: '44px'
  }}
  >
  {sub.label}

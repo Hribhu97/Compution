@@ -53,7 +53,20 @@
   --child-padding: 24px;
   --navbar-bg: rgba(247, 246, 243, 0.92);
   --navbar-border: rgba(0, 0, 0, 0.06);
-  --footer-bg: #22252B;}
+  --footer-bg: #22252B;
+
+  /* 8-Point Spacing System Tokens */
+  --space-3xs: 4px;
+  --space-2xs: 8px;
+  --space-xs: 12px;
+  --space-sm: 16px;
+  --space-md: 24px;
+  --space-lg: 32px;
+  --space-xl: 48px;
+
+  /* Touch Target Standard */
+  --touch-target-min: 44px;
+}
 
 /* =================== RESET =================== */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -68,7 +81,7 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
-img, video { max-width: 100%; display: block; }
+img, video { max-width: 100%; height: auto; object-fit: cover; display: block; }
 a { color: inherit; text-decoration: none; }
 button { font-family: var(--font-support); cursor: pointer; border: none; background: none; outline: none; }
 input, textarea, select { font-family: var(--font-body); }
@@ -861,6 +874,120 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover {
   select,
   textarea {
     font-size: 16px !important;
+  }
+}
+
+/* =================== WORLD CUP EVENT RESPONSIVENESS =================== */
+.wc-options-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+  width: 100%;
+}
+
+@media (min-width: 1024px) {
+  .wc-options-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+}
+
+/* Landscape and ultra-compact viewport overrides */
+@media (max-height: 520px) and (orientation: landscape) {
+  .wc-field-box {
+    min-height: 64px !important;
+    max-height: 80px !important;
+    margin: 6px auto !important;
+    padding: 6px !important;
+  }
+  .wc-goalie-repr, .wc-target-corners {
+    display: none !important;
+  }
+  .wc-question-text {
+    font-size: 1rem !important;
+    margin-bottom: 8px !important;
+  }
+}
+
+/* Ensure dynamic viewport support for mobile shells */
+@supports (height: 100dvh) {
+  .dash-shell {
+    height: 100dvh;
+    min-height: 100dvh;
+  }
+}
+
+/* Active gameplay UI cleanups (Hides distracting layout shells globally) */
+body.wc-gameplay-active .dash-header-bar,
+body.wc-gameplay-active .dash-bottom-nav,
+body.wc-gameplay-active .dash-sidebar-panel,
+body.wc-gameplay-active .quick-action-container {
+  display: none !important;
+}
+
+body.wc-gameplay-active .dash-body-scroll {
+  padding-bottom: 0 !important;
+}
+
+/* Make Broadcaster Box adapt using percentages and aspect ratios */
+.wc-field-box {
+  width: 100%;
+  height: 22vh;
+  min-height: 100px;
+  max-height: 180px;
+}
+@media (min-width: 768px) {
+  .wc-field-box {
+    height: 25vh;
+    min-height: 160px;
+    max-height: 220px;
+  }
+}
+
+/* =================== GLOBAL MOBILE-FIRST RESPONSIVE UTILITIES =================== */
+button, 
+a.btn, 
+input, 
+select, 
+textarea, 
+.touch-target, 
+.tab-btn, 
+.nav-item {
+  min-height: var(--touch-target-min);
+}
+
+.grid-mobile-1col {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-sm);
+  width: 100%;
+}
+
+@media (min-width: 768px) {
+  .grid-mobile-1col {
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--space-md);
+  }
+}
+
+@media (min-width: 1024px) {
+  .grid-mobile-1col.cols-3 {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  .grid-mobile-1col.cols-4 {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+@media (max-width: 480px) {
+  .container {
+    padding: 0 12px;
+  }
+  .card-p {
+    padding: 16px;
+  }
+  .grid-2-col-mobile {
+    grid-template-columns: 1fr !important;
   }
 }
 

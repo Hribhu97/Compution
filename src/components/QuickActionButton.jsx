@@ -11,7 +11,25 @@ const QuickActionButton = ({ isMoreMenuOpen }) => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
+  const [isGameplayActive, setIsGameplayActive] = useState(false);
   const menuRef = useRef(null);
+
+  useEffect(() => {
+    const handleStart = () => setIsGameplayActive(true);
+    const handleStop = () => setIsGameplayActive(false);
+
+    window.addEventListener('gameplay-start', handleStart);
+    window.addEventListener('gameplay-stop', handleStop);
+
+    if (window.isGameplayActive) {
+      setIsGameplayActive(true);
+    }
+
+    return () => {
+      window.removeEventListener('gameplay-start', handleStart);
+      window.removeEventListener('gameplay-stop', handleStop);
+    };
+  }, []);
 
   const role = user?.role?.toLowerCase() || 'student';
 
@@ -66,10 +84,11 @@ const QuickActionButton = ({ isMoreMenuOpen }) => {
     }
   };
 
-  if (actions.length === 0) return null;
+  if (actions.length === 0 || isGameplayActive) return null;
 
   return (
     <div 
+      className="quick-action-container"
       ref={menuRef}
       style={{
         position: 'fixed',
@@ -113,6 +132,7 @@ const QuickActionButton = ({ isMoreMenuOpen }) => {
                     alignItems: 'center',
                     gap: '10px',
                     width: '100%',
+                    minHeight: '44px',
                     padding: '10px 12px',
                     border: 'none',
                     background: 'transparent',

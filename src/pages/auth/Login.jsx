@@ -147,8 +147,51 @@ const Login = () => {
 
   useEffect(() => {
     if (!authLoading && user) {
-      setView('success');
-      setTimeout(() => navigate('/dashboard'), 900);
+      if (user.needsRegistration || !user.profileCompleted) {
+        setView('register-profile');
+        const currentUser = auth.currentUser;
+        if (currentUser) {
+          const isEmail = currentUser.providerData.some(p => p.providerId === 'password');
+          const isPhone = currentUser.providerData.some(p => p.providerId === 'phone');
+          
+          setForm(f => ({
+            ...f,
+            name: f.name || currentUser.displayName || user.displayName || '',
+            email: f.email || currentUser.email || user.email || '',
+            phone: f.phone || currentUser.phoneNumber || user.phone || user.phoneNumber || '',
+            dob: f.dob || user.dob || '',
+            gender: f.gender || user.gender || '',
+            address: f.address || user.address || '',
+            district: f.district || user.district || '',
+            state: f.state || user.state || '',
+            pin: f.pin || user.pin || '',
+            emergencyContact: f.emergencyContact || user.emergencyContact || '',
+            school: f.school || user.school || '',
+            class: f.class || user.class || '',
+            course: f.course || user.course || '',
+            guardianName: f.guardianName || user.guardianName || '',
+            guardianPhone: f.guardianPhone || user.guardianPhone || '',
+            aadhaarNumber: f.aadhaarNumber || user.aadhaarNumber || ''
+          }));
+          
+          if (isEmail) {
+            if (currentUser.phoneNumber || user.phoneNumber || user.phone) {
+              setPhoneLinked(true);
+            }
+          }
+          if (isPhone) {
+            if (currentUser.email || user.email) {
+              setEmailLinked(true);
+              if (currentUser.emailVerified || user.emailVerified) {
+                setEmailVerifiedLocal(true);
+              }
+            }
+          }
+        }
+      } else {
+        setView('success');
+        setTimeout(() => navigate('/dashboard'), 900);
+      }
     }
   }, [user, authLoading, navigate]);
 
@@ -461,10 +504,9 @@ const Login = () => {
       } else {
         // Phone number is NOT registered to any profile in Firestore.
         // Keep them signed in as they are a new phone-first signup!
-        console.log('[Phone Auth Flow] Phone number not found in Firestore. Directing to dashboard...');
+        console.log('[Phone Auth Flow] Phone number not found in Firestore. Directing to profile registration...');
         setForm(f => ({ ...f, phone: fullPhone }));
-        setView('success');
-        setTimeout(() => navigate('/dashboard'), 900);
+        setView('register-profile');
         setMobileStatus('');
         setLoading(false);
         return;
@@ -1662,8 +1704,7 @@ const Login = () => {
                   <motion.button 
                     onClick={() => {
                       setError('');
-                      setView('success');
-                      setTimeout(() => navigate('/dashboard'), 900);
+                      setView('register-profile');
                     }}
                     whileHover={{ scale: 1.015 }}
                     whileTap={{ scale: 0.97 }}

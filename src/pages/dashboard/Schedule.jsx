@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { format, startOfWeek, addDays, isSameDay, parseISO, addMonths, subMonths, isSameMonth } from 'date-fns';
 import Modal from '../../components/Modal';
+import { detectSchedulingConflicts, recommendBestFaculty, suggestBatchRedistribution, calculateFacultyWorkload, syncFacultyWorkloadCache } from '../../services/workloadEngine';
 
 const stagger = { show: { transition: { staggerChildren: 0.05 } } };
 const fadeItem = { hidden: { opacity: 0, y: 12 }, show: { opacity: 1, y: 0, transition: { duration: 0.4 } } };
@@ -60,6 +61,13 @@ const Schedule = () => {
   const [toast, setToast] = useState('');
   const [facultyUsers, setFacultyUsers] = useState([]);
 
+  // Workload states
+  const [leaveRequests, setLeaveRequests] = useState([]);
+  const [holidays, setHolidays] = useState([]);
+  const [conflictWarnings, setConflictWarnings] = useState([]);
+  const [bestFacultyRecommendations, setBestFacultyRecommendations] = useState([]);
+  const [adminActiveTab, setAdminActiveTab] = useState('heatmap'); // 'heatmap' | 'redistribute' | 'leaves'
+
   // Student slot booking states
   const [isBookingModalOpen, setIsBookingModalOpen] = useState(false);
   const [bookingDate, setBookingDate] = useState(format(new Date(), 'yyyy-MM-dd'));
@@ -81,16 +89,42 @@ const Schedule = () => {
     }
   }, [user]);
 
-  // Fetch all faculty for dropdown (admin only)
+  // Subscribe to real-time updates for faculty, leave requests, and holidays (only for managers)
   useEffect(() => {
-    if (canManage && user?.role === 'admin') {
+    if (!user || !canManage) return;
+
+    let unsubFac = () => {};
+    let unsubLeaves = () => {};
+    let unsubHolidays = () => {};
+
+    try {
       const q = query(collection(db, 'users'), where('role', '==', 'faculty'));
-      getDocs(q).then(snap => {
+      unsubFac = onSnapshot(q, (snap) => {
         const list = [];
         snap.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
         setFacultyUsers(list);
-      });
+      }, (err) => console.error("Error subscribing to faculty:", err));
+
+      unsubLeaves = onSnapshot(collection(db, 'leaveRequests'), (snap) => {
+        const list = [];
+        snap.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
+        setLeaveRequests(list);
+      }, (err) => console.error("Error subscribing to leaveRequests:", err));
+
+      unsubHolidays = onSnapshot(collection(db, 'holidays'), (snap) => {
+        const list = [];
+        snap.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
+        setHolidays(list);
+      }, (err) => console.error("Error subscribing to holidays:", err));
+    } catch (err) {
+      console.error("Error creating scheduling subscriptions:", err);
     }
+
+    return () => {
+      unsubFac();
+      unsubLeaves();
+      unsubHolidays();
+    };
   }, [user, canManage]);
 
   // Fetch Schedules & Students
@@ -153,6 +187,39 @@ const Schedule = () => {
     };
   }, [user?.uid, canManage]);
 
+  // Real-time conflict checking and best faculty recommendations
+  useEffect(() => {
+    if (!isAddModalOpen) return;
+
+    const currentBatch = selectedGroups[0] || 'class_2_5';
+    const computedEnd = computeEndTime(startTime);
+
+    // 1. Conflict Warning Checklist
+    const conflicts = detectSchedulingConflicts({
+      id: editingSchedule?.id || '',
+      day: startDate,
+      startTime,
+      endTime: computedEnd,
+      facultyId: assignedFacultyId,
+      room: venue,
+      batch: currentBatch
+    }, schedules, leaveRequests, holidays);
+
+    setConflictWarnings(conflicts);
+
+    // 2. Recommend Best Faculty
+    const recommendations = recommendBestFaculty({
+      day: startDate,
+      startTime,
+      endTime: computedEnd,
+      subject: eventTitle || 'Python Mastery',
+      batch: currentBatch
+    }, facultyUsers, schedules, leaveRequests);
+
+    setBestFacultyRecommendations(recommendations);
+
+  }, [isAddModalOpen, startDate, startTime, assignedFacultyId, venue, selectedGroups, eventTitle, schedules, leaveRequests, holidays, facultyUsers, editingSchedule]);
+
   const triggerToast = (msg) => {
     setToast(msg);
     setTimeout(() => setToast(''), 3000);
@@ -162,6 +229,10 @@ const Schedule = () => {
     e.preventDefault();
     if (!eventTitle.trim()) {
       triggerToast('Please enter an event title');
+      return;
+    }
+    if (conflictWarnings.length > 0) {
+      triggerToast(`Cannot save schedule: Resolving conflicts is required.`);
       return;
     }
     setIsSubmitting(true);
@@ -199,6 +270,9 @@ const Schedule = () => {
         triggerToast('Class scheduled successfully! 📅');
       }
 
+      // Sync workload cache for the faculty member
+      await syncFacultyWorkloadCache(payload.facultyId, schedules, leaveRequests);
+
       setIsAddModalOpen(false);
       setEditingSchedule(null);
       setEventTitle('');
@@ -223,6 +297,51 @@ const Schedule = () => {
         console.error(err);
         triggerToast('Failed to cancel event');
       }
+    }
+  };
+
+  const handleApproveLeave = async (leaveId) => {
+    try {
+      await updateDoc(doc(db, 'leaveRequests', leaveId), { status: 'approved' });
+      triggerToast('Leave request approved successfully! 📅');
+    } catch (err) {
+      console.error(err);
+      triggerToast('Failed to approve leave request');
+    }
+  };
+
+  const handleRejectLeave = async (leaveId) => {
+    try {
+      await updateDoc(doc(db, 'leaveRequests', leaveId), { status: 'rejected' });
+      triggerToast('Leave request rejected');
+    } catch (err) {
+      console.error(err);
+      triggerToast('Failed to reject leave request');
+    }
+  };
+
+  const handleRedistributeBatch = async (suggestion) => {
+    const { batch, fromFaculty, toFaculty } = suggestion;
+    try {
+      const batchScheds = schedules.filter(s => s.batch === batch && s.facultyId === fromFaculty.id);
+      
+      const promises = batchScheds.map(sch => 
+        updateDoc(doc(db, 'classSchedules', sch.id), {
+          facultyId: toFaculty.id,
+          facultyName: toFaculty.displayName || toFaculty.name || 'Faculty Mentor'
+        })
+      );
+      
+      await Promise.all(promises);
+      
+      // Update workload cache for both faculty members
+      await syncFacultyWorkloadCache(fromFaculty.id, schedules, leaveRequests);
+      await syncFacultyWorkloadCache(toFaculty.id, schedules, leaveRequests);
+      
+      triggerToast(`Successfully redistributed Batch ${batch} to ${toFaculty.displayName}! 🔄`);
+    } catch (err) {
+      console.error(err);
+      triggerToast('Failed to redistribute batch');
     }
   };
 
@@ -366,6 +485,129 @@ const Schedule = () => {
           <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', fontWeight: 600 }}>
             {displayedSchedules.length} scheduled slots
           </div>
+        </motion.div>
+      )}
+
+      {/* ADMIN SCHEDULING DASHBOARD */}
+      {user?.role === 'admin' && (
+        <motion.div variants={fadeItem} className="card card-p" style={{ background: 'var(--white)', display: 'flex', flexDirection: 'column', gap: '20px', padding: '20px' }}>
+          <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', paddingBottom: '10px', gap: '16px', overflowX: 'auto' }}>
+            {[
+              { id: 'heatmap', label: 'Workload Heatmap' },
+              { id: 'redistribute', label: 'Smart Redistribution' },
+              { id: 'leaves', label: 'Leave Requests' }
+            ].map(tab => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setAdminActiveTab(tab.id)}
+                style={{
+                  padding: '8px 16px',
+                  fontWeight: 700,
+                  fontSize: '0.88rem',
+                  border: 'none',
+                  background: 'none',
+                  cursor: 'pointer',
+                  borderBottom: adminActiveTab === tab.id ? '2px solid var(--primary)' : 'none',
+                  color: adminActiveTab === tab.id ? 'var(--primary)' : 'var(--text-muted)'
+                }}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
+          {adminActiveTab === 'heatmap' && (
+            <div>
+              <h3 style={{ margin: '0 0 6px 0', fontSize: '0.98rem', fontWeight: 800 }}>Faculty Workload Distribution</h3>
+              <p style={{ margin: '0 0 16px 0', fontSize: '0.78rem', color: 'var(--text-muted)' }}>Underloaded in green, Overloaded in red.</p>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px' }}>
+                {facultyUsers.map(fac => {
+                  const workload = calculateFacultyWorkload(fac.id, schedules, leaveRequests, fac);
+                  return (
+                    <div key={fac.id} style={{ border: '1px solid var(--border)', borderRadius: '12px', padding: '16px', background: 'var(--bg)' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                        <span style={{ fontWeight: 800, fontSize: '0.88rem' }}>{fac.displayName || fac.name}</span>
+                        <span style={{ fontSize: '0.72rem', fontWeight: 800, color: workload.loadColor }}>
+                          {workload.loadPercent}% ({workload.loadStatus})
+                        </span>
+                      </div>
+                      <div style={{ height: '6px', background: 'var(--border)', borderRadius: '100px', overflow: 'hidden', marginBottom: '10px' }}>
+                        <div style={{ height: '100%', width: `${workload.loadPercent}%`, background: workload.loadColor }} />
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                        <span>Batches: {workload.activeBatches}</span>
+                        <span>Students: {workload.assignedStudentsCount}</span>
+                        <span>Hours: {workload.weeklyTeachingHours}h</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {adminActiveTab === 'redistribute' && (
+            <div>
+              <h3 style={{ margin: '0 0 6px 0', fontSize: '0.98rem', fontWeight: 800 }}>Smart Redistribution Suggestions</h3>
+              <p style={{ margin: '0 0 16px 0', fontSize: '0.78rem', color: 'var(--text-muted)' }}>Engine scans workloads and suggests student load balancing transfers.</p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {suggestBatchRedistribution(facultyUsers, schedules, leaveRequests).map((suggestion, idx) => (
+                  <div key={idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px', background: 'rgba(83,109,254,0.04)', border: '1px dashed rgba(83,109,254,0.3)', borderRadius: '12px', flexWrap: 'wrap', gap: '12px' }}>
+                    <div style={{ flex: 1, minWidth: '240px' }}>
+                      <h4 style={{ margin: '0 0 4px 0', fontSize: '0.88rem', fontWeight: 800 }}>Imbalance Detected: Batch {suggestion.batch}</h4>
+                      <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                        Transfer batch from <strong>{suggestion.fromFaculty.displayName} ({suggestion.currentFromLoad}% Load)</strong> to <strong>{suggestion.toFaculty.displayName} ({suggestion.currentToLoad}% Load)</strong>. Expected new load: <strong>{suggestion.expectedToLoad}% Load</strong>.
+                      </p>
+                    </div>
+                    <button onClick={() => handleRedistributeBatch(suggestion)} className="btn btn-primary" style={{ padding: '8px 14px', fontSize: '0.78rem', borderRadius: '8px' }}>
+                      Approve Redistribute
+                    </button>
+                  </div>
+                ))}
+                {suggestBatchRedistribution(facultyUsers, schedules, leaveRequests).length === 0 && (
+                  <div style={{ padding: '20px 0', textAlign: 'center', color: 'var(--text-light)', fontStyle: 'italic', fontSize: '0.82rem' }}>
+                    🟢 Workload balance looks optimal. No redistribution suggestions.
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {adminActiveTab === 'leaves' && (
+            <div>
+              <h3 style={{ margin: '0 0 6px 0', fontSize: '0.98rem', fontWeight: 800 }}>Pending Timeoff Requests</h3>
+              <p style={{ margin: '0 0 16px 0', fontSize: '0.78rem', color: 'var(--text-muted)' }}>Review faculty leave requests and approve/reject them.</p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {leaveRequests.filter(l => l.status === 'pending').map(leave => (
+                  <div key={leave.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: '12px', flexWrap: 'wrap', gap: '12px' }}>
+                    <div style={{ flex: 1, minWidth: '200px' }}>
+                      <h4 style={{ margin: '0 0 4px 0', fontSize: '0.88rem', fontWeight: 800 }}>{leave.facultyName}</h4>
+                      <p style={{ margin: '0 0 4px 0', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                        <strong>Duration:</strong> {leave.startDate} to {leave.endDate}
+                      </p>
+                      <p style={{ margin: 0, fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                        <strong>Reason:</strong> {leave.reason}
+                      </p>
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button onClick={() => handleApproveLeave(leave.id)} className="btn btn-primary" style={{ padding: '6px 12px', fontSize: '0.75rem', borderRadius: '6px', background: 'var(--success)', border: 'none' }}>
+                        Approve
+                      </button>
+                      <button onClick={() => handleRejectLeave(leave.id)} className="btn btn-secondary" style={{ padding: '6px 12px', fontSize: '0.75rem', borderRadius: '6px', color: 'var(--danger)', background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.2)' }}>
+                        Reject
+                      </button>
+                    </div>
+                  </div>
+                ))}
+                {leaveRequests.filter(l => l.status === 'pending').length === 0 && (
+                  <div style={{ padding: '20px 0', textAlign: 'center', color: 'var(--text-light)', fontStyle: 'italic', fontSize: '0.82rem' }}>
+                    No pending leave/timeoff requests to approve.
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </motion.div>
       )}
 
@@ -630,7 +872,11 @@ const Schedule = () => {
                   required
                   className="form-input"
                   value={assignedFacultyId}
-                  onChange={e => setAssignedFacultyId(e.target.value)}
+                  onChange={e => {
+                    setAssignedFacultyId(e.target.value);
+                    const matchedFac = facultyUsers.find(f => f.id === e.target.value);
+                    if (matchedFac) setAssignedFacultyName(matchedFac.displayName || matchedFac.name || '');
+                  }}
                   style={{ background: 'var(--white)' }}
                 >
                   <option value="" disabled>Choose Faculty</option>
@@ -643,6 +889,40 @@ const Schedule = () => {
               )}
             </div>
           </div>
+
+          {user?.role === 'admin' && bestFacultyRecommendations.length > 0 && (
+            <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: '12px', padding: '12px' }}>
+              <label className="form-label" style={{ fontWeight: 800, fontSize: '0.78rem', marginBottom: '6px', color: 'var(--primary)' }}>Smart Faculty Suggestions</label>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '180px', overflowY: 'auto' }}>
+                {bestFacultyRecommendations.map(({ faculty, workload, score, reasons, isAvailable, hasExpertise }) => (
+                  <div key={faculty.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px', background: 'white', borderRadius: '8px', border: assignedFacultyId === faculty.id ? '1.5px solid var(--primary)' : '1px solid #E2E8F0', flexWrap: 'wrap', gap: '8px' }}>
+                    <div style={{ flex: 1, minWidth: '150px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span style={{ fontWeight: 800, fontSize: '0.8rem' }}>{faculty.displayName || faculty.name}</span>
+                        <span style={{ fontSize: '0.68rem', padding: '2px 6px', borderRadius: '4px', background: workload.loadPercent >= 80 ? 'rgba(239,68,68,0.1)' : 'rgba(34,197,94,0.1)', color: workload.loadColor, fontWeight: 900 }}>
+                          {workload.loadPercent}% Load
+                        </span>
+                      </div>
+                      <p style={{ margin: '4px 0 0 0', fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                        {reasons.join(' · ')}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAssignedFacultyId(faculty.id);
+                        setAssignedFacultyName(faculty.displayName || faculty.name || '');
+                      }}
+                      className={`btn ${assignedFacultyId === faculty.id ? 'btn-primary' : 'btn-secondary'}`}
+                      style={{ padding: '4px 10px', fontSize: '0.7rem', borderRadius: '6px' }}
+                    >
+                      {assignedFacultyId === faculty.id ? 'Assigned' : 'Assign'}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }} className="grid-2-col-mobile">
             <div>
@@ -749,6 +1029,19 @@ const Schedule = () => {
               rows={2}
             />
           </div>
+
+          {conflictWarnings.length > 0 && (
+            <div style={{ background: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.2)', borderRadius: '12px', padding: '12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#ef4444', fontWeight: 800, fontSize: '0.82rem' }}>
+                <AlertCircle size={16} /> Scheduling Conflicts Detected
+              </div>
+              <ul style={{ margin: 0, paddingLeft: '18px', color: '#b91c1c', fontSize: '0.78rem', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                {conflictWarnings.map((warn, i) => (
+                  <li key={i}>{warn}</li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           <div style={{ display: 'flex', gap: '12px', marginTop: '12px' }}>
             <button type="button" onClick={() => setIsAddModalOpen(false)} className="btn btn-ghost" style={{ flex: 1 }}>Cancel</button>

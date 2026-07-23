@@ -13,7 +13,7 @@ import {
   LayoutDashboard, BookOpen, ClipboardList,
   FileText, Settings, LogOut, Search, Bell,
   CalendarCheck, Calendar, MessageSquare, User, Sparkles, ShieldAlert, Loader2,
-  Video, Gamepad2, CreditCard, Menu, Trophy
+  Video, Gamepad2, CreditCard, Menu, Trophy, Award, Shield
 } from 'lucide-react';
 
 const ADMISSION_SUBJECTS = [
@@ -50,21 +50,20 @@ const isProfileIncomplete = (u) => {
 
 const NAV_MAIN = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, exact: true },
-  { to: '/dashboard/courses', label: 'Course', icon: BookOpen },
+  { to: '/dashboard/learning', label: 'Learning', icon: BookOpen },
+  { to: '/dashboard/assessments', label: 'Assessments', icon: ClipboardList },
+  { to: '/dashboard/achievements', label: 'Achievements', icon: Award },
   { to: '/dashboard/schedule', label: 'Schedule', icon: Calendar },
-  { to: '/dashboard/tests', label: 'Tests', icon: ClipboardList },
-  { to: '/dashboard/worldcup', label: 'World Cup', icon: Gamepad2 },
-  { to: '/dashboard/attendance', label: 'Attendance', icon: CalendarCheck },
-  { to: '/dashboard/assignments', label: 'Assignments', icon: FileText },
   { to: '/dashboard/community', label: 'Community', icon: MessageSquare },
-  { to: '/dashboard/fees', label: 'Fees & Payments', icon: CreditCard },
-  { to: '/dashboard/tracker', label: 'Class Tracker', icon: Trophy },
+  { to: '/dashboard/fees', label: 'Fees & Payments', icon: CreditCard }
 ];
 
 import FeesPayment from '../../components/FeesPayment';
 import CommandPalette from '../../components/CommandPalette';
 import QuickActionButton from '../../components/QuickActionButton';
 import NotificationDrawer from '../../components/NotificationDrawer';
+import EventCelebrationModal from '../../components/worldcup/EventCelebrationModal';
+import HallOfChampions from './HallOfChampions';
 import { useIsMobile } from '../../hooks/useIsMobile';
 
 const DashboardLayout = () => {
@@ -82,6 +81,53 @@ const DashboardLayout = () => {
   
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [isNotificationDrawerOpen, setIsNotificationDrawerOpen] = useState(false);
+  const [isGameplayActive, setIsGameplayActive] = useState(false);
+  const [isCelebrationOpen, setIsCelebrationOpen] = useState(false);
+  const [isHallModalOpen, setIsHallModalOpen] = useState(false);
+  const [hallViewed, setHallViewed] = useState(
+    localStorage.getItem('hallViewed_season2026') === 'true'
+  );
+
+  useEffect(() => {
+    const handleUpdate = () => {
+      setHallViewed(localStorage.getItem('hallViewed_season2026') === 'true');
+    };
+    window.addEventListener('hall-viewed-updated', handleUpdate);
+    return () => window.removeEventListener('hall-viewed-updated', handleUpdate);
+  }, []);
+
+  useEffect(() => {
+    if (!hallViewed && user?.role?.toLowerCase() !== 'admin') {
+      const timer = setTimeout(() => setIsCelebrationOpen(true), 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [hallViewed, user]);
+
+  useEffect(() => {
+    const handleStart = () => setIsGameplayActive(true);
+    const handleStop = () => setIsGameplayActive(false);
+
+    window.addEventListener('gameplay-start', handleStart);
+    window.addEventListener('gameplay-stop', handleStop);
+
+    if (window.isGameplayActive) {
+      setIsGameplayActive(true);
+    }
+
+    return () => {
+      window.removeEventListener('gameplay-start', handleStart);
+      window.removeEventListener('gameplay-stop', handleStop);
+    };
+  }, []);
+
+  const showFABPaths = [
+    '/dashboard',
+    '/dashboard/',
+    '/dashboard/worldcup',
+    '/dashboard/profile',
+    '/dashboard/community'
+  ];
+  const shouldShowFAB = showFABPaths.includes(location.pathname);
 
   // Ctrl + K / ⌘ + K key listener
   useEffect(() => {
@@ -623,7 +669,7 @@ const DashboardLayout = () => {
             </motion.div>
           )}
         </AnimatePresence>
-        <header className="dash-header-bar">
+        <header className="dash-header-bar" style={isGameplayActive ? { display: 'none' } : {}}>
           <div className="dash-welcome" style={{ 
             fontWeight: 600, 
             color: 'var(--text-primary)', 
@@ -795,8 +841,8 @@ const DashboardLayout = () => {
           className="dash-body-scroll"
           style={isWorldCup ? {
             flex: 1,
-            overflow: 'hidden',
-            paddingBottom: 0,
+            overflow: isGameplayActive ? 'hidden' : 'auto',
+            paddingBottom: isGameplayActive ? 0 : 'calc(80px + env(safe-area-inset-bottom, 0px))',
             display: 'flex',
             flexDirection: 'column',
             height: '100%',
@@ -834,7 +880,8 @@ const DashboardLayout = () => {
           justifyContent: 'space-around',
           alignItems: 'center',
           gap: '12px',
-          zIndex: 1100
+          zIndex: 1100,
+          display: isGameplayActive ? 'none' : undefined
         }}
       >
         {bottomNav.map(({ to, label, icon: Icon, exact }) => (
@@ -915,7 +962,7 @@ const DashboardLayout = () => {
                 position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 1000,
                 background: 'var(--surface-card, #ffffff)',
                 borderTopLeftRadius: '24px', borderTopRightRadius: '24px',
-                padding: '24px 24px calc(24px + env(safe-area-inset-bottom, 8px))',
+                padding: '24px 24px calc(96px + env(safe-area-inset-bottom, 16px))',
                 boxShadow: '0 -10px 40px rgba(0,0,0,0.15)',
                 display: 'flex', flexDirection: 'column', gap: '16px',
                 color: 'var(--text-primary)'
@@ -974,7 +1021,270 @@ const DashboardLayout = () => {
         )}
       </AnimatePresence>
 
+      <AnimatePresence>
+        {isProfileIncomplete(user) && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            style={{
+              position: 'fixed',
+              inset: 0,
+              zIndex: 9999,
+              background: 'rgba(240, 244, 255, 0.75)',
+              backdropFilter: 'blur(20px)',
+              WebkitBackdropFilter: 'blur(20px)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '20px',
+              overflowY: 'auto'
+            }}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 30 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 30 }}
+              transition={{ type: 'spring', damping: 25, stiffness: 250 }}
+              style={{
+                background: 'rgba(255, 255, 255, 0.9)',
+                backdropFilter: 'blur(10px)',
+                WebkitBackdropFilter: 'blur(10px)',
+                border: '1px solid rgba(255, 255, 255, 0.5)',
+                boxShadow: 'var(--shadow-lg)',
+                maxWidth: '650px',
+                width: '100%',
+                borderRadius: '24px',
+                padding: '36px',
+                maxHeight: '90vh',
+                overflowY: 'auto'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
+                <div style={{
+                  width: '40px', height: '40px', borderRadius: '12px',
+                  background: 'var(--primary-light)', color: 'var(--primary)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center'
+                }}>
+                  <Sparkles size={20} />
+                </div>
+                <div>
+                  <h2 style={{ fontSize: '1.5rem', fontWeight: 800 }}>Complete Your Profile</h2>
+                  <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem' }}>Just a few quick details to set up your student workspace</p>
+                </div>
+              </div>
 
+              {error && (
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: '10px',
+                  background: 'rgba(239,83,80,0.08)', border: '1px solid rgba(239,83,80,0.2)',
+                  borderRadius: '12px', padding: '12px 16px', color: 'var(--danger)',
+                  fontSize: '0.9rem', fontWeight: 500, marginBottom: '20px'
+                }}>
+                  <ShieldAlert size={16} />
+                  <span>{error}</span>
+                </div>
+              )}
+
+              <form onSubmit={handleOnboardingSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px', margin: '10px 0 20px' }}>
+                  <div style={{ position: 'relative', width: '80px', height: '80px' }}>
+                    {formData.photoURL ? (
+                      <img
+                        src={formData.photoURL}
+                        alt="Profile Preview"
+                        style={{
+                          width: '100%',
+                          height: '100%',
+                          borderRadius: '50%',
+                          objectFit: 'cover',
+                          border: '2px solid var(--primary)'
+                        }}
+                      />
+                    ) : (
+                      <div
+                        style={{
+                          width: '100%',
+                          height: '100%',
+                          borderRadius: '50%',
+                          background: 'linear-gradient(135deg, var(--primary), var(--accent))',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          color: 'var(--text-on-primary)',
+                          fontWeight: 800,
+                          fontSize: '1.8rem'
+                        }}
+                      >
+                        {(formData.displayName || user?.displayName || 'S')[0].toUpperCase()}
+                      </div>
+                    )}
+                    <label
+                      htmlFor="avatar-upload"
+                      style={{
+                        position: 'absolute',
+                        bottom: 0,
+                        right: 0,
+                        width: '28px',
+                        height: '28px',
+                        borderRadius: '50%',
+                        background: 'var(--primary)',
+                        color: 'var(--text-on-primary)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        cursor: 'pointer',
+                        boxShadow: 'var(--shadow-sm)',
+                        border: '2px solid var(--surface)'
+                      }}
+                    >
+                      <Sparkles size={12} />
+                    </label>
+                    <input
+                      id="avatar-upload"
+                      type="file"
+                      accept="image/*"
+                      onChange={handleImageChange}
+                      style={{ display: 'none' }}
+                    />
+                  </div>
+                  <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 500 }}>
+                    Click icon to upload profile photo (Optional)
+                  </span>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }} className="grid-2-col-mobile">
+                  <div>
+                    <label className="form-label">Full Name</label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      value={formData.displayName}
+                      onChange={e => setFormData({ ...formData, displayName: e.target.value })}
+                      placeholder="Your full name"
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label className="form-label">Your Phone Number</label>
+                    <input
+                      type="tel"
+                      className="form-input"
+                      value={formData.phone}
+                      onChange={e => setFormData({ ...formData, phone: e.target.value.replace(/\D/g, '') })}
+                      placeholder="10-digit number"
+                      maxLength={10}
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="form-label">Select Course / Class of Interest</label>
+                  <select
+                    className="form-input"
+                    value={formData.course}
+                    onChange={e => setFormData({ ...formData, course: e.target.value })}
+                    style={{ appearance: 'none', background: 'white url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'%236B7280\' stroke-width=\'2\' stroke-linecap=\'round\' stroke-linejoin=\'round\'%3E%3Cpath d=\'m6 9 6 6 6-6\'/%3E%3C/svg%3E") no-repeat right 16px center / 16px' }}
+                    required
+                  >
+                    <option value="" disabled>Choose a course</option>
+                    {ADMISSION_SUBJECTS.map((sub, i) => (
+                      <option key={i} value={sub}>{sub}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }} className="grid-2-col-mobile">
+                  <div>
+                    <label className="form-label">School / College Name</label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      value={formData.schoolOrCollege}
+                      onChange={e => setFormData({ ...formData, schoolOrCollege: e.target.value })}
+                      placeholder="e.g. DPS, St. Xavier's"
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label className="form-label">Class / Grade / Year</label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      value={formData.grade}
+                      onChange={e => setFormData({ ...formData, grade: e.target.value })}
+                      placeholder="e.g. Class 12, B.Tech 1st Year"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }} className="grid-2-col-mobile">
+                  <div>
+                    <label className="form-label">Parent / Guardian Name</label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      value={formData.guardianName}
+                      onChange={e => setFormData({ ...formData, guardianName: e.target.value })}
+                      placeholder="Guardian's full name"
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label className="form-label">Parent's Contact Number</label>
+                    <input
+                      type="tel"
+                      className="form-input"
+                      value={formData.guardianPhone}
+                      onChange={e => setFormData({ ...formData, guardianPhone: e.target.value.replace(/\D/g, '') })}
+                      placeholder="10-digit number"
+                      maxLength={10}
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: '12px', marginTop: '10px' }}>
+                  <button
+                    onClick={handleLogout}
+                    type="button"
+                    className="btn btn-ghost"
+                    style={{ flex: 1, padding: '14px', fontSize: '0.95rem' }}
+                  >
+                    Logout & Exit
+                  </button>
+                  <button
+                    type="submit"
+                    className="btn btn-primary"
+                    disabled={saving}
+                    style={{ flex: 2, padding: '14px', fontSize: '0.95rem', justifyContent: 'center' }}
+                  >
+                    {saving ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <motion.span
+                          animate={{ rotate: 360 }}
+                          transition={{ repeat: Infinity, duration: 1, ease: 'linear' }}
+                          style={{ display: 'inline-flex' }}
+                        >
+                          <Loader2 size={18} />
+                        </motion.span>
+                        Saving Details...
+                      </div>
+                    ) : (
+                      'Save & Unlock Workspace'
+                    )}
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
       {!tourCompleted && user?.uid && (
         <GuidedTour userId={user.uid} role={user.role} onComplete={() => setTourCompleted(true)} />
       )}
@@ -992,11 +1302,30 @@ const DashboardLayout = () => {
         isOpen={isCommandPaletteOpen} 
         onClose={() => setIsCommandPaletteOpen(false)} 
       />
-      {!isWorldCup && <QuickActionButton isMoreMenuOpen={isMoreMenuOpen} />}
+      {shouldShowFAB && <QuickActionButton isMoreMenuOpen={isMoreMenuOpen} />}
       <NotificationDrawer 
         isOpen={isNotificationDrawerOpen} 
         onClose={() => setIsNotificationDrawerOpen(false)} 
       />
+
+      {/* Post-Event Celebration Popup */}
+      <EventCelebrationModal
+        isOpen={isCelebrationOpen}
+        onClose={() => setIsCelebrationOpen(false)}
+        onViewResults={() => {
+          setIsCelebrationOpen(false);
+          setIsHallModalOpen(true);
+        }}
+      />
+
+      {/* Hall of Champions Modal Popup */}
+      {isHallModalOpen && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 999999, background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(10px)', overflowY: 'auto', padding: '24px' }}>
+          <div style={{ maxWidth: '1000px', margin: '0 auto' }}>
+            <HallOfChampions isModal={true} onClose={() => setIsHallModalOpen(false)} />
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -20,6 +20,11 @@ import Profile from './pages/dashboard/Profile';
 import FeesAndPayments from './pages/dashboard/FeesAndPayments';
 import ClassTracker from './pages/dashboard/ClassTracker';
 import WorldCupPage from './pages/dashboard/WorldCupPage';
+import AchievementsPage from './pages/dashboard/AchievementsPage';
+import AcademicPassPage from './pages/dashboard/AcademicPassPage';
+import HallOfChampions from './pages/dashboard/HallOfChampions';
+import LearningContainer from './pages/dashboard/LearningContainer';
+import AssessmentsContainer from './pages/dashboard/AssessmentsContainer';
 import { 
   NotFoundPage, StudentNotFoundPage, PaymentFailedPage, 
   UnauthorizedPage, MaintenancePage, NetworkOfflinePage, ServerErrorPage 
@@ -66,17 +71,23 @@ function App() {
             <Route path="/login" element={<Login />} />
             <Route path="/dashboard" element={<ProtectedRoute><DashboardLayout /></ProtectedRoute>}>
               <Route index element={<Overview />} />
-              <Route path="courses" element={<Courses />} />
-              <Route path="attendance" element={<Attendance />} />
+              <Route path="learning" element={<LearningContainer />} />
+              <Route path="assessments" element={<AssessmentsContainer />} />
+              <Route path="achievements" element={<AchievementsPage />} />
               <Route path="schedule" element={<Schedule />} />
-              <Route path="assignments" element={<Assignments />} />
-              <Route path="tests" element={<Tests />} />
-              <Route path="mini-games" element={<MiniGames />} />
               <Route path="community" element={<Community />} />
               <Route path="profile" element={<Profile />} />
               <Route path="fees" element={<FeesAndPayments />} />
-              <Route path="tracker" element={<ClassTracker />} />
               <Route path="worldcup" element={<WorldCupPage />} />
+              <Route path="hall-of-champions" element={<HallOfChampions />} />
+              
+              {/* Backward Compatible Redirects */}
+              <Route path="attendance" element={<Navigate to="/dashboard/profile?tab=attendance" replace />} />
+              <Route path="courses" element={<Navigate to="/dashboard/learning?tab=courses" replace />} />
+              <Route path="tracker" element={<Navigate to="/dashboard/learning?tab=progress" replace />} />
+              <Route path="assignments" element={<Navigate to="/dashboard/assessments?tab=assignments" replace />} />
+              <Route path="tests" element={<Navigate to="/dashboard/assessments?tab=tests" replace />} />
+              <Route path="academic-pass" element={<Navigate to="/dashboard/achievements?tab=academic-pass" replace />} />
             </Route>
             <Route path="/error/unauthorized" element={<UnauthorizedPage />} />
             <Route path="/error/student-not-found" element={<StudentNotFoundPage />} />

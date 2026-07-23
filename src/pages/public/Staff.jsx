@@ -6,6 +6,7 @@ import { db } from '../../firebase';
 import { Search, ChevronDown, User, BookOpen, GraduationCap, Award, Clock, HelpCircle, ArrowLeft, Mail, Compass } from 'lucide-react';
 import LeadCaptureSystem from '../../components/LeadCaptureSystem';
 import { useToast } from '../../contexts/ToastContext';
+import StaffCard from '../../components/StaffCard';
 
 const fadeUp = {
   hidden: { opacity: 0, y: 20 },
@@ -285,6 +286,7 @@ const Staff = () => {
             <motion.div layout className="staff-grid">
               <AnimatePresence mode="popLayout">
                 {filteredStaff.map((staff, idx) => {
+                  const isSaved = !!savedStaff[staff.id];
                   return (
                     <motion.div
                       layout
@@ -294,178 +296,17 @@ const Staff = () => {
                       animate="show"
                       exit={{ opacity: 0, scale: 0.95 }}
                       custom={idx}
-                      className="card animate-card"
-                      style={{
-                        overflow: 'hidden',
-                        background: '#ffffff',
-                        backdropFilter: 'blur(20px)',
-                        WebkitBackdropFilter: 'blur(20px)',
-                        border: '1px solid rgba(0, 0, 0, 0.06)',
-                        borderRadius: '28px',
-                        boxShadow: '0 12px 32px rgba(0, 0, 0, 0.04)',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        justifyContent: 'space-between',
-                        height: '100%',
-                        transition: 'all 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
-                        padding: '0px'
-                      }}
-                      whileHover={{ y: -6, boxShadow: '0 20px 48px rgba(0, 0, 0, 0.08)' }}
+                      style={{ height: '100%' }}
                     >
-                      <div>
-                        {/* Profile Photo band */}
-                        <div style={{ position: 'relative', height: '220px', overflow: 'hidden', borderTopLeftRadius: '28px', borderTopRightRadius: '28px' }}>
-                          <img
-                            src={staff.photoURL || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=300'}
-                            alt={staff.name}
-                            className="staff-card-img"
-                            style={{ width: '100%', height: '100%', objectFit: 'cover', transition: 'transform 0.4s cubic-bezier(0.16, 1, 0.3, 1)' }}
-                          />
-                          {/* Gradient Overlay */}
-                          <div style={{
-                            position: 'absolute',
-                            inset: 0,
-                            background: 'linear-gradient(to bottom, transparent 40%, #ffffff 100%)'
-                          }} />
-                          <div style={{
-                            position: 'absolute', bottom: 12, right: 12,
-                            padding: '4px 10px', borderRadius: '100px',
-                            background: 'rgba(255, 255, 255, 0.85)', backdropFilter: 'blur(4px)',
-                            color: '#1e293b', fontSize: '0.72rem', fontWeight: 700,
-                            display: 'flex', alignItems: 'center', gap: '4px',
-                            border: '1px solid rgba(0,0,0,0.06)'
-                          }}>
-                            <span style={{ width: 6, height: 6, borderRadius: '50%', background: staff.availability === 'Available' ? 'var(--success)' : 'var(--warning)' }} />
-                            {staff.availability || 'Available'}
-                          </div>
-                        </div>
-
-                        {/* Roster Details */}
-                        <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                          <div>
-                            <div style={{ display: 'flex', alignItems: 'center', marginBottom: '4px' }}>
-                              <h3 style={{ fontSize: '1.25rem', fontWeight: 800, color: '#1e293b', margin: 0, letterSpacing: '-0.02em' }}>{staff.name}</h3>
-                              {/* Blue Verified Badge */}
-                              <svg viewBox="0 0 24 24" width="16" height="16" style={{ display: 'inline-block', marginLeft: '6px', flexShrink: 0 }} fill="#3b82f6">
-                                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" fill="#fff"/>
-                              </svg>
-                            </div>
-                            <div style={{ fontSize: '0.85rem', color: 'var(--primary)', fontWeight: 600 }}>
-                              {staff.role}
-                            </div>
-                          </div>
-
-                          <p style={{ fontSize: '0.82rem', color: '#475569', lineHeight: 1.4, margin: 0, height: '38px', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }} title={staff.intro}>
-                            {staff.intro}
-                          </p>
-
-                          {/* Expertise Tags */}
-                          {staff.specializations && staff.specializations.length > 0 && (
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center' }}>
-                              {staff.specializations.map((spec, i) => (
-                                <span
-                                  key={i}
-                                  style={{
-                                    fontSize: '0.68rem',
-                                    padding: '4px 10px',
-                                    borderRadius: '100px',
-                                    fontWeight: 600,
-                                    background: 'rgba(0, 0, 0, 0.04)',
-                                    color: '#475569',
-                                    border: '1px solid rgba(0, 0, 0, 0.06)',
-                                    whiteSpace: 'nowrap'
-                                  }}
-                                >
-                                  {spec}
-                                </span>
-                              ))}
-                            </div>
-                          )}
-
-                          {/* Fast stats row */}
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '16px', fontSize: '0.85rem', color: '#475569', margin: '4px 0 0', fontWeight: 600 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                              <span style={{ color: '#fbbf24', fontSize: '1rem' }}>★</span>
-                              <span>{staff.id === 'seed-biswa' || staff.id === 'seed-hribhu' ? '4.9' : '4.8'}</span>
-                            </div>
-                            <div style={{ width: '1px', height: '14px', background: 'rgba(0, 0, 0, 0.08)' }} />
-                            <div title={staff.qualification} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '90px' }}>
-                              {staff.qualification.includes('B.Tech') ? 'B.Tech' : staff.qualification.includes('B.Sc') ? 'B.Sc' : staff.qualification.includes('MCA') ? 'MCA' : 'B.Com'}
-                            </div>
-                            <div style={{ width: '1px', height: '14px', background: 'rgba(0, 0, 0, 0.08)' }} />
-                            <div>
-                              {staff.experience}+ Yrs
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Action Row */}
-                      <div style={{ padding: '0 20px 20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                        {/* Buttons Row */}
-                        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                          <a
-                            href={`https://wa.me/919674035542?text=Hello,%20I%20would%20like%20to%20get%20in%20touch%20with%20${encodeURIComponent(staff.name)}%20(${encodeURIComponent(staff.role)})%20from%20Compution.`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            style={{
-                              flex: 1,
-                              height: '46px',
-                              borderRadius: '100px',
-                              background: '#0f172a',
-                              color: '#ffffff',
-                              fontSize: '0.85rem',
-                              fontWeight: 700,
-                              textDecoration: 'none',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              gap: '8px',
-                              cursor: 'pointer',
-                              transition: 'background-color 0.25s'
-                            }}
-                            onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(15, 23, 42, 0.9)'}
-                            onMouseLeave={e => e.currentTarget.style.backgroundColor = '#0f172a'}
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            {/* WhatsApp Icon */}
-                            <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
-                              <path d="M12.012 2c-5.506 0-9.989 4.478-9.99 9.984a9.96 9.96 0 001.37 5.082L2 22l5.09-1.33a9.92 9.92 0 004.916 1.306h.005c5.507 0 9.99-4.478 9.99-9.985 0-2.667-1.04-5.176-2.93-7.065A9.913 9.913 0 0012.012 2zm5.72 13.916c-.244.69-1.22 1.35-1.68 1.4-1.25.13-2.78-.45-5.26-1.48a16.27 16.27 0 01-5.18-3.41c-1.34-1.36-2.12-2.9-2.12-4.57 0-1.83 1-2.73 1.37-3.08.31-.3.8-.46 1.29-.46.16 0 .32.01.46.02.42.02.63.05.91.73.28.69.96 2.33 1.04 2.5.08.17.14.37.02.6-.12.23-.18.37-.36.58-.18.21-.38.47-.54.63-.18.18-.37.38-.16.74.21.36.94 1.55 2.01 2.5a10.91 10.91 0 002.92 1.8c.36.18.57.15.79-.1.21-.24.91-1.07 1.16-1.43.25-.36.5-.3.84-.17.34.13 2.16 1.02 2.53 1.21.37.19.62.28.71.44.09.16.09.92-.15 1.61z"/>
-                            </svg>
-                            Get In Touch
-                          </a>
-
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              const isSaved = savedStaff[staff.id];
-                              setSavedStaff(prev => ({ ...prev, [staff.id]: !isSaved }));
-                              showToast(isSaved ? 'Removed from bookmarks' : 'Added bookmark to contacts!', 'success');
-                            }}
-                            style={{
-                              width: '46px',
-                              height: '46px',
-                              borderRadius: '50%',
-                              background: 'rgba(0, 0, 0, 0.04)',
-                              color: savedStaff[staff.id] ? '#fbbf24' : '#475569',
-                              border: '1px solid rgba(0, 0, 0, 0.08)',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              cursor: 'pointer',
-                              transition: 'background-color 0.2s, color 0.2s'
-                            }}
-                            onMouseEnter={e => e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.08)'}
-                            onMouseLeave={e => e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.04)'}
-                            title={savedStaff[staff.id] ? "Saved" : "Save Bookmark"}
-                          >
-                            <svg viewBox="0 0 24 24" width="18" height="18" fill={savedStaff[staff.id] ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2">
-                              <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
-                            </svg>
-                          </button>
-                        </div>
-                      </div>
+                      <StaffCard
+                        staff={staff}
+                        isAdmin={false}
+                        isBookmarked={isSaved}
+                        onBookmark={() => {
+                          setSavedStaff(prev => ({ ...prev, [staff.id]: !isSaved }));
+                          showToast(isSaved ? 'Removed from bookmarks' : 'Added bookmark to contacts!', 'success');
+                        }}
+                      />
                     </motion.div>
                   );
                 })}

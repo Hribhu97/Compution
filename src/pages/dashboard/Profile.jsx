@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../../contexts/AuthContext';
 import { db } from '../../firebase';
@@ -8,57 +8,11 @@ import { useToast } from '../../contexts/ToastContext';
 import { reportService } from '../../services/reportService';
 import {
   User, Mail, Phone, MapPin, Sparkles, CheckCircle, X,
-  ShieldCheck, Loader2, Edit3, Compass, CreditCard, Bell, Info, Download,
-  UserPlus, Code, AlertCircle
+  ShieldCheck, Loader2, Edit3, Compass, CreditCard, Bell, Info, Download, CalendarCheck
 } from 'lucide-react';
-import {
-  PhoneAuthProvider,
-  EmailAuthProvider,
-  linkWithCredential,
-  updateEmail,
-  sendEmailVerification
-} from 'firebase/auth';
-import { collection, query, where, getDocs, getDoc } from 'firebase/firestore';
-import { auth } from '../../firebase';
-import { authService } from '../../services/authService';
-import { normalizePhoneNumber, validatePhoneNumber, normalizeIndianNationalNumber } from '../../utils/phoneUtils';
-
-/* ── Spinner ── */
-const Spinner = ({ size = 20 }) => (
-  <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 0.8, ease: 'linear' }}>
-    <Code size={size} />
-  </motion.div>
-);
-
-/* ── Friendly error messages ── */
-const friendlyError = (code) => {
-  const map = {
-    'auth/email-already-in-use': 'An account with this email already exists. Try logging in.',
-    'auth/invalid-email': 'Please enter a valid email address.',
-    'auth/weak-password': 'Password must be at least 6 characters.',
-    'auth/user-not-found': 'No account found with this email.',
-    'auth/wrong-password': 'Incorrect password. Try again or reset it.',
-    'auth/invalid-credential': 'Invalid email or password. Please try again.',
-    'auth/too-many-requests': 'Too many attempts. Please wait a moment and try again.',
-    'auth/network-request-failed': 'Network error. Check your internet connection.',
-  };
-  return map[code] || 'Something went wrong. Please try again.';
-};
-
-const friendlyPhoneError = (code, message) => {
-  const map = {
-    'auth/invalid-phone-number': 'Please enter a valid mobile number.',
-    'auth/invalid-verification-code': 'Invalid OTP entered. Try again.',
-    'auth/code-expired': 'This OTP has expired. Please request a new OTP.',
-    'auth/too-many-requests': 'Too many attempts detected. Please wait before requesting another OTP.',
-    'auth/quota-exceeded': 'Too many attempts detected. Please wait before requesting another OTP.',
-    'auth/network-request-failed': 'Network connection lost. Please try again.',
-    'auth/internal-error': 'Authentication service temporarily unavailable.',
-    'auth/operation-not-allowed': 'Authentication service temporarily unavailable.',
-    'account-not-found': 'No account found for this mobile number.'
-  };
-  return map[code] || message || 'Something went wrong. Please try again.';
-};
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import AICoachBanner from '../../components/achievements/AICoachBanner';
+import StudentAttendanceWorkspace from '../../components/attendance/StudentAttendanceWorkspace';
 
 /* ── CIRCULAR PROGRESS COMPONENT ────────────────────────── */
 const CircularProgress = ({ percentage, size = 120, stroke = 10 }) => {
@@ -144,54 +98,26 @@ const Toast = ({ message, onClose }) => {
 import { ProfileSkeleton } from '../../components/SkeletonLoader';
 
 const Profile = () => {
-  const { user, completeUserProfile } = useAuth();
+  const { user } = useAuth();
   const { showToast } = useToast();
-  
-  const [toast, setToast] = useState(null);
-  const [saving, setSaving] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tabParam = searchParams.get('tab');
+  const [activeProfileTab, setActiveProfileTab] = useState(
+    tabParam === 'attendance' ? 'attendance' : 'profile'
+  );
 
-  // Profile completion states
-  const [isCompletingProfile, setIsCompletingProfile] = useState(false);
-  const [countryCode, setCountryCode] = useState('+91');
-  const [form, setForm] = useState({
-    name: '',
-    email: '',
-    phone: '',
-    dob: '',
-    gender: '',
-    address: '',
-    district: '',
-    state: '',
-    pin: '',
-    emergencyContact: '',
-    school: '',
-    class: '',
-    course: '',
-    guardianName: '',
-    guardianPhone: '',
-    aadhaarNumber: '',
-    semester: ''
-  });
+  useEffect(() => {
+    if (tabParam === 'attendance' && activeProfileTab !== 'attendance') {
+      setActiveProfileTab('attendance');
+    } else if ((!tabParam || tabParam === 'profile') && activeProfileTab !== 'profile') {
+      setActiveProfileTab('profile');
+    }
+  }, [tabParam]);
 
-  const [linkPhone, setLinkPhone] = useState('');
-  const [linkOtp, setLinkOtp] = useState(['', '', '', '', '', '']);
-  const [linkOTPSent, setLinkOTPSent] = useState(false);
-  const [linkConfirmationResult, setLinkConfirmationResult] = useState(null);
-  const [linkTimer, setLinkTimer] = useState(0);
-  const [linkLoading, setLinkLoading] = useState(false);
-  const [linkStatus, setLinkStatus] = useState('');
-  const [phoneLinked, setPhoneLinked] = useState(false);
-
-  const [linkEmail, setLinkEmail] = useState('');
-  const [linkEmailPassword, setLinkEmailPassword] = useState('');
-  const [emailLinked, setEmailLinked] = useState(false);
-  const [emailVerifySent, setEmailVerifySent] = useState(false);
-  const [emailVerifiedLocal, setEmailVerifiedLocal] = useState(false);
-  const [error, setError] = useState('');
-
-  const linkOtpRefs = useRef([]);
-  const nameInputRef = useRef(null);
+  const handleTabChange = (key) => {
+    setActiveProfileTab(key);
+    setSearchParams({ tab: key });
+  };
 
   // Avatar customizer states
   const [isAvatarModalOpen, setIsAvatarModalOpen] = useState(false);
@@ -202,355 +128,6 @@ const Profile = () => {
   const [selectedGlasses, setSelectedGlasses] = useState(0);
   const [selectedItem, setSelectedItem] = useState(0);
   const [isSavingAvatar, setIsSavingAvatar] = useState(false);
-
-  // Initialize values from Firebase User document and Auth Linking States
-  useEffect(() => {
-    if (user) {
-      const currentUser = auth.currentUser;
-      const providers = currentUser?.providerData.map(p => p.providerId) || [];
-      const isEmail = providers.includes('password');
-      const isPhone = providers.includes('phone');
-
-      if (isEmail) {
-        if (currentUser?.phoneNumber || user.phone || user.phoneNumber) {
-          setPhoneLinked(true);
-        }
-      }
-      if (isPhone) {
-        if (currentUser?.email || user.email) {
-          setEmailLinked(true);
-          if (currentUser?.emailVerified || user.emailVerified) {
-            setEmailVerifiedLocal(true);
-          }
-        }
-      }
-
-      setForm(f => ({
-        ...f,
-        name: f.name || user.name || user.displayName || '',
-        email: f.email || user.email || '',
-        phone: f.phone || user.phone || user.phoneNumber || user.mobileNumber || '',
-        dob: f.dob || user.dob || '',
-        gender: f.gender || user.gender || '',
-        address: f.address || user.address || '',
-        district: f.district || user.district || '',
-        state: f.state || user.state || '',
-        pin: f.pin || user.pin || '',
-        emergencyContact: f.emergencyContact || user.emergencyContact || '',
-        school: f.school || user.school || '',
-        class: f.class || user.class || '',
-        course: f.course || user.course || '',
-        guardianName: f.guardianName || user.guardianName || '',
-        guardianPhone: f.guardianPhone || user.guardianPhone || '',
-        aadhaarNumber: f.aadhaarNumber || user.aadhaarNumber || '',
-        semester: f.semester || user.semester || ''
-      }));
-    }
-  }, [user]);
-
-  useEffect(() => {
-    if (linkTimer > 0) {
-      const interval = setInterval(() => {
-        setLinkTimer(t => t - 1);
-      }, 1000);
-      return () => clearInterval(interval);
-    }
-  }, [linkTimer]);
-
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    setForm(prev => ({ ...prev, [name]: value }));
-    setError('');
-  };
-
-  const handleLinkOtpChange = (element, index) => {
-    if (isNaN(element.value)) return false;
-
-    const newOtp = [...linkOtp];
-    newOtp[index] = element.value;
-    setLinkOtp(newOtp);
-    setError('');
-
-    if (element.value !== '' && index < 5) {
-      linkOtpRefs.current[index + 1].focus();
-    }
-
-    const completedOtp = newOtp.join('');
-    if (completedOtp.length === 6) {
-      handleVerifyLinkOTP(null, newOtp);
-    }
-  };
-
-  const handleLinkOtpKeyDown = (e, index) => {
-    if (e.key === 'Backspace' && linkOtp[index] === '' && index > 0) {
-      linkOtpRefs.current[index - 1].focus();
-    }
-  };
-
-  const handleSendLinkOTP = async (e) => {
-    if (e) e.preventDefault();
-    const nationalNumber = normalizePhoneNumber(linkPhone, countryCode);
-    setLinkPhone(nationalNumber);
-    
-    const validation = validatePhoneNumber(nationalNumber, countryCode);
-    if (!validation.isValid) {
-      setError(validation.error);
-      return;
-    }
-    
-    setLinkLoading(true);
-    setLinkStatus('Sending OTP...');
-    setError('');
-    
-    const fullPhone = `${countryCode}${nationalNumber}`;
-    
-    try {
-      const isDuplicate = await authService.checkDuplicatePhoneNumber(fullPhone, auth.currentUser?.uid);
-      if (isDuplicate) {
-        setError('This phone number is already linked with another student account.');
-        setLinkLoading(false);
-        setLinkStatus('');
-        return;
-      }
-      
-      const result = await authService.sendOTP(fullPhone, 'recaptcha-container');
-      setLinkConfirmationResult(result);
-      setLinkOTPSent(true);
-      setLinkTimer(30);
-      setLinkStatus('OTP Sent!');
-    } catch (err) {
-      console.error(err);
-      setError(friendlyPhoneError(err.code, err.message));
-      setLinkStatus('');
-    } finally {
-      setLinkLoading(false);
-    }
-  };
-
-  const handleVerifyLinkOTP = async (e, overrideOtp = null) => {
-    if (e) e.preventDefault();
-    const otpCode = (overrideOtp || linkOtp).join('');
-    if (otpCode.length < 6) { setError('Please enter 6-digit OTP'); return; }
-    
-    setLinkLoading(true);
-    setLinkStatus('Verifying OTP...');
-    setError('');
-    
-    try {
-      const credential = PhoneAuthProvider.credential(linkConfirmationResult.verificationId, otpCode);
-      await linkWithCredential(auth.currentUser, credential);
-      
-      setPhoneLinked(true);
-      setLinkStatus('Phone Linked Successfully!');
-      setLinkOTPSent(false);
-      setForm(f => ({ ...f, phone: `${countryCode}${normalizePhoneNumber(linkPhone, countryCode)}` }));
-    } catch (err) {
-      console.error(err);
-      setError(friendlyPhoneError(err.code, err.message));
-      setLinkStatus('');
-    } finally {
-      setLinkLoading(false);
-    }
-  };
-
-  const handleLinkEmail = async (e) => {
-    if (e) e.preventDefault();
-    const trimmedEmail = linkEmail.trim().toLowerCase();
-    if (!trimmedEmail) { setError('Please enter your email'); return; }
-    if (!linkEmailPassword.trim() || linkEmailPassword.length < 6) {
-      setError('Password must be at least 6 characters');
-      return;
-    }
-    
-    setLinkLoading(true);
-    setLinkStatus('Linking Email...');
-    setError('');
-    
-    try {
-      const usersRef = collection(db, 'users');
-      const qEmail = query(usersRef, where('email', '==', trimmedEmail));
-      const snapEmail = await getDocs(qEmail);
-      if (!snapEmail.empty) {
-        let duplicateUid = '';
-        snapEmail.forEach(d => { duplicateUid = d.id; });
-        if (duplicateUid !== auth.currentUser?.uid) {
-          setError('This email address is already linked with another student account.');
-          setLinkLoading(false);
-          setLinkStatus('');
-          return;
-        }
-      }
-      
-      const credential = EmailAuthProvider.credential(trimmedEmail, linkEmailPassword);
-      await linkWithCredential(auth.currentUser, credential);
-      await sendEmailVerification(auth.currentUser);
-      
-      setEmailLinked(true);
-      setLinkStatus('Email linked! Please verify it in your inbox.');
-      setEmailVerifySent(true);
-    } catch (err) {
-      console.error(err);
-      setError(friendlyError(err.code));
-      setLinkStatus('');
-    } finally {
-      setLinkLoading(false);
-    }
-  };
-
-  const handleConfirmEmailVerification = async (e) => {
-    if (e) e.preventDefault();
-    setLinkLoading(true);
-    setLinkStatus('Checking email verification...');
-    setError('');
-    
-    try {
-      await auth.currentUser.reload();
-      if (auth.currentUser.emailVerified) {
-        setEmailVerifiedLocal(true);
-        setLinkStatus('Email Verified Successfully!');
-        setForm(f => ({ ...f, email: auth.currentUser.email }));
-      } else {
-        setError('Email is not verified yet. Please check your inbox.');
-        setLinkStatus('');
-      }
-    } catch (err) {
-      console.error(err);
-      setError(err.message || 'Failed to check verification status.');
-      setLinkStatus('');
-    } finally {
-      setLinkLoading(false);
-    }
-  };
-
-  const handleSendPhoneSignupEmailVerification = async (e) => {
-    if (e) e.preventDefault();
-    const trimmedEmail = linkEmail.trim().toLowerCase();
-    if (!trimmedEmail) { setError('Please enter your email address'); return; }
-    
-    setLinkLoading(true);
-    setLinkStatus('Saving email and sending verification link...');
-    setError('');
-    
-    try {
-      const usersRef = collection(db, 'users');
-      const qEmail = query(usersRef, where('email', '==', trimmedEmail));
-      const snapEmail = await getDocs(qEmail);
-      if (!snapEmail.empty) {
-        let duplicateUid = '';
-        snapEmail.forEach(d => { duplicateUid = d.id; });
-        if (duplicateUid !== auth.currentUser?.uid) {
-          setError('This email address is already registered under another account.');
-          setLinkLoading(false);
-          setLinkStatus('');
-          return;
-        }
-      }
-      
-      await updateEmail(auth.currentUser, trimmedEmail);
-      await sendEmailVerification(auth.currentUser);
-      
-      setEmailLinked(true);
-      setLinkStatus('Verification email sent! Check your inbox.');
-      setEmailVerifySent(true);
-      setForm(f => ({ ...f, email: trimmedEmail }));
-    } catch (err) {
-      console.error('[Phone Signup Email Verification Error]', err);
-      setError(err.message || 'Failed to send verification link.');
-      setLinkStatus('');
-    } finally {
-      setLinkLoading(false);
-    }
-  };
-
-  const handleCompleteRegistration = async (e) => {
-    e.preventDefault();
-    setError('');
-
-    if (!form.name?.trim()) { setError('Please enter your name'); return; }
-    if (!form.email?.trim()) { setError('Please enter your email'); return; }
-    
-    const currentUser = auth.currentUser;
-    if (!currentUser) { setError('Session expired. Please log in again.'); return; }
-    
-    const providers = currentUser.providerData.map(p => p.providerId);
-    const isEmail = providers.includes('password');
-    const isPhone = providers.includes('phone');
-    
-    if (isEmail && !phoneLinked) {
-      setError('Please link and verify your mobile number first.');
-      return;
-    }
-    if (isPhone && !emailVerifiedLocal) {
-      setError('Please link and verify your email address first.');
-      return;
-    }
-
-    if (!form.dob) { setError('Please enter your Date of Birth'); return; }
-    if (!form.gender) { setError('Please select your gender'); return; }
-    if (!form.address?.trim()) { setError('Please enter your Address'); return; }
-    if (!form.district?.trim()) { setError('Please enter your District'); return; }
-    if (!form.state?.trim()) { setError('Please enter your State'); return; }
-    
-    if (!/^\d{6}$/.test(form.pin)) {
-      setError('PIN code must be exactly 6 digits');
-      return;
-    }
-    
-    const normalizedEmergency = normalizeIndianNationalNumber(form.emergencyContact);
-    if (normalizedEmergency.length !== 10) {
-      setError('Emergency contact must be a valid 10-digit number');
-      return;
-    }
-    
-    if (!form.school?.trim()) { setError('Please enter your School'); return; }
-    if (!form.class) { setError('Please select your Class'); return; }
-    if (!form.course?.trim()) { setError('Please enter your Course'); return; }
-    if (!form.guardianName?.trim()) { setError('Please enter your Guardian\'s Name'); return; }
-    
-    const normalizedGuardian = normalizeIndianNationalNumber(form.guardianPhone);
-    if (normalizedGuardian.length !== 10) {
-      setError('Guardian phone must be a valid 10-digit number');
-      return;
-    }
-    
-    if (form.aadhaarNumber && !/^\d{12}$/.test(form.aadhaarNumber)) {
-      setError('Aadhaar number must be exactly 12 digits');
-      return;
-    }
-
-    setLoading(true);
-
-    try {
-      await completeUserProfile({
-        name: form.name,
-        email: form.email,
-        phone: form.phone || (isPhone ? currentUser.phoneNumber : ''),
-        dob: form.dob,
-        gender: form.gender,
-        address: form.address,
-        district: form.district,
-        state: form.state,
-        pin: form.pin,
-        emergencyContact: normalizedEmergency,
-        school: form.school,
-        class: form.class,
-        course: form.course,
-        guardianName: form.guardianName,
-        guardianPhone: normalizedGuardian,
-        aadhaarNumber: form.aadhaarNumber,
-        phoneVerified: isEmail ? phoneLinked : true,
-        emailVerified: isPhone ? emailVerifiedLocal : true
-      });
-      
-      showToast('Profile completed successfully!', 'success');
-      setIsCompletingProfile(false);
-    } catch (err) {
-      console.error("Error during profile completion:", err);
-      setError(err.message || 'Failed to save profile. Please try again.');
-    } finally {
-      setLoading(false);
-    }
-  };
 
   if (!user) {
     return <ProfileSkeleton />;
@@ -868,496 +445,65 @@ const Profile = () => {
   return (
     <div className="profile-wrapper">
       <div style={{ marginBottom: '28px' }}>
-        <h1 style={{ fontSize: '1.75rem', marginBottom: '6px' }}>Edit Profile</h1>
-        <p style={{ color: 'var(--text-muted)' }}>Manage your personal details, credentials, and track your completeness level</p>
+        <h1 style={{ fontSize: '1.75rem', marginBottom: '6px' }}>Student Identity & Profile Workspace</h1>
+        <p style={{ color: 'var(--text-muted)' }}>Manage your personal details, credentials, track your completeness level, and view attendance records</p>
       </div>
 
-      {/* Profile Complete / Incomplete Banner */}
-      {user?.profileCompleted ? (
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: '10px',
-          background: 'rgba(76,175,80,0.08)', border: '1px solid rgba(76,175,80,0.2)',
-          borderRadius: '12px', padding: '12px 16px', color: 'var(--success)',
-          fontSize: '0.9rem', fontWeight: 600, marginBottom: '24px'
-        }}>
-          <CheckCircle size={16} />
-          <span>✓ Profile Complete</span>
-        </div>
+      {/* Top Segmented Controls */}
+      <div
+        className="card card-p"
+        style={{
+          background: 'var(--white)',
+          padding: '6px',
+          borderRadius: '100px',
+          display: 'flex',
+          gap: '6px',
+          maxWidth: 'fit-content',
+          marginBottom: '24px'
+        }}
+      >
+        <button
+          onClick={() => handleTabChange('profile')}
+          style={{
+            padding: '8px 22px',
+            borderRadius: '100px',
+            border: 'none',
+            fontWeight: 800,
+            fontSize: '0.85rem',
+            cursor: 'pointer',
+            background: activeProfileTab === 'profile' ? 'var(--primary)' : 'transparent',
+            color: activeProfileTab === 'profile' ? 'var(--text-on-primary)' : 'var(--text-muted)'
+          }}
+        >
+          <User size={16} /> Profile Details & Credentials
+        </button>
+
+        <button
+          onClick={() => handleTabChange('attendance')}
+          style={{
+            padding: '8px 22px',
+            borderRadius: '100px',
+            border: 'none',
+            fontWeight: 800,
+            fontSize: '0.85rem',
+            cursor: 'pointer',
+            background: activeProfileTab === 'attendance' ? 'var(--primary)' : 'transparent',
+            color: activeProfileTab === 'attendance' ? 'var(--text-on-primary)' : 'var(--text-muted)'
+          }}
+        >
+          <CalendarCheck size={16} /> My Attendance Workspace
+        </button>
+      </div>
+
+      {activeProfileTab === 'attendance' ? (
+        <StudentAttendanceWorkspace studentId={user.uid} currentUser={user} studentName={displayName} />
       ) : (
-        <div style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px',
-          background: 'rgba(83,109,254,0.08)', border: '1px solid rgba(83,109,254,0.2)',
-          borderRadius: '16px', padding: '16px 20px', marginBottom: '24px'
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'var(--primary-light)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Sparkles size={16} />
-            </div>
-            <div>
-              <div style={{ fontWeight: 800, fontSize: '0.95rem', color: 'var(--dark)' }}>
-                Complete your profile to unlock all features.
-              </div>
-              <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-                Progress: <strong style={{ color: 'var(--success)' }}>{completionPct}% Complete</strong>
-              </div>
-            </div>
-          </div>
-          {!isCompletingProfile && (
-            <button
-              onClick={() => setIsCompletingProfile(true)}
-              className="btn btn-primary"
-              style={{ padding: '8px 16px', fontSize: '0.85rem', borderRadius: '8px' }}
-            >
-              Complete Profile
-            </button>
-          )}
-        </div>
-      )}
-
-      {isCompletingProfile ? (
-        <div className="card card-p" style={{ maxWidth: '680px', margin: '0 auto', width: '100%', marginBottom: '32px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', borderBottom: '1px solid var(--border)', paddingBottom: '12px' }}>
-            <h2 style={{ fontSize: '1.5rem', fontWeight: 800 }}>Complete Registration Form</h2>
-            <button
-              onClick={() => { setIsCompletingProfile(false); setError(''); }}
-              className="btn btn-secondary"
-              style={{ padding: '6px 12px', fontSize: '0.8rem', borderRadius: '6px' }}
-            >
-              Cancel and Back
-            </button>
+        <>
+          <div style={{ marginBottom: '24px' }}>
+            <AICoachBanner user={user} onActionClick={() => navigate('/dashboard/achievements')} />
           </div>
 
-          {/* Section 1: Authentication Methods (Locked + Link Editable) */}
-          <div style={{ background: 'rgba(83,109,254,0.04)', padding: '20px', borderRadius: '16px', border: '1px solid var(--border)', marginBottom: '24px' }}>
-            <h3 style={{ fontSize: '1rem', fontWeight: 800, marginBottom: '14px', color: 'var(--dark)' }}>Unified Account Link</h3>
-            
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              {/* Email Row */}
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px', background: 'var(--white)', borderRadius: '10px', border: '1px solid var(--border)', flexWrap: 'wrap', gap: '12px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <Mail size={18} color="var(--primary)" />
-                  <span style={{ fontSize: '0.9rem', fontWeight: 600 }}>{auth.currentUser?.email || (emailLinked ? form.email : 'Link your email')}</span>
-                </div>
-                {(auth.currentUser?.emailVerified || emailVerifiedLocal) ? (
-                  <span style={{ color: 'var(--success)', fontWeight: 700, fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    <CheckCircle size={14} /> Verified
-                  </span>
-                ) : auth.currentUser?.providerData.some(p => p.providerId === 'phone') && !emailLinked ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1, minWidth: '200px', alignItems: 'stretch' }}>
-                    <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>Almost done! Add your Email Address</span>
-                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center', width: '100%' }}>
-                      <input
-                        type="email"
-                        placeholder="you@example.com"
-                        value={linkEmail}
-                        onChange={(e) => setLinkEmail(e.target.value)}
-                        style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--border)', fontSize: '0.85rem', flex: 1, minWidth: 0 }}
-                      />
-                      <button
-                        type="button"
-                        onClick={handleSendPhoneSignupEmailVerification}
-                        disabled={linkLoading}
-                        className="btn btn-primary"
-                        style={{ padding: '8px 14px', fontSize: '0.8rem', borderRadius: '8px', whiteSpace: 'nowrap' }}
-                      >
-                        {linkLoading ? 'Sending...' : 'Send Verification'}
-                      </button>
-                    </div>
-                  </div>
-                ) : auth.currentUser?.providerData.some(p => p.providerId === 'phone') && emailLinked && !emailVerifiedLocal ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1, minWidth: '200px', alignItems: 'stretch' }}>
-                    <span style={{ fontSize: '0.8rem', color: 'var(--warning)', fontWeight: 700 }}>Email Pending Verification</span>
-                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>We sent a link to {form.email}.</span>
-                      <button
-                        type="button"
-                        onClick={handleConfirmEmailVerification}
-                        disabled={linkLoading}
-                        className="btn btn-primary"
-                        style={{ padding: '6px 12px', fontSize: '0.78rem', borderRadius: '6px', whiteSpace: 'nowrap', marginLeft: 'auto' }}
-                      >
-                        {linkLoading ? 'Checking...' : 'I Have Verified'}
-                      </button>
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-
-              {/* Phone Row */}
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px', background: 'var(--white)', borderRadius: '10px', border: '1px solid var(--border)', flexWrap: 'wrap', gap: '12px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <Phone size={18} color="var(--primary)" />
-                  <span style={{ fontSize: '0.9rem', fontWeight: 600 }}>{auth.currentUser?.phoneNumber || (phoneLinked ? form.phone : 'Link your mobile')}</span>
-                </div>
-                {(auth.currentUser?.phoneNumber || phoneLinked) ? (
-                  <span style={{ color: 'var(--success)', fontWeight: 700, fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    <CheckCircle size={14} /> Verified
-                  </span>
-                ) : auth.currentUser?.providerData.some(p => p.providerId === 'password') && !linkOTPSent ? (
-                  <div style={{ display: 'flex', gap: '8px', flex: 1, minWidth: '200px', justifyContent: 'flex-end' }}>
-                    <input
-                      type="tel"
-                      placeholder="Mobile number"
-                      value={linkPhone}
-                      onChange={(e) => { setLinkPhone(e.target.value.replace(/[^0-9\s\-\+\(\)\.]/g, '')); setError(''); }}
-                      maxLength={20}
-                      style={{ padding: '6px 12px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '0.8rem', width: '100%', maxWidth: '160px' }}
-                    />
-                    <button
-                      type="button"
-                      onClick={handleSendLinkOTP}
-                      disabled={linkLoading}
-                      className="btn btn-primary"
-                      style={{ padding: '6px 12px', fontSize: '0.78rem', borderRadius: '6px', whiteSpace: 'nowrap' }}
-                    >
-                      {linkLoading ? 'Send...' : 'Verify'}
-                    </button>
-                  </div>
-                ) : auth.currentUser?.providerData.some(p => p.providerId === 'password') && linkOTPSent ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', alignItems: 'flex-end', flex: 1, minWidth: '200px' }}>
-                    <div style={{ display: 'flex', gap: '6px' }}>
-                      {linkOtp.map((digit, idx) => (
-                        <input
-                          key={idx}
-                          ref={el => linkOtpRefs.current[idx] = el}
-                          type="text"
-                          pattern="[0-9]*"
-                          inputMode="numeric"
-                          maxLength={1}
-                          value={digit}
-                          onChange={(e) => handleLinkOtpChange(e.target, idx)}
-                          onKeyDown={(e) => handleLinkOtpKeyDown(e, idx)}
-                          style={{ width: '32px', height: '36px', borderRadius: '6px', border: '1px solid var(--border)', textAlign: 'center', fontSize: '1.1rem', fontWeight: 700 }}
-                        />
-                      ))}
-                    </div>
-                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                      {linkTimer > 0 ? `Resend in ${linkTimer}s` : <button type="button" onClick={handleSendLinkOTP} style={{ color: 'var(--primary)', fontWeight: 700, background: 'none', border: 'none', cursor: 'pointer' }}>Resend OTP</button>}
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-            </div>
-            
-            {linkStatus && (
-              <div style={{ color: 'var(--primary)', fontSize: '0.82rem', fontWeight: 600, marginTop: '10px' }}>
-                {linkStatus}
-              </div>
-            )}
-          </div>
-
-          {/* Section 2: Profile Fields Forms (Grid) */}
-          <form onSubmit={handleCompleteRegistration} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-            
-            <h3 style={{ fontSize: '1.1rem', fontWeight: 800, borderBottom: '1px solid var(--border)', paddingBottom: '8px', color: 'var(--dark)' }}>Personal Information</h3>
-            
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '16px' }}>
-              <div>
-                <label className="form-label">Full Name</label>
-                <input
-                  ref={nameInputRef}
-                  name="name" value={form.name} onChange={handleChange}
-                  className="form-input" placeholder="e.g. Arjun Sen"
-                  required
-                />
-              </div>
-              <div>
-                <label className="form-label">Date of Birth</label>
-                <input
-                  type="date"
-                  name="dob" value={form.dob} onChange={handleChange}
-                  className="form-input"
-                  required
-                />
-              </div>
-              <div>
-                <label className="form-label">Gender</label>
-                <select
-                  name="gender" value={form.gender} onChange={handleChange}
-                  className="form-input"
-                  style={{ background: 'var(--white)' }}
-                  required
-                >
-                  <option value="">Select Gender</option>
-                  <option value="Male">Male</option>
-                  <option value="Female">Female</option>
-                  <option value="Other">Other</option>
-                </select>
-              </div>
-              <div>
-                <label className="form-label">Aadhaar Number (Optional)</label>
-                <input
-                  type="text"
-                  name="aadhaarNumber" value={form.aadhaarNumber}
-                  onChange={(e) => setForm({ ...form, aadhaarNumber: e.target.value.replace(/\D/g, '') })}
-                  maxLength={12}
-                  placeholder="Enter 12 digits (Optional)"
-                  className="form-input"
-                />
-              </div>
-            </div>
-
-            <h3 style={{ fontSize: '1.1rem', fontWeight: 800, borderBottom: '1px solid var(--border)', paddingBottom: '8px', color: 'var(--dark)', marginTop: '10px' }}>Contact & Address</h3>
-
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '16px' }}>
-              <div style={{ gridColumn: '1 / -1' }}>
-                <label className="form-label">Address</label>
-                <input
-                  name="address" value={form.address} onChange={handleChange}
-                  className="form-input" placeholder="House/Flat No, Street Name, Locality"
-                  required
-                />
-              </div>
-              <div>
-                <label className="form-label">State</label>
-                <select
-                  name="state"
-                  value={form.state}
-                  onChange={(e) => {
-                    setForm(prev => ({ ...prev, state: e.target.value, district: '' }));
-                    setError('');
-                  }}
-                  className="form-input"
-                  style={{ background: 'var(--white)' }}
-                  required
-                >
-                  <option value="">Select State</option>
-                  {[
-                    "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh", "Goa", "Gujarat", 
-                    "Haryana", "Himachal Pradesh", "Jharkhand", "Karnataka", "Kerala", "Madhya Pradesh", 
-                    "Maharashtra", "Manipur", "Meghalaya", "Mizoram", "Nagaland", "Odisha", "Punjab", 
-                    "Rajasthan", "Sikkim", "Tamil Nadu", "Telangana", "Tripura", "Uttar Pradesh", "Uttarakhand", 
-                    "West Bengal", "Andaman and Nicobar Islands", "Chandigarh", "Dadra and Nagar Haveli and Daman and Diu", 
-                    "Delhi", "Jammu and Kashmir", "Ladakh", "Lakshadweep", "Puducherry"
-                  ].map(st => (
-                    <option key={st} value={st}>{st}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="form-label">District</label>
-                {form.state === 'West Bengal' ? (
-                  <select
-                    name="district"
-                    value={form.district}
-                    onChange={handleChange}
-                    className="form-input"
-                    style={{ background: 'var(--white)' }}
-                    required
-                  >
-                    <option value="">Select District</option>
-                    {[
-                      "Alipurduar", "Bankura", "Birbhum", "Cooch Behar", "Dakshin Dinajpur", "Darjeeling", 
-                      "Hooghly", "Howrah", "Jalyaiguri", "Jhargram", "Kalimpong", "Kolkata", "Malda", 
-                      "Murshidabad", "Nadia", "North 24 Parganas", "Paschim Bardhaman", "Paschim Medinipur", 
-                      "Purba Bardhaman", "Purba Medinipur", "Purulia", "South 24 Parganas", "Uttar Dinajpur"
-                    ].map(dt => (
-                      <option key={dt} value={dt}>{dt}</option>
-                    ))}
-                  </select>
-                ) : ['Delhi', 'Bihar', 'Jharkhand', 'Odisha'].includes(form.state) ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    <select
-                      name="district"
-                      value={
-                        ['Delhi', 'Bihar', 'Jharkhand', 'Odisha'].includes(form.state) && 
-                        !{
-                          "Delhi": ["Central Delhi", "East Delhi", "New Delhi", "North Delhi", "North East Delhi", "North West Delhi", "Shahdara", "South Delhi", "South East Delhi", "South West Delhi", "West Delhi"],
-                          "Bihar": ["Patna", "Gaya", "Bhagalpur", "Muzaffarpur", "Purnia", "Darbhanga", "Arrah", "Begusarai"],
-                          "Jharkhand": ["Ranchi", "Jamshedpur", "Dhanbad", "Bokaro", "Deoghar", "Hazaribagh"],
-                          "Odisha": ["Bhubaneswar", "Cuttack", "Rourkela", "Berhampur", "Sambalpur", "Puri"]
-                        }[form.state].includes(form.district) && form.district !== ''
-                          ? 'Other'
-                          : form.district
-                      }
-                      onChange={(e) => {
-                        if (e.target.value === 'Other') {
-                          setForm(prev => ({ ...prev, district: 'Other_District' }));
-                        } else {
-                          setForm(prev => ({ ...prev, district: e.target.value }));
-                        }
-                      }}
-                      className="form-input"
-                      style={{ background: 'var(--white)' }}
-                      required
-                    >
-                      <option value="">Select District</option>
-                      {({
-                        "Delhi": ["Central Delhi", "East Delhi", "New Delhi", "North Delhi", "North East Delhi", "North West Delhi", "Shahdara", "South Delhi", "South East Delhi", "South West Delhi", "West Delhi"],
-                        "Bihar": ["Patna", "Gaya", "Bhagalpur", "Muzaffarpur", "Purnia", "Darbhanga", "Arrah", "Begusarai"],
-                        "Jharkhand": ["Ranchi", "Jamshedpur", "Dhanbad", "Bokaro", "Deoghar", "Hazaribagh"],
-                        "Odisha": ["Bhubaneswar", "Cuttack", "Rourkela", "Berhampur", "Sambalpur", "Puri"]
-                      }[form.state] || []).map(dt => (
-                        <option key={dt} value={dt}>{dt}</option>
-                      ))}
-                      <option value="Other">Other...</option>
-                    </select>
-                    {(form.district === 'Other_District' || 
-                      (form.district !== '' && !({
-                        "Delhi": ["Central Delhi", "East Delhi", "New Delhi", "North Delhi", "North East Delhi", "North West Delhi", "Shahdara", "South Delhi", "South East Delhi", "South West Delhi", "West Delhi"],
-                        "Bihar": ["Patna", "Gaya", "Bhagalpur", "Muzaffarpur", "Purnia", "Darbhanga", "Arrah", "Begusarai"],
-                        "Jharkhand": ["Ranchi", "Jamshedpur", "Dhanbad", "Bokaro", "Deoghar", "Hazaribagh"],
-                        "Odisha": ["Bhubaneswar", "Cuttack", "Rourkela", "Berhampur", "Sambalpur", "Puri"]
-                      }[form.state] || []).includes(form.district))) && (
-                      <input
-                        type="text"
-                        placeholder="Enter District Name"
-                        value={form.district === 'Other_District' ? '' : form.district}
-                        onChange={(e) => setForm(prev => ({ ...prev, district: e.target.value }))}
-                        className="form-input"
-                        required
-                      />
-                    )}
-                  </div>
-                ) : (
-                  <input
-                    name="district"
-                    value={form.district}
-                    onChange={handleChange}
-                    className="form-input"
-                    placeholder="District name"
-                    required
-                  />
-                )}
-              </div>
-              <div>
-                <label className="form-label">PIN Code (6-digit)</label>
-                <input
-                  type="text"
-                  name="pin" value={form.pin}
-                  onChange={(e) => setForm({ ...form, pin: e.target.value.replace(/\D/g, '') })}
-                  maxLength={6}
-                  placeholder="6-digit PIN"
-                  className="form-input"
-                  required
-                />
-              </div>
-              <div>
-                <label className="form-label">Emergency Contact (10-digit)</label>
-                <input
-                  type="tel"
-                  name="emergencyContact" value={form.emergencyContact}
-                  onChange={(e) => setForm({ ...form, emergencyContact: e.target.value.replace(/[^0-9\s\-\+\(\)\.]/g, '') })}
-                  maxLength={20}
-                  placeholder="Emergency contact"
-                  className="form-input"
-                  required
-                />
-              </div>
-            </div>
-
-            <h3 style={{ fontSize: '1.1rem', fontWeight: 800, borderBottom: '1px solid var(--border)', paddingBottom: '8px', color: 'var(--dark)', marginTop: '10px' }}>Academic & Guardian details</h3>
-
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '16px' }}>
-              <div>
-                <label className="form-label">School Name</label>
-                <input
-                  name="school" value={form.school} onChange={handleChange}
-                  className="form-input" placeholder="School name"
-                  required
-                />
-              </div>
-              <div>
-                <label className="form-label">Class</label>
-                <select
-                  name="class" value={form.class} onChange={(e) => setForm(prev => ({ ...prev, class: e.target.value, semester: '' }))}
-                  className="form-input"
-                  style={{ background: 'var(--white)' }}
-                  required
-                >
-                  <option value="">Select Class</option>
-                  <option value="Class 2">Class 2</option>
-                  <option value="Class 3">Class 3</option>
-                  <option value="Class 4">Class 4</option>
-                  <option value="Class 5">Class 5</option>
-                  <option value="Class 6">Class 6</option>
-                  <option value="Class 7">Class 7</option>
-                  <option value="Class 8">Class 8</option>
-                  <option value="Class 9">Class 9</option>
-                  <option value="Class 10">Class 10</option>
-                  <option value="Class 11">Class 11</option>
-                  <option value="Class 12">Class 12</option>
-                  <option value="Basic Computer">Basic Computer</option>
-                  <option value="Basic with AI">Basic with AI</option>
-                  <option value="Tally">Tally</option>
-                  <option value="B.Sc">B.Sc</option>
-                  <option value="BCA">BCA</option>
-                  <option value="B.Tech">B.Tech</option>
-                </select>
-              </div>
-              
-              {['Class 11', 'Class 12', 'B.Sc', 'BCA', 'B.Tech'].includes(form.class) && (
-                <div>
-                  <label className="form-label">Semester</label>
-                  <select
-                    name="semester"
-                    value={form.semester || ''}
-                    onChange={handleChange}
-                    className="form-input"
-                    style={{ background: 'var(--white)' }}
-                    required
-                  >
-                    <option value="">Select Semester</option>
-                    {(['Class 11', 'Class 12'].includes(form.class)
-                      ? ['Semester 1', 'Semester 2', 'Semester 3', 'Semester 4']
-                      : ['Semester 1', 'Semester 2', 'Semester 3', 'Semester 4', 'Semester 5', 'Semester 6']
-                    ).map(opt => (
-                      <option key={opt} value={opt}>{opt}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
-              <div>
-                <label className="form-label">Course Registered</label>
-                <input
-                  name="course" value={form.course} onChange={handleChange}
-                  className="form-input" placeholder="e.g. Python, Class 10 Board"
-                  required
-                />
-              </div>
-              <div>
-                <label className="form-label">Guardian's Name</label>
-                <input
-                  name="guardianName" value={form.guardianName} onChange={handleChange}
-                  className="form-input" placeholder="Guardian's name"
-                  required
-                />
-              </div>
-              <div>
-                <label className="form-label">Guardian's Phone (10-digit)</label>
-                <input
-                  type="tel"
-                  name="guardianPhone" value={form.guardianPhone}
-                  onChange={(e) => setForm({ ...form, guardianPhone: e.target.value.replace(/[^0-9\s\-\+\(\)\.]/g, '') })}
-                  maxLength={20}
-                  placeholder="Guardian phone"
-                  className="form-input"
-                  required
-                />
-              </div>
-            </div>
-
-            {/* Error */}
-            <AnimatePresence>
-              {error && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
-                  style={{ background: 'rgba(239,83,80,0.08)', border: '1px solid rgba(239,83,80,0.2)', borderRadius: 'var(--radius-md)', padding: '12px 16px', color: 'var(--danger)', fontSize: '0.9rem', fontWeight: 500 }}
-                >{error}</motion.div>
-              )}
-            </AnimatePresence>
-
-            {/* Submit */}
-            <motion.button type="submit" className="btn btn-primary" whileTap={{ scale: 0.97 }}
-              disabled={loading || (auth.currentUser?.providerData.some(p => p.providerId === 'password') && !phoneLinked) || (auth.currentUser?.providerData.some(p => p.providerId === 'phone') && !emailLinked)}
-              style={{ padding: '16px', fontSize: '1.05rem', marginTop: '10px', width: '100%', justifyContent: 'center', cursor: (loading || (auth.currentUser?.providerData.some(p => p.providerId === 'password') && !phoneLinked) || (auth.currentUser?.providerData.some(p => p.providerId === 'phone') && !emailLinked)) ? 'not-allowed' : 'pointer' }}>
-              {loading ? <Spinner /> : <><UserPlus size={20} /> Complete Registration</>}
-            </motion.button>
-          </form>
-          <div id="recaptcha-container"></div>
-        </div>
-      ) : (
-        <div className="profile-grid">
+      <div className="profile-grid">
         
         {/* LEFT COLUMN: EDIT FORMS */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
@@ -2043,8 +1189,8 @@ const Profile = () => {
             )}
           </div>
         </div>
+
       </div>
-    )}
 
       {/* AVATAR SELECTOR / CUSTOMIZER MODAL */}
       {isAvatarModalOpen && (
@@ -2328,6 +1474,8 @@ const Profile = () => {
           <Toast message={toast} onClose={() => setToast(null)} />
         )}
       </AnimatePresence>
+        </>
+      )}
     </div>
   );
 };
