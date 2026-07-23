@@ -9,19 +9,12 @@ import Staff from './pages/public/Staff';
 import Login from './pages/auth/Login';
 import DashboardLayout from './pages/dashboard/DashboardLayout';
 import Overview from './pages/dashboard/Overview';
-import Courses from './pages/dashboard/Courses';
-import Assignments from './pages/dashboard/Assignments';
-import Tests from './pages/dashboard/tests/Tests';
-import MiniGames from './pages/dashboard/mini-games/MiniGames';
-import Attendance from './pages/dashboard/Attendance';
 import Schedule from './pages/dashboard/Schedule';
 import Community from './pages/dashboard/Community';
 import Profile from './pages/dashboard/Profile';
 import FeesAndPayments from './pages/dashboard/FeesAndPayments';
-import ClassTracker from './pages/dashboard/ClassTracker';
 import WorldCupPage from './pages/dashboard/WorldCupPage';
 import AchievementsPage from './pages/dashboard/AchievementsPage';
-import AcademicPassPage from './pages/dashboard/AcademicPassPage';
 import HallOfChampions from './pages/dashboard/HallOfChampions';
 import LearningContainer from './pages/dashboard/LearningContainer';
 import AssessmentsContainer from './pages/dashboard/AssessmentsContainer';
@@ -29,8 +22,6 @@ import {
   NotFoundPage, StudentNotFoundPage, PaymentFailedPage, 
   UnauthorizedPage, MaintenancePage, NetworkOfflinePage, ServerErrorPage 
 } from './pages/errors/ErrorPages';
-
-import { ThemeProvider } from './theme/ThemeProvider';
 
 const PublicLayout = () => (
   <ReactLenis root options={{ lerp: 0.08, smoothWheel: true }}>
@@ -59,10 +50,9 @@ const ProtectedRoute = ({ children }) => {
 
 function App() {
   return (
-    <ThemeProvider>
-      <AuthProvider>
-        <ToastProvider>
-          <Router>
+    <AuthProvider>
+      <ToastProvider>
+        <Router>
           <Routes>
             <Route element={<PublicLayout />}>
               <Route path="/" element={<Home />} />
@@ -101,7 +91,6 @@ function App() {
         </Router>
       </ToastProvider>
     </AuthProvider>
-  </ThemeProvider>
   );
 }
 

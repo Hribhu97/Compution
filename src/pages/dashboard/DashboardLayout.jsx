@@ -8,7 +8,6 @@ import { authService } from '../../services/authService';
 import { collection, onSnapshot, query, orderBy, limit, doc } from 'firebase/firestore';
 import { updateDoc, setDoc } from '../../firebase';;
 import { useAuth } from '../../contexts/AuthContext';
-import { useTheme } from '../../theme/useTheme';
 import {
   LayoutDashboard, BookOpen, ClipboardList,
   FileText, Settings, LogOut, Search, Bell,
@@ -87,6 +86,16 @@ const DashboardLayout = () => {
   const [hallViewed, setHallViewed] = useState(
     localStorage.getItem('hallViewed_season2026') === 'true'
   );
+
+  useEffect(() => {
+    // Clear cached team selection popup flags since event is COMPLETED
+    localStorage.removeItem('showWorldCupPopup');
+    localStorage.removeItem('needsTeamSelection');
+    localStorage.removeItem('teamModalOpen');
+    localStorage.removeItem('pendingTeamSelection');
+    sessionStorage.removeItem('showWorldCupPopup');
+    sessionStorage.removeItem('needsTeamSelection');
+  }, []);
 
   useEffect(() => {
     const handleUpdate = () => {
@@ -237,8 +246,7 @@ const DashboardLayout = () => {
   }, [user?.uid]);
   // Removed duplicate isOffline declaration
   const [showOnlineBanner, setShowOnlineBanner] = useState(false);
-  const { theme, resolvedTheme, setTheme } = useTheme();
-  const isDarkMode = resolvedTheme === 'dark';
+  const isDarkMode = false;
 
   useEffect(() => {
     let timer;

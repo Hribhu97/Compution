@@ -995,57 +995,31 @@ const WorldCupPage = () => {
  </svg>
  </div>
  <h1 style={{ fontSize: '2.4rem', fontWeight: 950, letterSpacing: '0.05em', margin: '0 0 12px', color: '#60A5FA' }}>WORLD CUP MANIA 2026</h1>
- <div style={{ fontSize: '0.85rem', color: '#f59e0b', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.15em', marginBottom: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
- <svg width="14" height="14" viewBox="0 0 24 24" fill="#f59e0b"><path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6z"/></svg>
- Limited Time Campus Championship
- </div>
- <p style={{ fontSize: '1rem', color: 'rgba(255,255,255,0.7)', maxWidth: '600px', margin: '0 auto 36px', lineHeight: 1.6 }}>
- Choose your favorite country, join a 4-player competitive squad, and beat the Bot to earn XP, coins, and ranking points!
- </p>
- <button
- onClick={() => setShowTeamSelection(true)}
- style={{
- padding: '16px 44px', borderRadius: '100px',
- background: 'linear-gradient(135deg, #3b82f6, #6366f1)',
- color: 'white', fontWeight: 900, fontSize: '1.05rem', border: 'none', cursor: 'pointer',
- boxShadow: '0 10px 24px rgba(99, 102, 249, 0.4)', transition: 'transform 0.2s'
- }}
- onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.05)'}
- onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
- >
- Draft My Team
- </button>
-
- <AnimatePresence>
- {showTeamSelection && (
-  isMobile ? (
-  <div style={{ position: 'fixed', inset: 0, zIndex: 99999, background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }}>
-  <TeamSelection 
-  user={user} 
-  onClose={() => setShowTeamSelection(false)} 
-  onJoined={() => setShowTeamSelection(false)}
-  />
-  </div>
-  ) : (
-  <div style={{
-  position: 'fixed', inset: 0, zIndex: 99999,
-  display: 'flex', alignItems: 'center', justifyContent: 'center',
-  background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)'
+ <div style={{
+    fontSize: '0.85rem', color: '#f87171', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.12em',
+    marginBottom: '20px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+    padding: '8px 20px', borderRadius: '100px', background: 'rgba(239, 68, 68, 0.15)', border: '1px solid rgba(239, 68, 68, 0.4)'
   }}>
-  <div style={{ background: '#09090b', padding: '12px', borderRadius: '24px', width: 'min(92vw, 750px)', border: '1.5px solid rgba(255,255,255,0.08)' }}>
-  <TeamSelection 
-  user={user} 
-  onClose={() => setShowTeamSelection(false)} 
-  onJoined={() => setShowTeamSelection(false)}
-  />
+    🏁 Registration Closed — Event Concluded
   </div>
+  <p style={{ fontSize: '1rem', color: 'rgba(255,255,255,0.7)', maxWidth: '600px', margin: '0 auto 32px', lineHeight: 1.6 }}>
+    World Cup Mania 2026 has officially ended. Registration and squad drafting are permanently closed. Final team standings, champion declarations, and tournament statistics are available in the Hall of Champions.
+  </p>
+  <button
+    onClick={() => setShowFinale(true)}
+    style={{
+      padding: '16px 44px', borderRadius: '100px',
+      background: 'linear-gradient(135deg, #F59E0B, #D97706)',
+      color: '#000', fontWeight: 900, fontSize: '1.05rem', border: 'none', cursor: 'pointer',
+      boxShadow: '0 10px 24px rgba(245, 158, 11, 0.4)', transition: 'transform 0.2s',
+      minHeight: '44px'
+    }}
+  >
+    🏆 View Final Results & Hall of Champions
+  </button>
   </div>
-  )
- )}
- </AnimatePresence>
- </div>
- );
- }
+  );
+  }
 
  // ——— SCREEN 1: WELCOME SCREEN (STADIUM TUNNEL STAGE) ———
  if (screen === 'welcome') {
