@@ -5,15 +5,15 @@ const StaffCard = ({ staff, isAdmin = false, onDelete, onBookmark, isBookmarked 
   // Normalize fields between public directory and admin user lists
   const name = staff.displayName || staff.name || 'Anonymous';
   let photo = staff.photoURL || '';
-  if (!photo || photo.includes('unsplash.com') || photo.includes('gravatar') || photo.includes('default') || photo.startsWith('http')) {
-    const nameLower = name.toLowerCase();
-    if (nameLower.includes('biswajit')) photo = '/team/biswajit.jpg';
-    else if (nameLower.includes('hribhu')) photo = '/team/hribhu.jpg';
-    else if (nameLower.includes('sharmistha')) photo = '/team/sharmistha.jpeg';
-    else if (nameLower.includes('piyali')) photo = '/team/piyali.jpg';
-    else if (nameLower.includes('rajdeep')) photo = '/team/rajdeep.jpg';
-    else if (nameLower.includes('sreeparna') || nameLower.includes('panja')) photo = '/team/sreeparna.jpeg';
-    else if (!photo) photo = 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=300';
+  const nameLower = name.toLowerCase();
+  if (nameLower.includes('biswajit')) photo = '/team/biswajit.jpg';
+  else if (nameLower.includes('hribhu')) photo = '/team/hribhu.jpg';
+  else if (nameLower.includes('sharmistha')) photo = '/team/sharmistha.jpeg';
+  else if (nameLower.includes('piyali')) photo = '/team/piyali.jpg';
+  else if (nameLower.includes('rajdeep')) photo = '/team/rajdeep.jpg';
+  else if (nameLower.includes('sreeparna') || nameLower.includes('panja')) photo = '/team/sreeparna.jpeg';
+  else if (!photo || photo.includes('unsplash.com') || photo.includes('gravatar') || photo.includes('default')) {
+    photo = 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&q=80&w=300';
   }
   const role = staff.roleName || staff.role || 'Staff Member';
   const availability = staff.availability || 'Available';
