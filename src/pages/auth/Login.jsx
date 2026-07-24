@@ -190,7 +190,18 @@ const Login = () => {
         }
       } else {
         setView('success');
-        setTimeout(() => navigate('/dashboard'), 900);
+        const navTimer = setTimeout(() => {
+          navigate('/dashboard', { replace: true });
+        }, 500);
+        const fallbackTimer = setTimeout(() => {
+          if (window.location.pathname !== '/dashboard') {
+            window.location.href = '/dashboard';
+          }
+        }, 1500);
+        return () => {
+          clearTimeout(navTimer);
+          clearTimeout(fallbackTimer);
+        };
       }
     }
   }, [user, authLoading, navigate]);

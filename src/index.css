@@ -308,8 +308,8 @@ h3 { font-size: clamp(1.25rem, 2.5vw, 1.75rem); }
 .grid-auto-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 24px; }
 .grid-auto-cards-sm { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px; }
 
-.login-layout { min-height: 100vh; display: flex; background: var(--bg); }
-.login-panel { flex: 1; display: flex; flex-direction: column; padding: 40px; max-width: 560px; }
+.login-layout { min-height: 100vh; min-height: 100dvh; display: flex; background: var(--bg); width: 100%; max-width: 100vw; overflow-x: hidden; }
+.login-panel { flex: 1; display: flex; flex-direction: column; padding: 40px 32px; max-width: 560px; width: 100%; box-sizing: border-box; justify-content: space-between; }
 .login-visual { flex: 1; background: var(--surface); display: flex; align-items: center; justify-content: center; padding: 40px; position: relative; overflow: hidden; }
 
 .dash-shell { display: flex; height: 100vh; background: var(--bg); overflow: hidden; padding: 20px; gap: 24px; }
@@ -413,6 +413,9 @@ h3 { font-size: clamp(1.25rem, 2.5vw, 1.75rem); }
   .grid-2-1 { grid-template-columns: 1fr; }
   .grid-2-col { grid-template-columns: 1fr; }
   .grid-stats-dashboard { grid-template-columns: repeat(2, 1fr); }
+  .login-layout { flex-direction: column; min-height: 100vh; min-height: 100dvh; justify-content: center; align-items: center; }
+  .login-panel { max-width: 600px; margin: 0 auto; padding: 32px 20px; width: 100%; box-sizing: border-box; }
+  .login-visual { display: none; }
 }
 
 @media (max-width: 768px) {
