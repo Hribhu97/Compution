@@ -1,0 +1,396 @@
+import React, { createContext, useContext, useState, useEffect } from 'react';
+import { onAuthStateChanged } from 'firebase/auth';
+import { doc, getDoc, onSnapshot, serverTimestamp } from 'firebase/firestore';
+import { setDoc } from '../firebase';;
+import { auth, db } from '../firebase';
+import { firebaseRecaptcha } from '../services/firebaseRecaptcha';
+
+const AuthContext = createContext(null);
+
+const ADMIN_EMAILS = ['tapadarhribhu@gmail.com', 'biswa.maity2011@gmail.com'];
+
+export const useAuth = () => useContext(AuthContext);
+
+export const AuthProvider = ({ children }) => {
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  const completeUserProfile = async (profileData) => {
+    if (!auth.currentUser) throw new Error("No authenticated user found");
+    const uid = auth.currentUser.uid;
+    const userRef = doc(db, 'users', uid);
+    
+    const userSnap = await getDoc(userRef);
+    const existingData = userSnap.exists() ? userSnap.data() : {};
+    
+    const emailLower = profileData.email.trim().toLowerCase();
+    let targetRole = 'student';
+    let permissions = [];
+
+    if (ADMIN_EMAILS.includes(emailLower)) {
+      targetRole = 'admin';
+      permissions = ['all'];
+    } else if (['sharmisthaghosh855@gmail.com', 'tapadarhribhu350@gmail.com'].includes(emailLower)) {
+      targetRole = 'faculty';
+      permissions = ['manage schedules', 'chat with assigned students', 'upload materials'];
+    } else if (['piyali0903@gmail.com'].includes(emailLower)) {
+      targetRole = 'member';
+      permissions = ['limited dashboard access', 'student support tools'];
+    }
+
+    const providers = auth.currentUser?.providerData.map(p => p.providerId) || [];
+    
+    let baseProfile = {
+      uid: uid,
+      name: profileData.name.trim(),
+      displayName: profileData.name.trim(),
+      fullName: profileData.name.trim(),
+      email: emailLower,
+      photoURL: profileData.photoURL || '',
+      phone: profileData.phone || '',
+      mobileNumber: profileData.phone || '',
+      phoneNumber: profileData.phone || '',
+      dob: profileData.dob || '',
+      gender: profileData.gender || '',
+      address: profileData.address || '',
+      district: profileData.district || '',
+      state: profileData.state || '',
+      pin: profileData.pin || '',
+      emergencyContact: profileData.emergencyContact || '',
+      school: profileData.school || '',
+      class: profileData.class || '',
+      semester: profileData.semester || '',
+      course: profileData.course || 'Not specified',
+      guardianName: profileData.guardianName || '',
+      guardianPhone: profileData.guardianPhone || '',
+      aadhaarNumber: profileData.aadhaarNumber || '',
+      aadhaarStatus: profileData.aadhaarNumber ? (profileData.aadhaarStatus || 'pending') : '',
+      emailVerified: auth.currentUser?.emailVerified || false,
+      phoneVerified: providers.includes('phone') || profileData.phoneVerified || false,
+      authProviders: providers,
+      role: targetRole,
+      permissions: permissions,
+      profileCompleted: true,
+      notificationPreferences: existingData.notificationPreferences || {
+        email: true,
+        sms: true,
+        push: true,
+        billing: true,
+        classReminders: true
+      },
+      settings: existingData.settings || {
+        theme: 'light',
+        language: 'en',
+        soundEnabled: true
+      },
+      updatedAt: serverTimestamp()
+    };
+    if (targetRole === 'student') {
+      let regFee = 300;
+      let admFee = 0;
+      let baseMonthly = 500;
+      
+      let classCategory = '';
+      let autoGroup = '';
+      const cls = (profileData.class || '').trim();
+      
+      if (['Class 2', 'Class 3', 'Class 4', 'Class 5'].includes(cls)) {
+        classCategory = 'class_2_5';
+        autoGroup = 'Class 2-5';
+      } else if (['Class 6', 'Class 7', 'Class 8'].includes(cls)) {
+        classCategory = 'class_6_8';
+        autoGroup = 'Class 6-8';
+      } else if (['Class 9', 'Class 10'].includes(cls)) {
+        classCategory = 'class_9_10';
+        autoGroup = 'Class 9-10';
+      } else if (cls === 'Class 11') {
+        classCategory = 'class_11';
+        autoGroup = 'Class 11';
+      } else if (cls === 'Class 12') {
+        classCategory = 'class_12';
+        autoGroup = 'Class 12';
+      } else if (cls === 'Basic Computer') {
+        classCategory = 'basic_computer';
+        autoGroup = 'Basic Computer';
+      } else if (cls === 'Basic with AI') {
+        classCategory = 'basic_with_ai';
+        autoGroup = 'Basic with AI';
+      } else if (cls === 'Tally') {
+        classCategory = 'tally';
+        autoGroup = 'Tally';
+      } else if (cls === 'B.Sc') {
+        classCategory = 'bsc';
+        autoGroup = 'B.Sc';
+      } else if (cls === 'BCA') {
+        classCategory = 'bca';
+        autoGroup = 'BCA';
+      } else if (cls === 'B.Tech') {
+        classCategory = 'btech';
+        autoGroup = 'B.Tech';
+      } else {
+        classCategory = 'other';
+        autoGroup = 'Other';
+      }
+
+      try {
+        const fsSnap = await getDoc(doc(db, 'settings', 'feeStructure'));
+        if (fsSnap.exists()) {
+          const fs = fsSnap.data();
+          regFee = Number(fs.registrationFee) || 300;
+          admFee = Number(fs.admissionFee) || 0;
+          if (classCategory === 'class_2_5') {
+            baseMonthly = Number(fs.class2to5) || 500;
+          } else if (classCategory === 'class_6_8') {
+            baseMonthly = Number(fs.class6to8) || 600;
+          } else if (classCategory === 'class_9_10') {
+            baseMonthly = Number(fs.class9to10) || 700;
+          } else if (['class_11', 'class_12'].includes(classCategory)) {
+            baseMonthly = Number(fs.class11Science) || 900;
+          } else if (['basic_computer', 'basic_with_ai', 'tally'].includes(classCategory)) {
+            baseMonthly = Number(fs.basicCourse) || 700;
+          } else {
+            baseMonthly = 1000;
+          }
+        }
+      } catch (e) {
+        console.error("Error fetching fee structure in completeUserProfile:", e);
+      }
+
+      baseProfile = {
+        ...baseProfile,
+        studentId: existingData.studentId || `COMP-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
+        assignedFacultyIds: existingData.assignedFacultyIds || [],
+        studentGroup: existingData.studentGroup || null,
+        classCategory: existingData.classCategory || classCategory,
+        stream: existingData.stream || '',
+        autoGroup: existingData.autoGroup || autoGroup,
+        customGroupException: existingData.customGroupException || '',
+        feeStatus: existingData.feeStatus || 'pending',
+        feeTarget: existingData.feeTarget !== undefined ? existingData.feeTarget : baseMonthly,
+        monthlyFee: existingData.monthlyFee || baseMonthly,
+        registrationFee: existingData.registrationFee || regFee,
+        admissionFee: existingData.admissionFee || admFee,
+        feesAmount: existingData.feesAmount || ((baseMonthly * 12) + regFee + admFee),
+        joiningDate: existingData.joiningDate || new Date().toISOString()
+      };
+    }
+
+    if (!userSnap.exists()) {
+      baseProfile.createdAt = serverTimestamp();
+      baseProfile.lastLogin = serverTimestamp();
+      baseProfile.isActive = true;
+      baseProfile.assignedCourses = [];
+    }
+
+    await setDoc(userRef, baseProfile, { merge: true });
+  };
+
+  const registerMobileUser = async (name, email, mobileNumber) => {
+    return completeUserProfile({
+      name,
+      email,
+      phone: mobileNumber,
+      dob: '',
+      gender: '',
+      address: '',
+      district: '',
+      state: '',
+      pin: '',
+      emergencyContact: '',
+      school: '',
+      class: '',
+      course: 'Not specified',
+      guardianName: '',
+      guardianPhone: '',
+      aadhaarNumber: '',
+      phoneVerified: true
+    });
+  };
+
+  useEffect(() => {
+    let unsubscribeProfile = null;
+
+    const unsubAuth = onAuthStateChanged(auth, async (firebaseUser) => {
+      // Clean up previous profile listener if any
+      if (unsubscribeProfile) {
+        unsubscribeProfile();
+        unsubscribeProfile = null;
+      }
+
+      if (firebaseUser) {
+        setLoading(true);
+        const userRef = doc(db, 'users', firebaseUser.uid);
+        
+        try {
+          const userSnap = await getDoc(userRef);
+          const emailLower = firebaseUser.email?.toLowerCase();
+          const isPhone = firebaseUser.phoneNumber || firebaseUser.providerData.some(p => p.providerId === 'phone');
+
+          if (!userSnap.exists()) {
+            if (!isPhone) {
+              let targetRole = 'student';
+              let permissions = [];
+
+              if (ADMIN_EMAILS.includes(emailLower)) {
+                targetRole = 'admin';
+                permissions = ['all'];
+              } else if (['sharmisthaghosh855@gmail.com', 'tapadarhribhu350@gmail.com'].includes(emailLower)) {
+                targetRole = 'faculty';
+                permissions = ['manage schedules', 'chat with assigned students', 'upload materials'];
+              } else if (['piyali0903@gmail.com'].includes(emailLower)) {
+                targetRole = 'member';
+                permissions = ['limited dashboard access', 'student support tools'];
+              }
+
+              const providers = firebaseUser.providerData.map(p => p.providerId);
+              const phoneVal = firebaseUser.phoneNumber || '';
+              const nameVal = firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'Student';
+              let newProfile = {
+                uid: firebaseUser.uid,
+                name: nameVal,
+                displayName: nameVal,
+                fullName: nameVal,
+                email: firebaseUser.email || '',
+                photoURL: firebaseUser.photoURL || '',
+                phone: phoneVal,
+                mobileNumber: phoneVal,
+                phoneNumber: phoneVal,
+                emailVerified: firebaseUser.emailVerified || false,
+                phoneVerified: firebaseUser.phoneNumber ? true : false,
+                authProviders: providers,
+                role: targetRole,
+                permissions: permissions,
+                createdAt: serverTimestamp(),
+                updatedAt: serverTimestamp(),
+                lastLogin: serverTimestamp(),
+                isActive: true,
+                assignedCourses: []
+              };
+              
+              if (targetRole === 'student') {
+                let regFee = 300;
+                let admFee = 0;
+                let baseMonthly = 500;
+                try {
+                  const fsSnap = await getDoc(doc(db, 'settings', 'feeStructure'));
+                  if (fsSnap.exists()) {
+                    const fs = fsSnap.data();
+                    regFee = Number(fs.registrationFee) || 300;
+                    admFee = Number(fs.admissionFee) || 0;
+                    baseMonthly = Number(fs.class2to5) || 500;
+                  }
+                } catch (e) {
+                  console.error("Error fetching fee structure in AuthContext:", e);
+                }
+
+                newProfile = {
+                  ...newProfile,
+                  studentId: `COMP-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`,
+                  course: 'Not specified',
+                  assignedFacultyIds: [],
+                  studentGroup: null,
+                  classCategory: '',
+                  stream: '',
+                  autoGroup: '',
+                  customGroupException: '',
+                  feeStatus: 'pending',
+                  feeTarget: baseMonthly,
+                  monthlyFee: baseMonthly,
+                  registrationFee: regFee,
+                  admissionFee: admFee,
+                  feesAmount: (baseMonthly * 12) + regFee + admFee,
+                  joiningDate: new Date().toISOString()
+                };
+              }
+              await setDoc(userRef, newProfile);
+            } else {
+              // We do NOT write an automatic profile for phone users here anymore,
+              // to prevent duplicate/orphaned records during linking.
+              // They will be marked with needsRegistration: true in the snapshot listener below.
+              console.log(`[Phone Auth Debug] Profile not found for phone user: ${firebaseUser.uid}. Needs registration.`);
+            }
+          } else {
+            // Document exists, merge schema updates, activate account if pending, and set lastLogin
+            const providers = firebaseUser.providerData.map(p => p.providerId);
+            const existing = userSnap.data() || {};
+            const phoneVal = firebaseUser.phoneNumber || existing.phoneNumber || existing.phone || '';
+            const emailVal = firebaseUser.email?.toLowerCase() || existing.email || '';
+            
+            const updates = {
+              uid: firebaseUser.uid,
+              email: emailVal,
+              phoneNumber: phoneVal,
+              phone: phoneVal,
+              mobileNumber: phoneVal,
+              emailVerified: firebaseUser.emailVerified || false,
+              phoneVerified: firebaseUser.phoneNumber ? true : (existing.phoneVerified || false),
+              authProviders: providers,
+              lastLogin: serverTimestamp(),
+              updatedAt: serverTimestamp()
+            };
+
+            if (existing.status === 'pending_activation' || existing.claimed === false) {
+              updates.status = 'active';
+              updates.claimed = true;
+              updates.claimedAt = serverTimestamp();
+            }
+
+            await setDoc(userRef, updates, { merge: true });
+          }
+        } catch (error) {
+          if (error.code === 'permission-denied' || error.message?.toLowerCase().includes('permission')) {
+            console.error(`[Firestore Permission Error] Failed checking/creating profile for user ${firebaseUser.uid}:`, error);
+          } else {
+            console.error("Error checking or creating user profile document:", error);
+          }
+        }
+
+        // Set up snapshot listener
+        try {
+          unsubscribeProfile = onSnapshot(userRef, (docSnap) => {
+            if (docSnap.exists()) {
+              setUser({
+                uid: firebaseUser.uid,
+                emailVerified: firebaseUser.emailVerified,
+                ...docSnap.data()
+              });
+            } else {
+              // Document does not exist (phone user needing registration)
+              setUser({
+                uid: firebaseUser.uid,
+                phoneNumber: firebaseUser.phoneNumber || '',
+                needsRegistration: true
+              });
+            }
+            setLoading(false);
+          }, (error) => {
+            if (error.code === 'permission-denied' || error.message?.toLowerCase().includes('permission')) {
+              console.error(`[Firestore Permission Error] Snapshot listener failed for user ${firebaseUser.uid}:`, error);
+            } else {
+              console.error("Profile snapshot listener error:", error);
+            }
+            setLoading(false);
+          });
+        } catch (err) {
+          console.error("AuthContext: ProfileListener - Failed to create snapshot listener", err);
+          setLoading(false);
+        }
+      } else {
+        firebaseRecaptcha.destroy();
+        setUser(null);
+        setLoading(false);
+      }
+    });
+
+    return () => {
+      unsubAuth();
+      if (unsubscribeProfile) unsubscribeProfile();
+    };
+  }, []);
+
+  return (
+    <AuthContext.Provider value={{ user, loading, registerMobileUser, completeUserProfile }}>
+      {children}
+    </AuthContext.Provider>
+  );
+};

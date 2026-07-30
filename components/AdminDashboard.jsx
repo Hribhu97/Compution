@@ -14,6 +14,8 @@ import SystemHealthPanel from './SystemHealthPanel';
 import StaffCard from './StaffCard';
 import ThemeInspector from '../theme/ThemeInspector';
 import StudentAttendanceWorkspace from './attendance/StudentAttendanceWorkspace';
+import AdminHouseManagement from './house/AdminHouseManagement';
+import AdminDoubtQueue from './admin/AdminDoubtQueue';
 import { systemDoctorService } from '../services/systemDoctorService';
 import { reportService } from '../services/reportService';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, PieChart, Pie } from 'recharts';
@@ -4783,11 +4785,11 @@ const AdminDashboard = () => {
         {[
           { key: 'overview', label: user?.role === 'admin' ? 'Admin Overview' : user?.role === 'faculty' ? 'Faculty Overview' : 'Member Overview', roles: ['admin', 'faculty', 'member'] },
           { key: 'students', label: 'Students Roster', roles: ['admin', 'faculty', 'member'] },
+          { key: 'house_cup', label: '🏰 House Cup Control', roles: ['admin'] },
           { key: 'faculty', label: 'Faculty Staff', roles: ['admin'] },
           { key: 'members', label: 'Staff Members', roles: ['admin'] },
           { key: 'schedules', label: 'Class Schedules', roles: ['admin', 'faculty'] },
           { key: 'attendance', label: 'Attendance Logs', roles: ['admin', 'faculty'] },
-          { key: 'billing', label: 'Payments', roles: ['admin'] },
           { key: 'fee_config', label: 'Fees Config', roles: ['admin'] },
           { key: 'meetings', label: 'Meetings', roles: ['admin', 'faculty', 'member'] },
           { key: 'chats', label: 'Doubt Queue', roles: ['admin', 'faculty', 'member'] },
@@ -4890,6 +4892,11 @@ const AdminDashboard = () => {
         ) : (
           <div className="table-scroll">
             
+            {/* ==================== HOUSE CUP CONTROL CENTER ==================== */}
+            {activePanelTab === 'house_cup' && (
+              <AdminHouseManagement />
+            )}
+
             {/* ==================== 1. TABS: STUDENTS ROSTER ==================== */}
             {activePanelTab === 'students' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -6447,61 +6454,7 @@ const AdminDashboard = () => {
 
           {/* ==================== 6. TABS: DOUBT CHATS ==================== */}
           {activePanelTab === 'chats' && (
-            isMobile ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                {chatRoomsList.filter(rm => rm.studentName?.toLowerCase().includes(search.toLowerCase()) || rm.facultyName?.toLowerCase().includes(search.toLowerCase())).map(rm => (
-                  <div key={rm.id} className="mobile-card-item">
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border)', paddingBottom: '8px' }}>
-                      <span style={{ fontWeight: 700, color: 'var(--dark)' }}>👨‍🎓 {rm.studentName} ↔ 👨‍🏫 {rm.facultyName}</span>
-                    </div>
-
-                    <div className="mobile-card-row">
-                      <span className="mobile-card-label">Last Message:</span>
-                      <span className="mobile-card-value" style={{ fontStyle: 'italic', color: 'var(--text-muted)', fontSize: '0.8rem', maxWidth: '180px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={rm.lastMessage}>{rm.lastMessage || 'No message'}</span>
-                    </div>
-
-                    <div className="mobile-card-row">
-                      <span className="mobile-card-label">Student Unreads:</span>
-                      <span className="mobile-card-value">{rm.studentUnreadCount || 0}</span>
-                    </div>
-
-                    <div className="mobile-card-row">
-                      <span className="mobile-card-label">Faculty Unreads:</span>
-                      <span className="mobile-card-value">{rm.facultyUnreadCount || 0}</span>
-                    </div>
-                  </div>
-                ))}
-                {chatRoomsList.length === 0 && (
-                  <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)', fontStyle: 'italic' }}>
-                    No doubt chat rooms found.
-                  </div>
-                )}
-              </div>
-            ) : (
-              <table style={{ width: '100%', minWidth: '700px', borderCollapse: 'collapse', textAlign: 'left' }}>
-                <thead>
-                  <tr style={{ borderBottom: '1px solid var(--border)', fontSize: '0.8rem', color: 'var(--text-light)' }}>
-                    <th style={{ padding: '12px' }}>Room / Match participants</th>
-                    <th style={{ padding: '12px' }}>Last doubt message</th>
-                    <th style={{ padding: '12px' }}>Student Unreads</th>
-                    <th style={{ padding: '12px' }}>Faculty Unreads</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {chatRoomsList.filter(rm => rm.studentName?.toLowerCase().includes(search.toLowerCase()) || rm.facultyName?.toLowerCase().includes(search.toLowerCase())).map(rm => (
-                    <tr key={rm.id} style={{ borderBottom: '1px solid var(--border)', fontSize: '0.88rem' }}>
-                      <td style={{ padding: '12px' }}>
-                        <div style={{ fontWeight: 700 }}>👨‍🎓 {rm.studentName} ↔ 👨‍🏫 {rm.facultyName}</div>
-                        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Room ID: {rm.id}</div>
-                      </td>
-                      <td style={{ padding: '12px', fontSize: '0.82rem', fontStyle: 'italic', maxWidth: '240px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={rm.lastMessage}>{rm.lastMessage}</td>
-                      <td style={{ padding: '12px', textAlign: 'center' }}>{rm.studentUnreadCount || 0}</td>
-                      <td style={{ padding: '12px', textAlign: 'center' }}>{rm.facultyUnreadCount || 0}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )
+            <AdminDoubtQueue />
           )}
 
           {/* ==================== 7. TABS: ALERT NOTIFICATIONS LOGS ==================== */}

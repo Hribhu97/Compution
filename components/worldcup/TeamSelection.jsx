@@ -93,15 +93,44 @@ const SoccerJersey = ({ team }) => {
 
 const TeamSelection = ({ user, onClose, onJoined }) => {
   const [squads, setSquads] = useState({});
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [joiningTeam, setJoiningTeam] = useState(null);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
 
-  useEffect(() => {
-    const handleResize = () => setIsMobile(window.innerWidth < 768);
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
+  // Return Registration Closed immediately if event is completed / inactive
+  return (
+    <div style={{
+      padding: '36px 24px',
+      textAlign: 'center',
+      color: '#FFFFFF',
+      background: '#09090b',
+      borderRadius: '24px',
+      border: '1.5px solid rgba(255,255,255,0.1)'
+    }}>
+      <div style={{ fontSize: '3rem', marginBottom: '12px' }}>🏁</div>
+      <h3 style={{ margin: '0 0 8px 0', fontSize: '1.4rem', fontWeight: 900, color: '#F59E0B' }}>
+        Registration Closed
+      </h3>
+      <p style={{ color: 'rgba(255,255,255,0.7)', fontSize: '0.9rem', marginBottom: '24px', maxWidth: '480px', margin: '0 auto 24px' }}>
+        World Cup Mania 2026 has officially concluded. Team selection and registration are permanently disabled.
+      </p>
+      <button
+        onClick={onClose}
+        className="btn btn-secondary"
+        style={{
+          padding: '12px 28px',
+          borderRadius: '100px',
+          background: 'rgba(255,255,255,0.1)',
+          color: '#FFF',
+          border: 'none',
+          fontWeight: 800,
+          cursor: 'pointer'
+        }}
+      >
+        Close
+      </button>
+    </div>
+  );
 
   useEffect(() => {
     const fetchSquadData = async () => {
