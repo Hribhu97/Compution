@@ -14,6 +14,7 @@ import SystemHealthPanel from './SystemHealthPanel';
 import StaffCard from './StaffCard';
 import ThemeInspector from '../theme/ThemeInspector';
 import StudentAttendanceWorkspace from './attendance/StudentAttendanceWorkspace';
+import AdminHouseManagement from './house/AdminHouseManagement';
 import { systemDoctorService } from '../services/systemDoctorService';
 import { reportService } from '../services/reportService';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, PieChart, Pie } from 'recharts';

@@ -13,7 +13,7 @@ import Schedule from './pages/dashboard/Schedule';
 import Community from './pages/dashboard/Community';
 import Profile from './pages/dashboard/Profile';
 import FeesAndPayments from './pages/dashboard/FeesAndPayments';
-import WorldCupPage from './pages/dashboard/WorldCupPage';
+import BattleOfMindsPage from './pages/dashboard/BattleOfMindsPage';
 import AchievementsPage from './pages/dashboard/AchievementsPage';
 import HallOfChampions from './pages/dashboard/HallOfChampions';
 import LearningContainer from './pages/dashboard/LearningContainer';
@@ -68,10 +68,11 @@ function App() {
               <Route path="community" element={<Community />} />
               <Route path="profile" element={<Profile />} />
               <Route path="fees" element={<FeesAndPayments />} />
-              <Route path="worldcup" element={<WorldCupPage />} />
+              <Route path="battle-of-minds" element={<BattleOfMindsPage />} />
               <Route path="hall-of-champions" element={<HallOfChampions />} />
               
               {/* Backward Compatible Redirects */}
+              <Route path="worldcup" element={<Navigate to="/dashboard/battle-of-minds" replace />} />
               <Route path="attendance" element={<Navigate to="/dashboard/profile?tab=attendance" replace />} />
               <Route path="courses" element={<Navigate to="/dashboard/learning?tab=courses" replace />} />
               <Route path="tracker" element={<Navigate to="/dashboard/learning?tab=progress" replace />} />

@@ -51,6 +51,7 @@ const NAV_MAIN = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, exact: true },
   { to: '/dashboard/learning', label: 'Learning', icon: BookOpen },
   { to: '/dashboard/assessments', label: 'Assessments', icon: ClipboardList },
+  { to: '/dashboard/battle-of-minds', label: 'Battle of Minds', icon: Shield },
   { to: '/dashboard/achievements', label: 'Achievements', icon: Award },
   { to: '/dashboard/schedule', label: 'Schedule', icon: Calendar },
   { to: '/dashboard/community', label: 'Community', icon: MessageSquare },
@@ -483,7 +484,7 @@ const DashboardLayout = () => {
     { to: '/dashboard', label: 'Home', icon: LayoutDashboard, exact: true },
     { to: '/dashboard/courses', label: 'Courses', icon: BookOpen },
     { to: '/dashboard/schedule', label: 'Schedule', icon: Calendar },
-    { to: '/dashboard/worldcup', label: 'World Cup', icon: Gamepad2 },
+    { to: '/dashboard/battle-of-minds', label: 'Houses', icon: Shield },
   ];
 
 
@@ -526,6 +527,9 @@ const DashboardLayout = () => {
         <nav style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '6px' }}>
           {NAV_MAIN.filter(item => {
             const userRoleLower = user?.role?.toLowerCase();
+            if (item.to === '/dashboard/battle-of-minds' && userRoleLower !== 'student') {
+              return false;
+            }
             if (item.to === '/dashboard/attendance' && userRoleLower !== 'admin' && userRoleLower !== 'student') {
               return false;
             }

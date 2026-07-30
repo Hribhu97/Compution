@@ -2,6 +2,7 @@ import React from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import AdminDashboard from '../../components/AdminDashboard';
 import LearningContainer from './LearningContainer';
+import HouseDashboardWidget from '../../components/house/HouseDashboardWidget';
 import { DashboardSkeleton } from '../../components/SkeletonLoader';
 
 export default function Overview() {
@@ -16,5 +17,10 @@ export default function Overview() {
     return <AdminDashboard />;
   }
 
-  return <LearningContainer />;
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', width: '100%' }}>
+      <HouseDashboardWidget user={user} />
+      <LearningContainer />
+    </div>
+  );
 }
