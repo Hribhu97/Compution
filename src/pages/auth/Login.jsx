@@ -388,18 +388,39 @@ const Login = () => {
     }
 
     setLoading(true);
-    setMobileStatus('Sending OTP...');
+    setMobileStatus('Checking admission record...');
     setError('');
 
     const fullPhone = `${countryCode}${nationalNumber}`;
 
-    console.log('[Phone Auth Flow] ── handleSendOTP START ──');
-    console.log('[Phone Auth Flow] Full phone number:', fullPhone);
-    console.log('[Phone Auth Flow] E.164 format valid:', /^\+[1-9]\d{6,14}$/.test(fullPhone));
-    console.log('[Phone Auth Flow] Auth instance exists:', !!auth);
-
     try {
-      console.log('[Phone Auth Flow] Calling sendOTP() using authService...');
+      // 1. Admin-First Admission Pre-Check in Firestore
+      const usersRef = collection(db, 'users');
+      const q1 = query(usersRef, where('phone', '==', fullPhone));
+      const q2 = query(usersRef, where('phoneNumber', '==', fullPhone));
+      const q3 = query(usersRef, where('mobileNumber', '==', fullPhone));
+      const q4 = query(usersRef, where('phone', '==', nationalNumber));
+
+      const [snap1, snap2, snap3, snap4] = await Promise.all([
+        getDocs(q1), getDocs(q2), getDocs(q3), getDocs(q4)
+      ]);
+
+      let existingStudentDoc = null;
+      [snap1, snap2, snap3, snap4].forEach(snap => {
+        if (!snap.empty && !existingStudentDoc) {
+          existingStudentDoc = { id: snap.docs[0].id, ...snap.docs[0].data() };
+        }
+      });
+
+      // If no admission record pre-created by Admin, block OTP
+      if (!existingStudentDoc) {
+        setError("We couldn't find your admission record. Please contact your institute admin to add your profile.");
+        setMobileStatus('');
+        setLoading(false);
+        return;
+      }
+
+      setMobileStatus('Sending OTP...');
       const result = await authService.sendOTP(fullPhone, 'recaptcha-container');
       
       setConfirmationResult(result);
@@ -425,11 +446,7 @@ const Login = () => {
     const nationalNumber = normalizePhoneNumber(phoneNumber, countryCode);
     const fullPhone = `${countryCode}${nationalNumber}`;
 
-    console.log('[Phone Auth Flow] ── handleResendOTP START ──');
-    console.log('[Phone Auth Flow] Resending OTP to:', fullPhone);
-
     try {
-      console.log('[Phone Auth Flow] Calling sendOTP() for resend...');
       const result = await authService.sendOTP(fullPhone, 'recaptcha-container');
       
       setConfirmationResult(result);
@@ -452,83 +469,78 @@ const Login = () => {
     if (otpCode.length < 6) { setError('Please enter the 6-digit OTP'); return; }
 
     setLoading(true);
-    setMobileStatus('Verifying...');
+    setMobileStatus('Verifying & Claiming Account...');
     setError('');
-
-    console.log('[Phone Auth Flow] ── handleVerifyOTP START ──');
-    console.log('[Phone Auth Flow] OTP code length:', otpCode.length);
-    console.log('[Phone Auth Flow] ConfirmationResult exists:', !!confirmationResult);
 
     try {
       if (!confirmationResult) {
-        const msg = 'No verification code confirmation context found. Please request OTP again.';
-        console.error('[Phone Auth Error]', msg);
-        throw new Error(msg);
+        throw new Error('No verification code confirmation context found. Please request OTP again.');
       }
 
-      console.log('[Phone Auth Flow] Calling confirmationResult.confirm()...');
       const userCredential = await confirmationResult.confirm(otpCode);
-      
-      // Debug Log: OTP verified
-      console.log('[Phone Auth Debug] OTP verified');
-
-      // Check if this phone number is already registered under another account in Firestore
+      const authUser = userCredential.user;
       const nationalNumber = normalizePhoneNumber(phoneNumber, countryCode);
       const fullPhone = `${countryCode}${nationalNumber}`;
+
+      // Search Firestore for the pre-created student document
       const usersRef = collection(db, 'users');
+      const q1 = query(usersRef, where('phone', '==', fullPhone));
+      const q2 = query(usersRef, where('phoneNumber', '==', fullPhone));
+      const q3 = query(usersRef, where('mobileNumber', '==', fullPhone));
       
-      const qPhone = query(usersRef, where('phone', '==', fullPhone));
-      const qMobile = query(usersRef, where('mobileNumber', '==', fullPhone));
-      
-      const [snapPhone, snapMobile] = await Promise.all([
-        getDocs(qPhone),
-        getDocs(qMobile)
-      ]);
-      
-      let existingUserDoc = null;
-      snapPhone.forEach(d => { existingUserDoc = { id: d.id, ...d.data() }; });
-      if (!existingUserDoc) {
-        snapMobile.forEach(d => { existingUserDoc = { id: d.id, ...d.data() }; });
-      }
+      const [snap1, snap2, snap3] = await Promise.all([getDocs(q1), getDocs(q2), getDocs(q3)]);
+      let existingDoc = null;
+      let existingDocId = null;
 
-      const credential = PhoneAuthProvider.credential(confirmationResult.verificationId, otpCode);
-      setPendingPhoneCredential(credential);
-
-      if (existingUserDoc) {
-        if (existingUserDoc.id !== userCredential.user.uid) {
-          console.log('[Phone Auth Flow] Phone number registered to existing profile:', existingUserDoc.id);
-          console.log('[Phone Auth Flow] Authenticated UID:', userCredential.user.uid);
-          console.log('[Phone Auth Flow] Triggering Account Linking Flow...');
-
-          setPendingLinkEmail(existingUserDoc.email || '');
-          setLinkPassword('');
-
-          // Sign out of temp account
-          await signOut(auth);
-          
-          // Show linking screen
-          setView('link-account');
-          setMobileStatus('');
-          setLoading(false);
-          return;
+      [snap1, snap2, snap3].forEach(snap => {
+        if (!snap.empty && !existingDoc) {
+          existingDocId = snap.docs[0].id;
+          existingDoc = snap.docs[0].data();
         }
-      } else {
-        // Phone number is NOT registered to any profile in Firestore.
-        // Keep them signed in as they are a new phone-first signup!
-        console.log('[Phone Auth Flow] Phone number not found in Firestore. Directing to profile registration...');
-        setForm(f => ({ ...f, phone: fullPhone }));
-        setView('register-profile');
-        setMobileStatus('');
-        setLoading(false);
-        return;
+      });
+
+      if (existingDoc) {
+        // Link Auth UID to Pre-Created Student Document
+        const userRef = doc(db, 'users', authUser.uid);
+        const mergedData = {
+          ...existingDoc,
+          uid: authUser.uid,
+          status: 'active',
+          claimed: true,
+          phoneVerified: true,
+          phone: fullPhone,
+          phoneNumber: fullPhone,
+          mobileNumber: fullPhone,
+          lastLogin: serverTimestamp(),
+          claimedAt: serverTimestamp(),
+          updatedAt: serverTimestamp()
+        };
+
+        await setDoc(userRef, mergedData, { merge: true });
+
+        // If pre-created doc was at a different temporary ID, clean it up or mark claimed
+        if (existingDocId && existingDocId !== authUser.uid) {
+          try {
+            await updateDoc(doc(db, 'users', existingDocId), {
+              claimed: true,
+              linkedUid: authUser.uid,
+              status: 'active'
+            });
+          } catch (e) {
+            console.warn("Temp doc update cleanup skipped:", e);
+          }
+        }
       }
-      
+
+      // Direct immediately to Dashboard without extra registration screens
+      setView('success');
+      setTimeout(() => {
+        navigate('/dashboard', { replace: true });
+      }, 500);
+
       setMobileStatus('');
     } catch (err) {
-      console.error('[Phone Auth Flow] ── handleVerifyOTP FAILED ──');
-      console.error('[Phone Auth Error] Error code:', err.code || 'NO_CODE');
-      console.error('[Phone Auth Error] Error message:', err.message || 'NO_MESSAGE');
-      console.error('[Phone Auth Error] Full error:', err);
+      console.error('[Phone Auth Flow] ── handleVerifyOTP FAILED ──', err);
       setError(friendlyPhoneError(err.code, err.message));
       setMobileStatus('');
     } finally {

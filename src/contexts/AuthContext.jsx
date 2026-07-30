@@ -310,23 +310,32 @@ export const AuthProvider = ({ children }) => {
               console.log(`[Phone Auth Debug] Profile not found for phone user: ${firebaseUser.uid}. Needs registration.`);
             }
           } else {
-            // Document exists, merge schema updates and lastLogin
+            // Document exists, merge schema updates, activate account if pending, and set lastLogin
             const providers = firebaseUser.providerData.map(p => p.providerId);
-            const phoneVal = firebaseUser.phoneNumber || userSnap.data()?.phoneNumber || userSnap.data()?.phone || '';
-            const emailVal = firebaseUser.email?.toLowerCase() || userSnap.data()?.email || '';
+            const existing = userSnap.data() || {};
+            const phoneVal = firebaseUser.phoneNumber || existing.phoneNumber || existing.phone || '';
+            const emailVal = firebaseUser.email?.toLowerCase() || existing.email || '';
             
-            await setDoc(userRef, {
+            const updates = {
               uid: firebaseUser.uid,
               email: emailVal,
               phoneNumber: phoneVal,
               phone: phoneVal,
               mobileNumber: phoneVal,
               emailVerified: firebaseUser.emailVerified || false,
-              phoneVerified: firebaseUser.phoneNumber ? true : (userSnap.data()?.phoneVerified || false),
+              phoneVerified: firebaseUser.phoneNumber ? true : (existing.phoneVerified || false),
               authProviders: providers,
               lastLogin: serverTimestamp(),
               updatedAt: serverTimestamp()
-            }, { merge: true });
+            };
+
+            if (existing.status === 'pending_activation' || existing.claimed === false) {
+              updates.status = 'active';
+              updates.claimed = true;
+              updates.claimedAt = serverTimestamp();
+            }
+
+            await setDoc(userRef, updates, { merge: true });
           }
         } catch (error) {
           if (error.code === 'permission-denied' || error.message?.toLowerCase().includes('permission')) {
