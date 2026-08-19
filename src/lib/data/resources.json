@@ -1,0 +1,34 @@
+[
+  {
+    "id": "res-1",
+    "title": "New Owner Checklist",
+    "type": "checklist",
+    "description": "Download our comprehensive checklist covering everything you need before bringing your first bird home.",
+    "url": "/checklist/new-owner-checklist.pdf",
+    "thumbnail": "https://upload.wikimedia.org/wikipedia/commons/8/8a/Cockatiel_3.jpg"
+  },
+  {
+    "id": "res-2",
+    "title": "Bird Nutrition Guide",
+    "type": "guide",
+    "description": "A complete guide to feeding your pet bird a balanced, species-appropriate diet.",
+    "url": "/care",
+    "thumbnail": "https://upload.wikimedia.org/wikipedia/commons/c/ce/GelbA.JPG"
+  },
+  {
+    "id": "res-3",
+    "title": "Aviary Setup Basics",
+    "type": "guide",
+    "description": "Step-by-step instructions for setting up an indoor or outdoor aviary for finches and small birds.",
+    "url": "/habitats",
+    "thumbnail": "https://upload.wikimedia.org/wikipedia/commons/c/c2/Zebra_finch_group.png"
+  },
+  {
+    "id": "res-4",
+    "title": "Conservation Awareness",
+    "type": "article",
+    "description": "Learn about endangered parrot species and how responsible pet ownership supports conservation efforts.",
+    "url": "/blog",
+    "thumbnail": "https://upload.wikimedia.org/wikipedia/commons/9/90/Aratinga_solstitialis_-captive-two-8a.jpg"
+  }
+]

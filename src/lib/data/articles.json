@@ -1,0 +1,50 @@
+[
+  {
+    "id": "art-1",
+    "title": "Setting Up Your First Bird Cage",
+    "slug": "setting-up-first-bird-cage",
+    "excerpt": "Everything you need to know about choosing the right cage, placement, and essential accessories for your new feathered friend.",
+    "content": "Choosing the right cage is one of the most important decisions you'll make as a bird owner. The cage should be large enough for your bird to spread its wings fully and move comfortably.\n\n## Size Matters\n\nAs a general rule, the cage should be at least 1.5 times the wingspan of your bird in width and depth. For active species like budgerigars and cockatiels, bigger is always better.\n\n## Placement\n\nPlace the cage in a social area where your bird can observe family activity, but away from direct sunlight, drafts, and kitchen fumes. Birds are sensitive to Teflon fumes and strong cooking odors.\n\n## Essential Accessories\n\n- Multiple perches of varying diameters\n- Food and water dishes (stainless steel preferred)\n- Cuttlebone for calcium\n- A variety of safe toys for mental stimulation\n- Cage liner or paper for easy cleaning\n\n## Safety First\n\nAvoid cages with zinc or lead components. Ensure bar spacing is appropriate for your bird species to prevent escape or injury.",
+    "coverImage": "https://upload.wikimedia.org/wikipedia/commons/8/8a/Cockatiel_3.jpg",
+    "category": "Care & Setup",
+    "author": "The Aviary Guide Team",
+    "publishedAt": "2026-01-10T00:00:00Z",
+    "status": "published"
+  },
+  {
+    "id": "art-2",
+    "title": "Understanding Bird Body Language",
+    "slug": "understanding-bird-body-language",
+    "excerpt": "Learn to read your bird's signals — from crest position to tail fanning — and build a stronger bond through communication.",
+    "content": "Birds communicate extensively through body language. Learning to read these signals helps you understand your bird's mood and needs.\n\n## Crest Position (Cockatiels & Cockatoos)\n\n- Raised crest: Alert, curious, or excited\n- Flat crest: Relaxed or content\n- Crest held back: Fearful or defensive\n\n## Feather Language\n\n- Fluffed feathers: Content, warm, or possibly ill\n- Sleek feathers: Alert and comfortable\n- Rapid tail fanning: Excitement or agitation\n\n## Vocal Cues\n\nDifferent species have unique vocalizations. Budgerigars chatter when happy, while doves coo softly when content. Learning your species' normal sounds helps you detect distress early.\n\n## Building Trust\n\nMove slowly around new birds. Offer treats from your hand and allow them to approach on their terms. Consistency and patience are key.",
+    "coverImage": "https://upload.wikimedia.org/wikipedia/commons/4/4a/Budgerigar-male-strzelecki-qld.jpg",
+    "category": "Behavior",
+    "author": "The Aviary Guide Team",
+    "publishedAt": "2026-01-25T00:00:00Z",
+    "status": "published"
+  },
+  {
+    "id": "art-3",
+    "title": "Seasonal Diet Changes for Pet Birds",
+    "slug": "seasonal-diet-changes-pet-birds",
+    "excerpt": "How to adjust your bird's nutrition throughout the year for optimal health and vitality.",
+    "content": "Just as wild birds adapt their diet to seasonal availability, pet birds benefit from dietary variety throughout the year.\n\n## Spring & Breeding Season\n\nIncrease protein with egg food or sprouted seeds. Provide extra calcium through cuttlebone and mineral blocks. Fresh greens become especially important.\n\n## Summer\n\nOffer hydrating foods like cucumber, melon, and leafy greens. Ensure fresh water is changed frequently. Avoid leaving fresh food in the cage for extended periods in warm weather.\n\n## Autumn\n\nGradually increase seed content as birds naturally prepare for cooler months. Introduce seasonal fruits like apples and berries.\n\n## Winter\n\nMaintain consistent feeding schedules. Warm, cooked grains like rice and quinoa can be offered as occasional treats. Monitor weight as activity levels may decrease.",
+    "coverImage": "https://upload.wikimedia.org/wikipedia/commons/c/ce/GelbA.JPG",
+    "category": "Nutrition",
+    "author": "The Aviary Guide Team",
+    "publishedAt": "2026-02-05T00:00:00Z",
+    "status": "published"
+  },
+  {
+    "id": "art-4",
+    "title": "Creating a Bird-Safe Home Environment",
+    "slug": "bird-safe-home-environment",
+    "excerpt": "Common household hazards every bird owner should know about — and how to bird-proof your living space.",
+    "content": "Birds are curious and fragile creatures. Many common household items pose serious risks.\n\n## Toxic Substances\n\n- Avocado, chocolate, caffeine, and alcohol are toxic to all birds\n- Non-stick cookware releases fumes lethal to birds when overheated\n- Many houseplants are toxic — research before placing plants near cages\n\n## Physical Hazards\n\n- Open windows and doors without screens\n- Ceiling fans\n- Open water containers (toilets, sinks)\n- Electrical cords\n- Small spaces where birds can become trapped\n\n## Safe Exploration\n\nWhen allowing out-of-cage time, designate a bird-safe room. Remove hazards, cover mirrors, and ensure all windows are closed or screened. Supervise at all times.",
+    "coverImage": "https://upload.wikimedia.org/wikipedia/commons/4/4f/Rosy-faced_lovebird_%28Agapornis_roseicollis_roseicollis%29.jpg",
+    "category": "Safety",
+    "author": "The Aviary Guide Team",
+    "publishedAt": "2026-02-15T00:00:00Z",
+    "status": "published"
+  }
+]

@@ -1,31 +1,35 @@
 {
-  "name": "compution-platform",
+  "name": "the-aviary-guide",
+  "version": "1.0.0",
   "private": true,
-  "version": "0.0.0",
-  "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "lint": "eslint .",
-    "preview": "vite preview",
-    "sync-tests": "node sync-tests.cjs"
+    "predev": "node scripts/sync-videos.js",
+    "dev": "next dev",
+    "prebuild": "node scripts/sync-videos.js",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "seed": "tsx scripts/seed-data.ts"
   },
   "dependencies": {
-    "@studio-freight/react-lenis": "^0.0.47",
-    "date-fns": "^4.2.1",
-    "firebase": "^12.13.0",
-    "firebase-admin": "^13.10.0",
-    "framer-motion": "^12.39.0",
-    "lucide-react": "^1.16.0",
-    "qrcode.react": "^4.2.0",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "react-is": "^19.2.6",
-    "react-router-dom": "^7.15.1",
-    "recharts": "^3.8.1"
+    "@supabase/ssr": "^0.6.1",
+    "@supabase/supabase-js": "^2.49.1",
+    "framer-motion": "^12.4.7",
+    "lucide-react": "^0.475.0",
+    "next": "^15.2.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
   },
   "devDependencies": {
-    "@vitejs/plugin-react": "^4.3.4",
-    "vite": "^6.0.5"
+    "@eslint/eslintrc": "^3.3.0",
+    "@tailwindcss/postcss": "^4.0.9",
+    "@types/node": "^22.13.5",
+    "@types/react": "^19.0.10",
+    "@types/react-dom": "^19.0.4",
+    "eslint": "^9.21.0",
+    "eslint-config-next": "^15.2.0",
+    "tailwindcss": "^4.0.9",
+    "tsx": "^4.19.3",
+    "typescript": "^5.7.3"
   }
 }

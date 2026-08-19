@@ -1,0 +1,38 @@
+[
+  {
+    "id": "test-1",
+    "name": "Margaret H.",
+    "avatar": "",
+    "quote": "Our cockatiel Pepper has brought so much joy to our family. The Aviary Guide helped us prepare before bringing her home — we felt confident from day one.",
+    "bird": "Cockatiel",
+    "approved": true,
+    "createdAt": "2026-01-15T00:00:00Z"
+  },
+  {
+    "id": "test-2",
+    "name": "James R.",
+    "avatar": "",
+    "quote": "I never knew how much personality a budgie could have until I read the detailed profiles here. Kiwi learned to whistle entire songs within months!",
+    "bird": "Budgerigar",
+    "approved": true,
+    "createdAt": "2026-01-20T00:00:00Z"
+  },
+  {
+    "id": "test-3",
+    "name": "Priya S.",
+    "avatar": "",
+    "quote": "The Find Your Bird quiz matched us perfectly with zebra finches. Our little aviary is now alive with the sweetest songs every morning.",
+    "bird": "Zebra Finch",
+    "approved": true,
+    "createdAt": "2026-02-01T00:00:00Z"
+  },
+  {
+    "id": "test-4",
+    "name": "David L.",
+    "avatar": "",
+    "quote": "As a first-time bird owner, the care guides and feeding process section were invaluable. Our canary Sunny sings us awake every day.",
+    "bird": "Canary",
+    "approved": true,
+    "createdAt": "2026-02-10T00:00:00Z"
+  }
+]

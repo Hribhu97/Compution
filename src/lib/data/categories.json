@@ -1,0 +1,26 @@
+[
+  {
+    "id": "cat-parrots",
+    "name": "Parrots",
+    "slug": "parrots",
+    "description": "Intelligent, colorful companions known for their ability to mimic speech and form strong bonds with their owners."
+  },
+  {
+    "id": "cat-finches",
+    "name": "Finches",
+    "slug": "finches",
+    "description": "Small, active songbirds that thrive in pairs or small groups, perfect for aviary settings."
+  },
+  {
+    "id": "cat-doves",
+    "name": "Doves",
+    "slug": "doves",
+    "description": "Gentle, peaceful birds with soft cooing calls, ideal for calm household environments."
+  },
+  {
+    "id": "cat-canaries",
+    "name": "Canaries",
+    "slug": "canaries",
+    "description": "Beloved songbirds bred for their beautiful melodies and vibrant plumage colors."
+  }
+]
